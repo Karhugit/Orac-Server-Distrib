@@ -20,42 +20,37 @@ Orac Server is a Python-based media server application that integrates with Trak
 
 ## Installation
 
-1.  Download the code as a zip file:
+1. ## Download the code as a zip file. Extract to a new folder ##
 
-2.  Install dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
+2. ## For Windows : ##
+   Either
+       Use the installer OracServerSetup, this will create a new app 'Orac Server' with two options, 'Start Orac server' and 'Stop Orac server'
+       Select the app from the list and select 'Start Orac Server'
+   Or
+       In the new folder select the windows batch file start_server.bat
 
-3.
-4.  ## Usage
+3. ## For Linux : ##
+   Either
+        Run as server in a terminal: 
+           "python3 run_server.py"
+           Stop it via CTRL-C
+   Or
+       Run in a virtual environment
+           "bash start_server.sh"
+           Stop it via CTRL-C
+   Or
+       Run in a docker container
+           "docker compose up"
+           Stop it via "docker compose down"
 
-Start the server:
+        
+4.  ## Usage ##
 
-```bash
-python run_server.py
-```
+The server will start on the configured port (default: 5555). You should see it running in the terminal. It has a dashboard which you can access on http://localhost:5555/web. Try this and you should see the 
+orac dashboard, if not then the server did not start.
 
-The server will start on the configured port (default: 5555).
 
-## API Endpoints
-
--   **GET /ping**: Check server status.
--   **GET /movie?tmdb_id=<id>**: Get movie details.
--   **GET /show?tmdb_id=<id>**: Get show details.
--   **GET /scrape?tmdb_id=<id>&item_type=<movie|episode>**: Scrape for streams.
--   **PUT /watched**: Mark an item as watched.
--   **GET /list?name=<list_name>**: Get items from a specific list.
-
-## Architecture
-
--   **`run_server.py`**: Entry point. initializes databases and starts the HTTP server.
--   **`resources/lib/http_server.py`**: Handles HTTP requests and routes them to appropriate handlers.
--   **`resources/scrapers/`**: Contains scraper modules.
--   **`resources/lib/trakt_handler.py`**: Handles Trakt API authentication and requests.
--   **`resources/lib/queue_worker.py`**: Background worker for processing Trakt updates.
-
-## Data Storage
+5. ## Data Storage ##
 
 Orac Server uses several SQLite databases for caching:
 -   `movies_static.db`: Static movie metadata.
