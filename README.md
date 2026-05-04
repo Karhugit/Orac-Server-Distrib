@@ -33,14 +33,17 @@ Orac Server is a Python-based media server application that integrates with Trak
 
 ## 3.  For Linux : ##
    Either
+   
         Run as server in a terminal: 
            "python3 run_server.py"
            Stop it via CTRL-C
    Or
+       
        Run in a virtual environment
            "bash start_server.sh"
            Stop it via CTRL-C
    Or
+       
        Run in a docker container
            "docker compose up"
            Stop it via "docker compose down"
