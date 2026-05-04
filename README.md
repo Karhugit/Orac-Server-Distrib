@@ -20,16 +20,16 @@ Orac Server is a Python-based media server application that integrates with Trak
 
 ## Installation
 
-1. ## Download the code as a zip file. Extract to a new folder ##
+## 1.  Download the code as a zip file. Extract to a new folder ##
 
-2. ## For Windows : ##
+## 2.  For Windows : ##
    Either
        Use the installer OracServerSetup, this will create a new app 'Orac Server' with two options, 'Start Orac server' and 'Stop Orac server'
        Select the app from the list and select 'Start Orac Server'
    Or
        In the new folder select the windows batch file start_server.bat
 
-3. ## For Linux : ##
+## 3.  For Linux : ##
    Either
         Run as server in a terminal: 
            "python3 run_server.py"
@@ -44,7 +44,7 @@ Orac Server is a Python-based media server application that integrates with Trak
            Stop it via "docker compose down"
 
         
-4.  ## Usage ##
+## 4.  Usage ##
 
 The server will start on the configured port (default: 5555). You should see it running in the terminal. It has a dashboard which you can access on http://localhost:5555/web. Try this and you should see the 
 orac dashboard, if not then the server did not start.
