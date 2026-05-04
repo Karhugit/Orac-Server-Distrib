@@ -62,5 +62,5 @@ Orac Server uses several SQLite databases for caching:
 -   `movies_dynamic.db`: Dynamic user state (watched status, ratings).
 -   `tvshows_static.db`: Static TV show/episode metadata.
 -   `tvshows_dynamic.db`: User state for TV shows.
--   `lists.db`: Caches Trakt lists.
+-   `lists.db`: Caches lists as indexes to the DBs above.
 -   `trakt_update_queue.db`: Queue for background Trakt sync operations.
