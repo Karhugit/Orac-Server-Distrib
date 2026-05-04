@@ -1,11 +1,13 @@
 # Orac Server
 
-Orac Server is a Python-based media server application that integrates with Trakt.tv and TMDb to manage your media library, track watched status, and scrape streams from various sources. It was originally designed as a Kodi addon service but has been adapted to run as a standalone server.
+Orac Server is a Python-based media server application that integrates with Trakt.tv, TMDb, Simkl and MDBLIST to manage your media library, track watched status, and scrape streams from various sources. It runs as a standalone server.
 
 ## Features
 
 - **Trakt Integration**: Syncs your lists, collection, and watched history with Trakt.tv.
-- **TMDb Integration**: Fetches metadata for movies and TV shows.
+- **TMDb Integration**: Syncs metadata and lists for movies and TV shows.
+- **SIMKL Integration**: Syncs watchlist and watched history.
+- **MDBLIST Integration**: Syncs your lists and watched history
 - **Scraping**: multi-threaded scraping framework to find media streams (Torrents, etc.).
 - **Caching**: Uses local SQLite databases to cache metadata and reduce API calls.
 - **API**: Provides a JSON HTTP API for client applications to interact with.
@@ -13,46 +15,20 @@ Orac Server is a Python-based media server application that integrates with Trak
 ## Prerequisites
 
 - Python 3.8+
-- [Trakt.tv](https://trakt.tv/) API Application (Client ID & Secret)
-- [TMDb](https://www.themoviedb.org/) API Key
+- VENV for Linux virtual environments
+- Docker for Docker environments
 
 ## Installation
 
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/yourusername/orac_server.git
-    cd orac_server
-    ```
+1.  Download the code as a zip file:
 
 2.  Install dependencies:
     ```bash
     pip install -r requirements.txt
     ```
 
-3.  Configure the application:
-    - Copy `config.example.json` to `config.json`.
-    - Edit `config.json` and fill in your API keys and paths.
-
-    ```json
-    {
-      "trakt": {
-        "client_id": "YOUR_TRAKT_CLIENT_ID",
-        "client_secret": "YOUR_TRAKT_CLIENT_SECRET"
-      },
-      "tmdb": {
-        "api_key": "YOUR_TMDB_API_KEY"
-      },
-      "server": {
-        "port": 5555
-      },
-      "env": {
-        "orac_env": "LOCAL",
-        "log_path": "."
-      }
-    }
-    ```
-
-## Usage
+3.
+4.  ## Usage
 
 Start the server:
 
