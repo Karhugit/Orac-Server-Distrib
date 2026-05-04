@@ -24,9 +24,11 @@ Orac Server is a Python-based media server application that integrates with Trak
 
 ## 2.  For Windows : ##
    Either
+   
        Use the installer OracServerSetup, this will create a new app 'Orac Server' with two options, 'Start Orac server' and 'Stop Orac server'
        Select the app from the list and select 'Start Orac Server'
    Or
+   
        In the new folder select the windows batch file start_server.bat
 
 ## 3.  For Linux : ##
