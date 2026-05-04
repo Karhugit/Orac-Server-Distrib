@@ -1,0 +1,14 @@
+{
+    "ORAC_ENV": "LOCAL",
+    "ORAC_LOG_FILE": "TRUE",
+    "TRAKT": {
+        "client_id": "YOUR_TRAKT_CLIENT_ID",
+        "client_secret": "YOUR_TRAKT_CLIENT_SECRET"
+    },
+    "TMDB": {
+        "api_key": "YOUR_TMDB_API_KEY"
+    },
+    "SERVER": {
+        "port": 5555
+    }
+}

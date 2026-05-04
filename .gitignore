@@ -1,0 +1,27 @@
+# Runtime databases
+*.db
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+*.log.old
+
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Dev/debug artifacts
+tokens.json
+tzen_tokens.json
+flixpatrol_dump.html
+flixpatrol_list.json
+next_episodes_list.txt
+Scrape results.txt
+
+# Installer artifacts
+Output/
+*.iss

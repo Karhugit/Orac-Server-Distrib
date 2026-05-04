@@ -1,0 +1,16 @@
+<addon id="service.orac" version="1.0" name="Orac" provider-name="Karhu">
+  <requires>
+    <import addon="xbmc.python" version="3.0.0"/>
+		<import addon="script.module.requests" />
+  </requires>
+
+  <!-- Service auto-start -->
+  <extension point="xbmc.service" library="addon.py" start="startup" />
+
+  <!-- Also allow manual RunAddon() calls -->
+  <extension point="xbmc.python.script" library="addon.py" />
+
+  <extension point="xbmc.addon.metadata">
+    <summary>Orac Trakt Authorization Service</summary>
+  </extension>
+</addon>
