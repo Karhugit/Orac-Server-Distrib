@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orac Server Command Center</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --surface-color: rgba(30, 41, 59, 0.4);
+            --surface-hover: rgba(30, 41, 59, 0.7);
+            --primary-gradient: linear-gradient(135deg, #6366f1, #a855f7);
+            --active-gradient: linear-gradient(135deg, #10b981, #059669);
+            --inactive-gradient: linear-gradient(135deg, #f43f5e, #e11d48);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-glass: rgba(255, 255, 255, 0.08);
+            --animation-timing: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            
+            /* Log Colors */
+            --log-info: #94a3b8;
+            --log-warn: #fbbf24;
+            --log-error: #f87171;
+            --log-time: #818cf8;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-color);
+            background-image: radial-gradient(circle at 10% 50%, rgba(99, 102, 241, 0.12), transparent 20%),
+                              radial-gradient(circle at 90% 30%, rgba(168, 85, 247, 0.12), transparent 20%);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        .header {
+            padding: 1.5rem 2.5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-glass);
+            background: rgba(11, 15, 25, 0.85);
+            backdrop-filter: blur(16px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-size: 1.4rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .container {
+            max-width: 95vw;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            width: 100%;
+            box-sizing: border-box;
+            flex-grow: 1;
+        }
+
+        .dashboard-header {
+            margin-bottom: 2rem;
+        }
+        
+        .dashboard-header h1 {
+            font-size: 2.2rem;
+            font-weight: 600;
+            margin: 0 0 0.5rem 0;
+            letter-spacing: -1px;
+        }
+
+        .dashboard-header p {
+            color: var(--text-muted);
+            margin: 0;
+            font-size: 1.05rem;
+        }
+
+        /* 3 Column Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1.6fr 1.3fr 1.1fr;
+            gap: 1.5rem;
+            align-items: start;
+        }
+
+        .column-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            height: 75vh;
+        }
+
+        @media (max-width: 1400px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            .log-panel-container {
+                grid-column: 1 / -1; /* Logs take full width on medium screens */
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+            .column-stack {
+                height: auto;
+                max-height: 75vh;
+            }
+        }
+
+        /* Glass Panels */
+        .glass-panel {
+            background: var(--surface-color);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-glass);
+            border-radius: 1.25rem;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.25);
+            transition: transform var(--animation-timing), box-shadow var(--animation-timing);
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .log-panel-container {
+            height: 75vh;
+        }
+
+        .panel-title {
+            font-size: 1.15rem;
+            font-weight: 600;
+            margin-bottom: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Tables */
+        .table-header, .table-header-sm {
+            display: grid;
+            padding: 0 0.75rem 0.75rem 0.75rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--border-glass);
+        }
+
+        .table-header { grid-template-columns: 2fr 1fr 1fr 1fr; }
+        .table-header-sm { grid-template-columns: 1.5fr 2fr; }
+
+        .list-container-scroll {
+            overflow-y: auto;
+            flex-grow: 1;
+            padding-right: 0.5rem;
+        }
+
+        .list-container-scroll::-webkit-scrollbar, .terminal-window::-webkit-scrollbar {
+            width: 8px;
+        }
+        .list-container-scroll::-webkit-scrollbar-thumb, .terminal-window::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+        }
+
+        .scraper-row, .platform-row {
+            display: grid;
+            padding: 1rem 0.75rem;
+            border-bottom: 1px solid var(--border-glass);
+            align-items: center;
+            transition: background var(--animation-timing), transform var(--animation-timing);
+            border-radius: 0.4rem;
+            margin-top: 0.25rem;
+        }
+
+        .scraper-row { grid-template-columns: 2fr 1fr 1fr 1fr; }
+        .platform-row { grid-template-columns: 1.5fr 2fr; }
+
+        .scraper-row:last-child, .platform-row:last-child {
+            border-bottom: none;
+        }
+
+        .scraper-row:hover, .platform-row:hover {
+            background: var(--surface-hover);
+        }
+
+        .item-name {
+            font-weight: 600;
+            font-size: 1rem;
+            color: var(--text-main);
+        }
+
+        .badge {
+            padding: 0.2rem 0.6rem;
+            border-radius: 2rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            display: inline-block;
+        }
+
+        .badge.active { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .badge.inactive { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
+        .badge.platform { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
+        .badge.source { background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3); }
+
+        .score-val {
+            font-family: 'Fira Code', monospace;
+            font-size: 1rem;
+            color: #cbd5e1;
+        }
+
+        .score-high { color: #a855f7; font-weight: 700; }
+        .score-med { color: #6366f1; }
+        .score-low { color: var(--text-muted); }
+
+        /* Terminal Window */
+        .terminal-window {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-glass);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            flex-grow: 1;
+            overflow-y: auto;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.2);
+        }
+
+        .log-line {
+            padding: 0.2rem 0;
+            word-wrap: break-word;
+            border-bottom: 1px solid rgba(255,255,255,0.02);
+            margin-bottom: 0.1rem;
+        }
+        
+        .log-line:hover {
+            background: rgba(255,255,255,0.03);
+        }
+
+        .log-time { color: var(--log-time); margin-right: 0.5rem; }
+        .log-lvl-info { color: #34d399; font-weight: 600; margin-right: 0.5rem; }
+        .log-lvl-warn { color: var(--log-warn); font-weight: 700; margin-right: 0.5rem; }
+        .log-lvl-err { color: var(--log-error); font-weight: 700; margin-right: 0.5rem; }
+        .log-msg { color: var(--log-info); }
+        .log-msg-warn { color: rgba(251, 191, 36, 0.9); }
+        .log-msg-err { color: rgba(248, 113, 113, 0.9); }
+
+        .loading-shimmer {
+            height: 1.5rem;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 0.5rem;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        /* Episode Carousel */
+        .episodes-carousel {
+            display: flex;
+            gap: 1.25rem;
+            overflow-x: auto;
+            padding: 0.5rem 0.5rem 0.75rem 0.5rem;
+            scroll-behavior: smooth;
+        }
+
+        .episodes-carousel::-webkit-scrollbar {
+            height: 8px;
+        }
+        .episodes-carousel::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.1);
+            border-radius: 4px;
+        }
+        .episodes-carousel::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.15);
+            border-radius: 4px;
+        }
+        .episodes-carousel::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.25);
+        }
+
+        .episode-card {
+            flex: 0 0 140px;
+            width: 140px; /* Enforce strict width */
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            transition: transform var(--animation-timing);
+            cursor: pointer;
+        }
+
+        .episode-card:hover {
+            transform: translateY(-4px);
+        }
+
+        .episode-poster-container {
+            width: 140px;
+            height: 210px;
+            border-radius: 0.6rem;
+            overflow: hidden;
+            background: rgba(0,0,0,0.3);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.25);
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .episode-poster {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform var(--animation-timing);
+            display: block;
+        }
+
+        .episode-card:hover .episode-poster {
+            transform: scale(1.05);
+        }
+
+        .episode-info {
+            display: flex;
+            flex-direction: column;
+            padding: 0 0.25rem;
+            overflow: hidden; /* Prevent text overflow from stretching container */
+            width: 100%;
+        }
+
+        .episode-show-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-main);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            letter-spacing: 0.3px;
+        }
+
+        .episode-season-ep {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.15rem;
+            line-height: 1.3;
+            /* Allow wrapping up to 2 lines */
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: normal;
+        }
+
+    </style>
+</head>
+<body>
+
+    <header class="header">
+        <div class="logo">Orac Server</div>
+        <div style="color: var(--text-muted); font-size: 0.9rem;">Command Center</div>
+    </header>
+
+    <main class="container">
+        <div class="dashboard-grid">
+            
+            <!-- Left Column: Logs Terminal -->
+            <div class="glass-panel log-panel-container">
+                <div class="panel-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                    Live Server Logs
+                </div>
+                <div class="terminal-window" id="terminal-window">
+                    <div style="color: var(--text-muted); font-style: italic;">Connecting to log stream...</div>
+                </div>
+            </div>
+
+            <!-- Center Column: Scrapers Box -->
+            <div class="glass-panel" style="height: 75vh;">
+                <div class="panel-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                    Scraper Metrics
+                </div>
+                <div class="table-header">
+                    <div>Module Name</div>
+                    <div>Status</div>
+                    <div>Score</div>
+                    <div>Scrapes</div>
+                </div>
+                
+                <div class="list-container-scroll" id="scrapers-container">
+                    <div class="scraper-row">
+                        <div class="loading-shimmer" style="width: 60%;"></div>
+                        <div class="loading-shimmer" style="width: 40%;"></div>
+                        <div class="loading-shimmer" style="width: 30%;"></div>
+                        <div class="loading-shimmer" style="width: 30%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column Stack -->
+            <div class="column-stack">
+                <!-- Platforms Box -->
+                <div class="glass-panel" style="flex: 1;">
+                    <div class="panel-title">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                        Authorised Platforms
+                    </div>
+                    <div class="table-header-sm">
+                        <div>Service</div>
+                        <div>Username</div>
+                    </div>
+                    
+                    <div class="list-container-scroll" id="platforms-container">
+                        <div class="platform-row">
+                            <div class="loading-shimmer" style="width: 50%;"></div>
+                            <div class="loading-shimmer" style="width: 70%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Library Lists Box -->
+                <div class="glass-panel" style="flex: 1;">
+                    <div class="panel-title">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                        Library Lists
+                    </div>
+                    <div class="table-header-sm">
+                        <div>Source</div>
+                        <div>List Name</div>
+                    </div>
+                    
+                    <div class="list-container-scroll" id="lists-container">
+                        <div class="platform-row">
+                            <div class="loading-shimmer" style="width: 30%;"></div>
+                            <div class="loading-shimmer" style="width: 60%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div><!-- /Right Column Stack -->
+
+        </div>
+
+        <!-- Bottom Row: Up Next Carousel -->
+        <div class="glass-panel" style="margin-top: 1.5rem; padding-bottom: 0.75rem;">
+            <div class="panel-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                Up Next to Watch
+            </div>
+            
+            <div class="episodes-carousel" id="next-episodes-container">
+                <!-- Shimmer placeholders -->
+                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchScrapers();
+            fetchPlatforms();
+            fetchLibraryLists();
+            fetchNextEpisodes();
+            fetchLogs();
+            
+            // Poll logs every 3 seconds (No enforced auto-scrolling)
+            setInterval(fetchLogs, 3000);
+        });
+
+        async function fetchScrapers() {
+            try {
+                const response = await fetch('/api/web/scrapers');
+                const data = await response.json();
+                if(data.success) renderScrapers(data.scrapers);
+            } catch (error) { console.error('Failed to load scrapers', error); }
+        }
+
+        async function fetchPlatforms() {
+            try {
+                const response = await fetch('/api/web/platforms');
+                const data = await response.json();
+                if(data.success) renderPlatforms(data.platforms);
+            } catch (error) { console.error('Failed to load platforms', error); }
+        }
+
+        async function fetchLibraryLists() {
+            try {
+                const response = await fetch('/api/web/library_lists');
+                const data = await response.json();
+                if(data.success) renderLibraryLists(data.lists);
+            } catch (error) { console.error('Failed to load library lists', error); }
+        }
+
+        async function fetchNextEpisodes() {
+            try {
+                const response = await fetch('/next_episodes');
+                const data = await response.json();
+                renderNextEpisodes(data);
+            } catch (error) { console.error('Failed to load next episodes', error); }
+        }
+
+        async function fetchLogs() {
+            try {
+                const response = await fetch('/api/web/logs');
+                const data = await response.json();
+                if(data.success) renderLogs(data.logs);
+            } catch (error) { console.error('Failed to load logs', error); }
+        }
+
+        function getScoreClass(score) {
+            if(score > 8) return 'score-high';
+            if(score > 3) return 'score-med';
+            return 'score-low';
+        }
+
+        function renderScrapers(scrapers) {
+            const container = document.getElementById('scrapers-container');
+            container.innerHTML = ''; 
+            if(!scrapers || scrapers.length === 0) return;
+
+            scrapers.forEach(scraper => {
+                const row = document.createElement('div');
+                row.className = 'scraper-row';
+                
+                const formattedName = scraper.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                const isActive = scraper.active === 1;
+                const scoreValue = parseFloat(scraper.score).toFixed(2);
+                
+                row.innerHTML = `
+                    <div class="item-name">${formattedName}</div>
+                    <div><span class="badge ${isActive ? 'active' : 'inactive'}">${isActive ? 'Active' : 'Inactive'}</span></div>
+                    <div class="score-val ${getScoreClass(scoreValue)}">${scoreValue}</div>
+                    <div style="color: #94a3b8; font-family: monospace;">${scraper.total_scrapes}</div>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function renderPlatforms(platforms) {
+            const container = document.getElementById('platforms-container');
+            container.innerHTML = ''; 
+            if(!platforms || platforms.length === 0) return;
+
+            platforms.forEach(platform => {
+                const row = document.createElement('div');
+                row.className = 'platform-row';
+                row.innerHTML = `
+                    <div><span class="badge platform">${platform.name}</span></div>
+                    <div class="item-name" style="font-size:0.9rem; font-weight:500;">${platform.username}</div>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function renderLibraryLists(lists) {
+            const container = document.getElementById('lists-container');
+            container.innerHTML = ''; 
+            if(!lists || lists.length === 0) return;
+
+            lists.forEach(list => {
+                const row = document.createElement('div');
+                row.className = 'platform-row';
+                row.innerHTML = `
+                    <div><span class="badge source">${list.source.toUpperCase()}</span></div>
+                    <div class="item-name" style="font-size:0.9rem; font-weight:500;">${list.name}</div>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function renderNextEpisodes(episodes) {
+            const container = document.getElementById('next-episodes-container');
+            container.innerHTML = '';
+            
+            if (!episodes || !Array.isArray(episodes) || episodes.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted); padding: 1rem; font-style: italic;">No upcoming episodes to display.</div>';
+                return;
+            }
+
+            episodes.forEach(ep => {
+                const card = document.createElement('div');
+                card.className = 'episode-card';
+                
+                // Prioritize show poster
+                let imageUrl = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';
+                if (ep.show_poster_path) {
+                    imageUrl = `https://image.tmdb.org/t/p/w300${ep.show_poster_path}`;
+                } else if (ep.episode_poster_path) {
+                    imageUrl = `https://image.tmdb.org/t/p/w300${ep.episode_poster_path}`;
+                }
+                
+                const seasonNum = String(ep.season).padStart(2, '0');
+                const epNum = String(ep.episode_number).padStart(2, '0');
+                const seStr = `S${seasonNum}E${epNum}`;
+                
+                const showTitle = ep.title || 'Unknown Show';
+                const epTitle = ep.episode_title || '';
+                
+                card.innerHTML = `
+                    <div class="episode-poster-container">
+                        <img src="${imageUrl}" alt="${showTitle} Poster" class="episode-poster" loading="lazy" onerror="this.src=''; this.style.display='none';">
+                    </div>
+                    <div class="episode-info">
+                        <span class="episode-show-title" title="${showTitle}">${showTitle}</span>
+                        <span class="episode-season-ep" title="${seStr} - ${epTitle}">${seStr} - ${epTitle}</span>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function renderLogs(logs) {
+            const terminal = document.getElementById('terminal-window');
+            
+            // Generate HTML array to prevent reflows
+            let htmlStr = '';
+            
+            logs.forEach(logLine => {
+                // Parse log: [Orac] 2026-04-10 12:00:00 [INFO] Message
+                // Match regex for typical brackets structure
+                const match = logLine.match(/\[(.*?)\]\s([\d-]+\s[\d:]+)\s\[(.*?)\]\s(.*)/);
+                
+                if (match && match.length === 5) {
+                    const time = match[2];
+                    const level = match[3];
+                    const msg = match[4];
+                    
+                    let levelClass = 'log-lvl-info';
+                    let msgClass = 'log-msg';
+                    
+                    if (level === 'WARNING') { levelClass = 'log-lvl-warn'; msgClass = 'log-msg-warn'; }
+                    else if (level === 'ERROR' || level === 'FATAL') { levelClass = 'log-lvl-err'; msgClass = 'log-msg-err'; }
+                    
+                    htmlStr += `<div class="log-line">
+                        <span class="log-time">[${time}]</span>
+                        <span class="${levelClass}">[${level}]</span>
+                        <span class="${msgClass}">${msg}</span>
+                    </div>`;
+                } else {
+                    // Fallback unparsed
+                    let levelClass = 'log-lvl-info';
+                    let msgClass = 'log-msg';
+                    if(logLine.includes('[WARNING]')) { levelClass = 'log-lvl-warn'; msgClass = 'log-msg-warn'; }
+                    if(logLine.includes('[ERROR]')) { levelClass = 'log-lvl-err'; msgClass = 'log-msg-err'; }
+                    htmlStr += `<div class="log-line"><span class="${msgClass}">${logLine}</span></div>`;
+                }
+            });
+            
+            // Reconcile and preserve exact scroll position for the user.
+            if (terminal.innerHTML !== htmlStr) {
+                const currentScroll = terminal.scrollTop;
+                terminal.innerHTML = htmlStr;
+                terminal.scrollTop = currentScroll;
+            }
+        }
+    </script>
+</body>
+</html>
