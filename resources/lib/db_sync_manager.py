@@ -226,17 +226,7 @@ async def sync_lists_and_items(trakt_handler, tmdb_handler, movies_static_db_pat
     if config_db_path:
         log(f"[Orac] **SYNC** Starting MDBList sync process", level=LOGINFO)
         mdblist_start_time = time()
-        await mdblist_list_sync_task(
-            config_db_path,
-            lists_db_path,
-            movies_static_db_path=movies_static_db_path,
-            movies_dynamic_db_path=movies_dynamic_db_path,
-            tvshows_static_db_path=tvshows_static_db_path,
-            tvshows_dynamic_db_path=tvshows_dynamic_db_path,
-            trakt_update_queue_path=trakt_update_queue_path,
-            trakt_handler=trakt_handler,
-            tmdb_handler=tmdb_handler,
-        )
+        await mdblist_list_sync_task(config_db_path, lists_db_path)
         log(f"[Orac] MDBList sync completed in {time() - mdblist_start_time:.2f} seconds", level=LOGINFO)
 
     # Sync recent TV show updates to static DB (Trakt Source)

@@ -7,40 +7,6 @@ import requests
 import re
 from resources.scrapers import source_utils
 from resources.scrapers.thread_manager_opt import ConcurrentScraperBase
-try:
-    from resources.lib.config_loader import OracConfig
-    _config = OracConfig()
-    _AIOSTREAMS_USER_DATA = _config.config.get('AIOSTREAMS', {}).get('user_data_header', None)
-except Exception:
-    _AIOSTREAMS_USER_DATA = None
-
-# Fallback hardcoded header – used when config.json has no AIOSTREAMS.user_data_header.
-# Run generate_aiostreams_header.py (in the project root) to regenerate and write
-# a new value to config.json instead of editing this string by hand.
-_AIOSTREAMS_USER_DATA_FALLBACK = (
-    'ewogICJwcmVzZXRzIjogWwogICAgewogICAgICAidHlwZSI6ICJ0b3JyZW50aW8iLAogICAgICAiaW5zd'
-    'GFuY2VJZCI6ICJ0aW8xIiwKICAgICAgImVuYWJsZWQiOiB0cnVlLAogICAgICAib3B0aW9ucyI6IHsKIC'
-    'AgICAgICAibmFtZSI6ICJUb3JyZW50aW8iLAogICAgICAgICJ0aW1lb3V0IjogNjUwMCwKICAgICAgICAi'
-    'cmVzb3VyY2VzIjogWyJzdHJlYW0iXSwKICAgICAgICAic29ydCI6ICJxdWFsaXR5IgogICAgICB9CiAgIC'
-    'B9LAogICAgewogICAgICAidHlwZSI6ICJjb21ldCIsCiAgICAgICJpbnN0YW5jZUlkIjogImNtdDEiLAog'
-    'ICAgICAiZW5hYmxlZCI6IHRydWUsCiAgICAgICJvcHRpb25zIjogewogICAgICAgICJuYW1lIjogIkNvbW'
-    'V0IiwKICAgICAgICAidGltZW91dCI6IDY1MDAsCiAgICAgICAgInJlc291cmNlcyI6IFsic3RyZWFtIl0s'
-    'CiAgICAgICAgImluY2x1ZGVQMlAiOiB0cnVlLAogICAgICAgICJyZW1vdmVUcmFzaCI6IGZhbHNlCiAgIC'
-    'AgIH0KICAgIH0sCiAgICB7CiAgICAgICJ0eXBlIjogIm1lZGlhZnVzaW9uIiwKICAgICAgImluc3RhbmNl'
-    'SWQiOiAibWYxIiwKICAgICAgImVuYWJsZWQiOiB0cnVlLAogICAgICAib3B0aW9ucyI6IHsKICAgICAgIC'
-    'AibmFtZSI6ICJNZWRpYUZ1c2lvbiIsCiAgICAgICAgInRpbWVvdXQiOiA2NTAwLAogICAgICAgICJyZXNv'
-    'dXJjZXMiOiBbInN0cmVhbSJdLAogICAgICAgICJ1c2VDYWNoZWRSZXN1bHRzT25seSI6IGZhbHNlLAogIC'
-    'AgICAgICJlbmFibGVXYXRjaGxpc3RDYXRhbG9ncyI6IGZhbHNlLAogICAgICAgICJkb3dubG9hZFZpYUJy'
-    'b3dzZXIiOiBmYWxzZSwKICAgICAgICAiY29udHJpYnV0b3JTdHJlYW1zIjogZmFsc2UsCiAgICAgICAgIm'
-    'NlcnRpZmljYXRpb25MZXZlbHNGaWx0ZXIiOiBbXSwKICAgICAgICAibnVkaXR5RmlsdGVyIjogW10KICAg'
-    'ICAgfQogICAgfQogIF0sAogICJmb3JtYXR0ZXIiOiB7CiAgICAiaWQiOiAidG9ycmVudGlvIiwKICAgICJk'
-    'ZWZpbml0aW9uIjogeyJuYW1lIjogIiIsICJkZXNjcmlwdGlvbiI6ICIifQogIH0sCiAgInNvcnRDcml0ZX'
-    'JpYSI6IHsiZ2xvYmFsIjogW119LAogICJkZWR1cGxpY2F0b3IiOiB7CiAgICAiZW5hYmxlZCI6IGZhbHNl'
-    'LAogICAgImtleXMiOiBbImZpbGVuYW1lIiwgImluZm9IYXNoIl0sCiAgICAibXVsdGlHcm91cEJlaGF2aW91'
-    'ciI6ICJhZ2dyZXNzaXZlIiwKICAgICJjYWNoZWQiOiAic2luZ2xlX3Jlc3VsdCIsCiAgICAidW5jYWNoZWQi'
-    'OiAicGVyX3NlcnZpY2UiLAogICAgInAycCI6ICJzaW5nbGVfcmVzdWx0IiwKICAgICJleGNsdWRlQWRkb25z'
-    'IjogW10KICB9Cn0='
-)
 
 
 class source:
@@ -81,27 +47,12 @@ class source:
 			# log_utils.log('url = %s' % url)
 			if 'timeout' in data: self.timeout = int(data['timeout'])
 			results = requests.get(url, params=params, headers=self._headers(), timeout=self.timeout)
-			response_json = results.json()
-			response_data = response_json.get('data')
-			if not response_data:
-				# AIOStreams returns {"data": null} when no configured presets
-				# return results for this title (e.g. content not in debrid cache).
-				# This is not an error — just no results available.
-				import logging
-				logging.getLogger('orac').debug(
-					'AIOSTREAMS - empty data for %s (status=%s, keys=%s)',
-					params, results.status_code, list(response_json.keys())
-				)
-				return sources
-			files = response_data.get('results', [])
-			if files is None:
-				return sources
+			files = results.json()['data']['results']
 			undesirables = source_utils.get_undesirables()
 			check_foreign_audio = source_utils.check_foreign_audio()
 		except:
 			source_utils.scraper_error('AIOSTREAMS')
 			return sources
-
 
 		for file in files:
 			try:
@@ -152,8 +103,28 @@ class source:
 		return sources
 
 	def _headers(self):
-		value = _AIOSTREAMS_USER_DATA or _AIOSTREAMS_USER_DATA_FALLBACK
-		return {'x-aiostreams-user-data': value}
+		return {'x-aiostreams-user-data': (
+			'ewogICJwcmVzZXRzIjogWwogICAgewogICAgICAidHlwZSI6ICJjb21ldCIsCiAgICAgICJpbnN0YW5j'
+			'ZUlkIjogImY3YiIsCiAgICAgICJlbmFibGVkIjogdHJ1ZSwKICAgICAgIm9wdGlvbnMiOiB7CiAgICAg'
+			'ICAgIm5hbWUiOiAiQ29tZXQiLAogICAgICAgICJ0aW1lb3V0IjogNjUwMCwKICAgICAgICAicmVzb3Vy'
+			'Y2VzIjogWyJzdHJlYW0iXSwKICAgICAgICAiaW5jbHVkZVAyUCI6IHRydWUsCiAgICAgICAgInJlbW92'
+			'ZVRyYXNoIjogZmFsc2UKICAgICAgfQogICAgfSwKICAgIHsKICAgICAgInR5cGUiOiAibWVkaWFmdXNp'
+			'b24iLAogICAgICAiaW5zdGFuY2VJZCI6ICI0NTAiLAogICAgICAiZW5hYmxlZCI6IHRydWUsCiAgICAg'
+			'ICJvcHRpb25zIjogewogICAgICAgICJuYW1lIjogIk1lZGlhRnVzaW9uIiwKICAgICAgICAidGltZW91'
+			'dCI6IDY1MDAsCiAgICAgICAgInJlc291cmNlcyI6IFsic3RyZWFtIl0sCiAgICAgICAgInVzZUNhY2hl'
+			'ZFJlc3VsdHNPbmx5IjogdHJ1ZSwKICAgICAgICAiZW5hYmxlV2F0Y2hsaXN0Q2F0YWxvZ3MiOiBmYWxz'
+			'ZSwKICAgICAgICAiZG93bmxvYWRWaWFCcm93c2VyIjogZmFsc2UsCiAgICAgICAgImNvbnRyaWJ1dG9y'
+			'U3RyZWFtcyI6IGZhbHNlLAogICAgICAgICJjZXJ0aWZpY2F0aW9uTGV2ZWxzRmlsdGVyIjogW10sCiAg'
+			'ICAgICAgIm51ZGl0eUZpbHRlciI6IFtdCiAgICAgIH0KICAgIH0KICBdLAogICJmb3JtYXR0ZXIiOiB7'
+			'CiAgICAiaWQiOiAidG9ycmVudGlvIiwKICAgICJkZWZpbml0aW9uIjogeyJuYW1lIjogIiIsICJkZXNj'
+			'cmlwdGlvbiI6ICIifQogIH0sCiAgInNvcnRDcml0ZXJpYSI6IHsiZ2xvYmFsIjogW119LAogICJkZWR1'
+			'cGxpY2F0b3IiOiB7CiAgICAiZW5hYmxlZCI6IGZhbHNlLAogICAgImtleXMiOiBbImZpbGVuYW1lIiwg'
+			'ImluZm9IYXNoIl0sCiAgICAibXVsdGlHcm91cEJlaGF2aW91ciI6ICJhZ2dyZXNzaXZlIiwKICAgICJj'
+			'YWNoZWQiOiAic2luZ2xlX3Jlc3VsdCIsCiAgICAidW5jYWNoZWQiOiAicGVyX3NlcnZpY2UiLAogICAg'
+			'InAycCI6ICJzaW5nbGVfcmVzdWx0IiwKICAgICJleGNsdWRlQWRkb25zIjogW10KICB9Cn0='
+		)}
+
+
 class AIOStreamsService(ConcurrentScraperBase):
     """
     Wrapper class for AIOStreams scraper.

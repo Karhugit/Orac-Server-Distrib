@@ -15,7 +15,7 @@ def add_tvshow(tvshows_static_cursor, tvshows_dynamic_cursor, trakt_queue_cursor
     # Placeholder IDs indicate the show was sourced from TMDB without Trakt resolution
     is_placeholder_trakt_id = show_trakt_id is None or show_trakt_id < 0
     
-    if is_placeholder_trakt_id and show_tmdb_id and trakt_handler is not None:
+    if is_placeholder_trakt_id and show_tmdb_id:
         try:
             # Try to resolve TMDB ID to Trakt ID
             resp = trakt_handler._get(f"/search/tmdb/{show_tmdb_id}?type=show")

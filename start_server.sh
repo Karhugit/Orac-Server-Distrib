@@ -71,9 +71,11 @@ if [ ! -f "config.json" ]; then
         echo "Copying config.example.json to config.json..."
         cp config.example.json config.json
         echo
-        echo "NOTE: Default API keys are pre-configured in config.json."
-        echo "      You can customise them at any time by editing config.json."
+        echo "IMPORTANT: Please edit config.json with your API keys before running."
+        echo "           - TRAKT client_id and client_secret"
+        echo "           - TMDB api_key"
         echo
+        exit 0
     fi
 fi
 

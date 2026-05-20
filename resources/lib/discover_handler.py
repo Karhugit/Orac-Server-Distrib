@@ -47,12 +47,8 @@ def handle_discover_request(item_type, query_params, tmdb_handler, ext_indexes_c
         valid_tmdb_params = [
             'sort_by', 'with_genres', 'primary_release_date.gte', 'primary_release_date.lte',
             'air_date.gte', 'air_date.lte', 'first_air_date.gte', 'first_air_date.lte',
-            'vote_average.gte', 'vote_average.lte', 'with_keywords', 'with_original_language',
-            'with_networks', 'without_genres', 'with_status',
-            'with_watch_providers', 'watch_region',   # provider-filtered indexes
-            'with_cast', 'with_origin_country', 'language',
-            'vote_count.gte', 'include_adult', 'certification', 'certification.lte',
-            'certification_country',
+            'vote_average.gte', 'vote_average.lte', 'with_keywords', 'with_original_language', 'with_networks',
+            'without_genres', 'with_status'
         ]
         for key, value in query_params.items():
             if key in valid_tmdb_params:

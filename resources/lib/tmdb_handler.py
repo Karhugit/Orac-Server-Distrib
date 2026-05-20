@@ -53,17 +53,6 @@ class TMDbAPI:
         :return: JSON response from TMDb or None on failure.
         """
         return self._get(f"/discover/{item_type}", params=params)
-
-    def get_watch_providers(self, media_type: str, region: str | None = None):
-        """
-        Returns the full watch-provider catalogue for *media_type* ('movie' or 'tv').
-        Optionally scoped to *region* (ISO-3166-1 alpha-2, e.g. 'AU').
-        :return: JSON response dict with a 'results' list, or None on failure.
-        """
-        params = {"language": "en-US"}
-        if region:
-            params["watch_region"] = region
-        return self._get(f"/watch/providers/{media_type}", params=params)
     
     def _process_image_data(self, image_data, show_main_data=None):
         """
