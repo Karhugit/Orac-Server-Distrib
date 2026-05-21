@@ -32,6 +32,7 @@ from resources.lib.db_init import (
     init_config_db, init_ext_indexes_db, init_tags_db, init_undesirables_db,
     init_trakt_history_sync_db
 )
+from resources.lib.config_handler import get_config_value
 from resources.lib.log_utils import log, LOGERROR, LOGINFO
 
 # Database Paths
@@ -104,8 +105,11 @@ trakt_handler = TraktAuth(
     config_db_path=config_db_path
 )
 
+stored_tmdb_key = get_config_value("tmdb_api_key", config_db_path)
+tmdb_api_key = stored_tmdb_key if stored_tmdb_key else config_loader.tmdb_config.get("api_key")
+
 tmdb_handler = TMDbAPI(
-    api_key=config_loader.tmdb_config.get("api_key"),
+    api_key=tmdb_api_key,
     static_db_path=tvshows_static_db_path
 )
 

@@ -683,7 +683,10 @@ def app_factory(
 
     @app.put("/update_tmdb_tokens")
     async def update_tmdb(request: Request):
-        success = update_config_values(flat_qs(request), app.state.config_db_path)
+        params = flat_qs(request)
+        success = update_config_values(params, app.state.config_db_path)
+        if "tmdb_api_key" in params and app.state.tmdb_handler:
+            app.state.tmdb_handler.api_key = params["tmdb_api_key"]
         return Response(status_code=204) if success else PlainTextResponse("Error", status_code=500)
 
     @app.put("/mark_undesirable")
