@@ -45,7 +45,47 @@ async def update_dynamic_tvshow_data(trakt_handler, tmdb_handler, username, tvsh
             trakt_last_updated = show.get("last_updated_at")
             show_trakt_id = show["show"]["ids"]["trakt"]
             show_tmdb_id = show["show"]["ids"].get("tmdb")
+            show_imdb_id = show["show"]["ids"].get("imdb")
             show_title = show["show"]["title"]
+
+            # Resolution chain for missing TMDb ID:
+            # Step 1: Try IMDB ID -> TMDb lookup
+            if not show_tmdb_id and show_imdb_id:
+                result = tmdb_handler.find_by_external_id(show_imdb_id, source="imdb_id")
+                if result:
+                    show_tmdb_id = result.get("id")
+                    log(f"[Orac] Resolved TMDb ID {show_tmdb_id} for watched show '{show_title}' (Trakt: {show_trakt_id}) using IMDB ID {show_imdb_id}", level=LOGINFO)
+
+            # Step 2: Ask Trakt directly for the show's full IDs — the watched-sync
+            # response sometimes omits tmdb even when Trakt has it
+            if not show_tmdb_id:
+                try:
+                    trakt_show_resp = trakt_handler._get(f"/shows/{show_trakt_id}?extended=full")
+                    if trakt_show_resp and trakt_show_resp.status_code == 200:
+                        trakt_show_data = trakt_show_resp.json()
+                        show_tmdb_id = trakt_show_data.get("ids", {}).get("tmdb")
+                        if not show_imdb_id:
+                            show_imdb_id = trakt_show_data.get("ids", {}).get("imdb")
+                        if show_tmdb_id:
+                            log(f"[Orac] Resolved TMDb ID {show_tmdb_id} for watched show '{show_title}' (Trakt: {show_trakt_id}) via Trakt full show lookup", level=LOGINFO)
+                        elif show_imdb_id:
+                            # Got IMDB ID from Trakt, now try TMDb find
+                            result = tmdb_handler.find_by_external_id(show_imdb_id, source="imdb_id")
+                            if result:
+                                show_tmdb_id = result.get("id")
+                                log(f"[Orac] Resolved TMDb ID {show_tmdb_id} for watched show '{show_title}' (Trakt: {show_trakt_id}) via Trakt IMDB ID {show_imdb_id}", level=LOGINFO)
+                except Exception as e:
+                    log(f"[Orac] Error during Trakt full-show lookup for '{show_title}' (Trakt: {show_trakt_id}): {e}", level=LOGWARNING)
+
+            # Step 3: If all resolution attempts fail, skip gracefully.
+            # We cannot write to user_show_sync, watched_episodes, or watched_history
+            # without a TMDb ID (all require it as a non-null key), so there is no
+            # safe partial write possible — watched/next-episode state won't update
+            # for this show until Trakt or TMDb gains the missing mapping.
+            if not show_tmdb_id:
+                log(f"[Orac] Skipping watched show '{show_title}' (Trakt: {show_trakt_id}): could not resolve a TMDb ID after all fallback attempts.", level=LOGWARNING)
+                skip_count += 1
+                continue
 
             # Check the show's specific last_updated timestamp from the dynamic DB
             dynamic_cursor.execute("SELECT last_updated_at FROM user_show_sync WHERE user = ? AND show_tmdb_id = ?", (username, show_tmdb_id))

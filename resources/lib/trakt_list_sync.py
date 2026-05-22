@@ -144,33 +144,41 @@ def update_list_in_db(db_path, list_meta, items):
             list_id
         ))
 
-        # 2. Get current DB items for this list
+        # 2. Get current DB items for this list (keyed by trakt_id only, matching the UNIQUE constraint)
         list_cur.execute("SELECT media_type, trakt_id FROM list_items WHERE list_id=?", (list_id,))
         existing_items = set(list_cur.fetchall())
+        existing_trakt_ids = {trakt_id for _, trakt_id in existing_items}
 
-        # 3. Build set of incoming items
+        # 3. Build set of incoming items, deduplicating by trakt_id to match the DB UNIQUE constraint
+        #    on (list_id, trakt_id). If the same trakt_id appears more than once (e.g. tagged as
+        #    both 'movie' and 'show'), keep only the first occurrence.
         new_items = set()
-        incoming_items_by_key = {}  # We'll use this to map back later
+        seen_trakt_ids = set()
+        incoming_items_by_key = {}
 #        log(f"[Orac] Syncing list '{list_meta['name']}' with {len(items)} items", level=LOGINFO)
 
         for item in items:
             media_type = item['type']
             trakt_id = str(item[media_type]['ids']['trakt'])
             tmdb_id = str(item[media_type]['ids'].get('tmdb', ''))
+            # Skip duplicate trakt_ids within this batch
+            if trakt_id in seen_trakt_ids:
+                continue
+            seen_trakt_ids.add(trakt_id)
             key = (media_type, trakt_id)
             new_items.add(key)
-            incoming_items_by_key[key] = (item, tmdb_id)  # store the full item and tmdb_id for later use
+            incoming_items_by_key[key] = (item, tmdb_id)
             current_pairs.append((list_id, trakt_id))
 
-        # 4. Determine differences
-        items_to_add = new_items - existing_items
+        # 4. Determine differences — skip items whose trakt_id already exists under any media_type
+        items_to_add = {(mt, tid) for mt, tid in new_items if tid not in existing_trakt_ids}
         items_to_remove = existing_items - new_items
 
-        # 5. Insert additions
+        # 5. Insert additions using OR IGNORE to gracefully handle any remaining constraint conflicts
         for media_type, trakt_id in items_to_add:
             item, tmdb_id = incoming_items_by_key[(media_type, trakt_id)]
             list_cur.execute("""
-                INSERT INTO list_items (list_id, media_type, trakt_id, tmdb_id)
+                INSERT OR IGNORE INTO list_items (list_id, media_type, trakt_id, tmdb_id)
                 VALUES (?, ?, ?, ?)
             """, (list_id, media_type, trakt_id, tmdb_id))
 

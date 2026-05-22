@@ -500,6 +500,45 @@ def normalize_custom_lists(raw_lists: list, user: str, owned_by_user: bool) -> l
     return normalized
 
 
+async def _fetch_all_list_items(trakt_handler, user_slug, slug, page_size=1000):
+    """
+    Fetches ALL items from a Trakt custom list, handling pagination transparently.
+    Trakt caps a single response at 1000 items; lists larger than that require
+    multiple requests using the ?page= parameter.
+    Returns a flat list of all items across all pages.
+    """
+    all_items = []
+    page = 1
+    max_pages = 50  # Safety cap to prevent runaway loops
+
+    while page <= max_pages:
+        path = f"/users/{user_slug}/lists/{slug}/items?extended=full&limit={page_size}&page={page}"
+        resp = await trakt_handler.get(path)
+
+        if resp is None:
+            log(f"[Orac] No response fetching page {page} of list '{slug}'", level=LOGERROR)
+            break
+        if resp.status_code != 200:
+            log(f"[Orac] Failed to fetch page {page} of list '{slug}': {resp.status_code}", level=LOGWARNING)
+            break
+
+        page_items = resp.json()
+        if not page_items:
+            break
+
+        all_items.extend(page_items)
+
+        # Check how many pages exist via the Trakt pagination header
+        total_pages = int(resp.headers.get("X-Pagination-Page-Count", 1))
+        log(f"[Orac] Fetched page {page}/{total_pages} of list '{slug}' ({len(page_items)} items)", level=LOGINFO)
+
+        if page >= total_pages:
+            break
+        page += 1
+
+    return all_items
+
+
 async def get_trakt_collection_movies(trakt_handler):
     try:
         collection_resp = await trakt_handler.get("/users/me/collection/movies")
@@ -660,17 +699,12 @@ async def get_my_trakt_lists(trakt_handler, lists_db_path, lists_library_setting
             lists_updated_at = get_local_list_updated_at(lists_db_path, list_id) or ""
             if force_sync or last_activity_str > lists_updated_at:
 
-                path = f"/users/{user_slug}/lists/{slug}/items?extended=full&limit=1000"
-
-                items_resp = await trakt_handler.get(path)
-                if items_resp is None:
-                    log(f"[Orac] No response received when fetching items for list '{slug}'", level=LOGERROR)
+                items = await _fetch_all_list_items(trakt_handler, user_slug, slug)
+                if items is None:
+                    log(f"[Orac] No items received for list '{slug}'", level=LOGERROR)
                     continue
-                if items_resp.status_code == 200:
-                    lst["items"] = items_resp.json()
-                else:
-                    log(f"[Orac] Failed to fetch items for list '{slug}': {items_resp.status_code}", level=LOGWARNING)
-                    lst["items"] = []
+                lst["items"] = items
+                log(f"[Orac] Fetched {len(items)} total items for my list '{slug}'", level=LOGINFO)
 
                 enriched_lists.append(lst)
 
@@ -740,16 +774,13 @@ async def get_liked_trakt_lists(trakt_handler, lists_db_path, lists_library_sett
                 continue
             lists_updated_at = get_local_list_updated_at(lists_db_path, list_id) or ""
             if force_sync or last_activity_str > lists_updated_at:
-                path = f"/users/{user_slug}/lists/{slug}/items?extended=full&limit=1000"
-                items_resp = await trakt_handler.get(path)
-                if items_resp is None:
-                    log(f"[Orac] No response received when fetching items for list '{slug}'", level=LOGERROR)
+
+                items = await _fetch_all_list_items(trakt_handler, user_slug, slug)
+                if items is None:
+                    log(f"[Orac] No items received for liked list '{slug}'", level=LOGERROR)
                     continue
-                if items_resp.status_code == 200:
-                    lst["items"] = items_resp.json()
-                else:
-                    log(f"[Orac] Failed to fetch items for list '{slug}': {items_resp.status_code}", level=LOGWARNING)
-                    lst["items"] = []
+                lst["items"] = items
+                log(f"[Orac] Fetched {len(items)} total items for liked list '{slug}'", level=LOGINFO)
 
                 enriched_lists.append(lst)
 
