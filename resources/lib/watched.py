@@ -362,6 +362,27 @@ def update_next_episode(
             else:
                 show_trakt_id = row[0]
 
+            # If show is in DB but has no valid Trakt ID, try to resolve it now
+            if show_trakt_id is None or (isinstance(show_trakt_id, int) and show_trakt_id < 0):
+                log(f"[Orac] Show {show_tmdb_id} is in static DB but missing a valid Trakt ID. Attempting to resolve on-the-fly...", level=LOGINFO)
+                try:
+                    url = f"/search/tmdb/{int(show_tmdb_id)}?type=show"
+                    response = trakt_handler._get(url)
+                    if response.status_code == 200:
+                        search_results = response.json()
+                        if search_results and isinstance(search_results, list) and len(search_results) > 0:
+                            show_details = search_results[0].get("show", {})
+                            resolved_trakt_id = show_details.get("ids", {}).get("trakt")
+                            if resolved_trakt_id:
+                                show_trakt_id = resolved_trakt_id
+                                static_cursor.execute("""
+                                    UPDATE shows SET show_trakt_id = ? WHERE show_tmdb_id = ?
+                                """, (show_trakt_id, int(show_tmdb_id)))
+                                static_conn.commit()
+                                log(f"[Orac] Successfully resolved and backfilled Trakt ID {show_trakt_id} for show {show_tmdb_id}", level=LOGINFO)
+                except Exception as e:
+                    log(f"[Orac] Error resolving Trakt ID for show {show_tmdb_id}: {e}", level=LOGERROR)
+
 
 
             # Step 1: Find the episode ids
@@ -732,6 +753,27 @@ def mark_tvshow_watched(static_db_path, dynamic_db_path, trakt_queue_path, trakt
                 log(f"[Orac] Successfully added show {show_tmdb_id} and its seasons/episodes to static DB", level=LOGINFO)
             else:
                 show_trakt_id = row[0]
+
+            # If show is in DB but has no valid Trakt ID, try to resolve it now
+            if show_trakt_id is None or (isinstance(show_trakt_id, int) and show_trakt_id < 0):
+                log(f"[Orac] Show {show_tmdb_id} is in static DB but missing a valid Trakt ID. Attempting to resolve on-the-fly...", level=LOGINFO)
+                try:
+                    url = f"/search/tmdb/{int(show_tmdb_id)}?type=show"
+                    response = trakt_handler._get(url)
+                    if response.status_code == 200:
+                        search_results = response.json()
+                        if search_results and isinstance(search_results, list) and len(search_results) > 0:
+                            show_details = search_results[0].get("show", {})
+                            resolved_trakt_id = show_details.get("ids", {}).get("trakt")
+                            if resolved_trakt_id:
+                                show_trakt_id = resolved_trakt_id
+                                static_cursor.execute("""
+                                    UPDATE shows SET show_trakt_id = ? WHERE show_tmdb_id = ?
+                                """, (show_trakt_id, int(show_tmdb_id)))
+                                static_conn.commit()
+                                log(f"[Orac] Successfully resolved and backfilled Trakt ID {show_trakt_id} for show {show_tmdb_id}", level=LOGINFO)
+                except Exception as e:
+                    log(f"[Orac] Error resolving Trakt ID for show {show_tmdb_id}: {e}", level=LOGERROR)
 
             # Step 2: Fetch all episodes for this show from static DB
             static_cursor.execute("""
