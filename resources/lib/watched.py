@@ -410,12 +410,15 @@ def update_next_episode(
             # Put an entry in the queue to update trakt
             if percent_watched is None:
                 percent_watched = 100
-            payload = {"update_type": "watched_episode", "season": season, "episode": episode, "tmdb_id": episode_tmdb_id, "episode_trakt_id": episode_trakt_id, "percent_watched": percent_watched}
-            trakt_queue_cursor.execute("""
-                INSERT INTO update_queue (trakt_id, update_type, payload, status, media_type)
-                VALUES (?, ?, ?, 'pending', ?)
-            """, (show_trakt_id, 'watched_episode', json.dumps(payload), 'episode'))
-            trakt_queue_conn.commit()
+            if show_trakt_id is not None and (not isinstance(show_trakt_id, int) or show_trakt_id >= 0):
+                payload = {"update_type": "watched_episode", "season": season, "episode": episode, "tmdb_id": episode_tmdb_id, "episode_trakt_id": episode_trakt_id, "percent_watched": percent_watched}
+                trakt_queue_cursor.execute("""
+                    INSERT INTO update_queue (trakt_id, update_type, payload, status, media_type)
+                    VALUES (?, ?, ?, 'pending', ?)
+                """, (show_trakt_id, 'watched_episode', json.dumps(payload), 'episode'))
+                trakt_queue_conn.commit()
+            else:
+                log(f"[Orac] Skipping Trakt sync queue for show {show_tmdb_id} (no valid Trakt ID available)", level=LOGINFO)
 
 
             dynamic_conn.commit()
@@ -767,10 +770,13 @@ def mark_tvshow_watched(static_db_path, dynamic_db_path, trakt_queue_path, trakt
                         "episode_trakt_id": ep_trakt_id,
                         "percent_watched": percent_watched
                     }
-                    trakt_queue_cursor.execute("""
-                        INSERT INTO update_queue (trakt_id, update_type, payload, status, media_type)
-                        VALUES (?, ?, ?, 'pending', ?)
-                    """, (show_trakt_id, 'watched_episode', json.dumps(payload), 'episode'))
+                    if show_trakt_id is not None and (not isinstance(show_trakt_id, int) or show_trakt_id >= 0):
+                        trakt_queue_cursor.execute("""
+                            INSERT INTO update_queue (trakt_id, update_type, payload, status, media_type)
+                            VALUES (?, ?, ?, 'pending', ?)
+                        """, (show_trakt_id, 'watched_episode', json.dumps(payload), 'episode'))
+                    else:
+                        log(f"[Orac] Skipping Trakt sync queue for show {show_tmdb_id} (no valid Trakt ID available)", level=LOGINFO)
 
             # Step 4: Update show's parent status
             _update_show_watched_status(dynamic_cursor, static_cursor, username, show_tmdb_id)
@@ -819,16 +825,18 @@ def drop_tvshow(static_db_path, dynamic_db_path, trakt_queue_path, trakt_handler
             static_conn.commit()
 
             # Step 3: Queue Trakt update
-            payload = {
-                "update_type": "drop_show",
-                "shows": [{"ids": {"trakt": show_trakt_id}}]
-            }
-            trakt_queue_cursor.execute("""
-                INSERT INTO update_queue (trakt_id, update_type, payload, status, media_type)
-                VALUES (?, ?, ?, 'pending', ?)
-            """, (show_trakt_id, 'drop_show', json.dumps(payload), 'show'))
-
-            trakt_queue_conn.commit()
+            if show_trakt_id is not None and (not isinstance(show_trakt_id, int) or show_trakt_id >= 0):
+                payload = {
+                    "update_type": "drop_show",
+                    "shows": [{"ids": {"trakt": show_trakt_id}}]
+                }
+                trakt_queue_cursor.execute("""
+                    INSERT INTO update_queue (trakt_id, update_type, payload, status, media_type)
+                    VALUES (?, ?, ?, 'pending', ?)
+                """, (show_trakt_id, 'drop_show', json.dumps(payload), 'show'))
+                trakt_queue_conn.commit()
+            else:
+                log(f"[Orac] Skipping Trakt drop show sync for show {show_tmdb_id} (no valid Trakt ID available)", level=LOGINFO)
             log(f"[Orac] Successfully marked TV show {show_tmdb_id} as dropped", level=LOGINFO)
 
             # Note: The actual API push to Simkl and Trakt happens in the queue worker or sync engine.
