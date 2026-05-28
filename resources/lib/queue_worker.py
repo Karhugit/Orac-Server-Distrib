@@ -313,6 +313,14 @@ class UpdateQueueWorker:
                         log(f"[Queue] Simkl drop request failed: {e}", level=LOGERROR)
 
 
+    # Slugs that map to Trakt's dedicated /sync/collection endpoint.
+    # Trakt renamed "Collection" to "Library" in the UI but the API is unchanged.
+    # We accept all reasonable slug variants so UI label changes don't break things.
+    _COLLECTION_SLUGS = {
+        "collection", "collection-movies", "collection-shows",
+        "library",    "library-movies",    "library-shows",
+    }
+
     def add_to_list_trakt(self, row):
         list_id = row['payload'].get('list_name')
         tmdb_id = row['payload'].get('tmdb_id')
@@ -339,13 +347,17 @@ class UpdateQueueWorker:
             self._mark_status(row['id'], 'failed')
             return
 
-        # The watchlist has a different endpoint from custom lists.
+        # Route to the correct Trakt endpoint based on the slug.
         if slug == 'watchlist':
             endpoint = "/sync/watchlist"
             log(f"[Queue] Adding {media_type} with TMDb ID {tmdb_id} to watchlist")
         elif slug == 'favorites':
             endpoint = "/sync/favorites"
             log(f"[Queue] Adding {media_type} with TMDb ID {tmdb_id} to favorites")
+        elif slug in self._COLLECTION_SLUGS:
+            # Trakt's collection/library is a dedicated sync endpoint, not a custom list.
+            endpoint = "/sync/collection"
+            log(f"[Queue] Adding {media_type} with TMDb ID {tmdb_id} to collection/library (slug='{slug}')")
         else:
             endpoint = f"/users/me/lists/{slug}/items"
             log(f"[Queue] Adding {media_type} with TMDb ID {tmdb_id} to list '{list_id}'")
@@ -384,13 +396,16 @@ class UpdateQueueWorker:
             self._mark_status(row['id'], 'failed')
             return
 
-        # The watchlist has a different endpoint from custom lists.
+        # Route to the correct Trakt endpoint based on the slug.
         if slug == 'watchlist':
             endpoint = "/sync/watchlist/remove"
             log(f"[Queue] Removing {media_type} with TMDb ID {tmdb_id} from watchlist")
         elif slug == 'favorites':
             endpoint = "/sync/favorites/remove"
             log(f"[Queue] Removing {media_type} with TMDb ID {tmdb_id} from favorites")
+        elif slug in self._COLLECTION_SLUGS:
+            endpoint = "/sync/collection/remove"
+            log(f"[Queue] Removing {media_type} with TMDb ID {tmdb_id} from collection/library (slug='{slug}')")
         else:
             endpoint = f"/users/me/lists/{slug}/items/remove"
             log(f"[Queue] Removing {media_type} with TMDb ID {tmdb_id} from list '{list_id}'")

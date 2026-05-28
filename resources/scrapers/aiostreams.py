@@ -7,6 +7,40 @@ import requests
 import re
 from resources.scrapers import source_utils
 from resources.scrapers.thread_manager_opt import ConcurrentScraperBase
+try:
+    from resources.lib.config_loader import OracConfig
+    _config = OracConfig()
+    _AIOSTREAMS_USER_DATA = _config.config.get('AIOSTREAMS', {}).get('user_data_header', None)
+except Exception:
+    _AIOSTREAMS_USER_DATA = None
+
+# Fallback hardcoded header – used when config.json has no AIOSTREAMS.user_data_header.
+# Run generate_aiostreams_header.py (in the project root) to regenerate and write
+# a new value to config.json instead of editing this string by hand.
+_AIOSTREAMS_USER_DATA_FALLBACK = (
+    'ewogICJwcmVzZXRzIjogWwogICAgewogICAgICAidHlwZSI6ICJ0b3JyZW50aW8iLAogICAgICAiaW5zd'
+    'GFuY2VJZCI6ICJ0aW8xIiwKICAgICAgImVuYWJsZWQiOiB0cnVlLAogICAgICAib3B0aW9ucyI6IHsKIC'
+    'AgICAgICAibmFtZSI6ICJUb3JyZW50aW8iLAogICAgICAgICJ0aW1lb3V0IjogNjUwMCwKICAgICAgICAi'
+    'cmVzb3VyY2VzIjogWyJzdHJlYW0iXSwKICAgICAgICAic29ydCI6ICJxdWFsaXR5IgogICAgICB9CiAgIC'
+    'B9LAogICAgewogICAgICAidHlwZSI6ICJjb21ldCIsCiAgICAgICJpbnN0YW5jZUlkIjogImNtdDEiLAog'
+    'ICAgICAiZW5hYmxlZCI6IHRydWUsCiAgICAgICJvcHRpb25zIjogewogICAgICAgICJuYW1lIjogIkNvbW'
+    'V0IiwKICAgICAgICAidGltZW91dCI6IDY1MDAsCiAgICAgICAgInJlc291cmNlcyI6IFsic3RyZWFtIl0s'
+    'CiAgICAgICAgImluY2x1ZGVQMlAiOiB0cnVlLAogICAgICAgICJyZW1vdmVUcmFzaCI6IGZhbHNlCiAgIC'
+    'AgIH0KICAgIH0sCiAgICB7CiAgICAgICJ0eXBlIjogIm1lZGlhZnVzaW9uIiwKICAgICAgImluc3RhbmNl'
+    'SWQiOiAibWYxIiwKICAgICAgImVuYWJsZWQiOiB0cnVlLAogICAgICAib3B0aW9ucyI6IHsKICAgICAgIC'
+    'AibmFtZSI6ICJNZWRpYUZ1c2lvbiIsCiAgICAgICAgInRpbWVvdXQiOiA2NTAwLAogICAgICAgICJyZXNv'
+    'dXJjZXMiOiBbInN0cmVhbSJdLAogICAgICAgICJ1c2VDYWNoZWRSZXN1bHRzT25seSI6IGZhbHNlLAogIC'
+    'AgICAgICJlbmFibGVXYXRjaGxpc3RDYXRhbG9ncyI6IGZhbHNlLAogICAgICAgICJkb3dubG9hZFZpYUJy'
+    'b3dzZXIiOiBmYWxzZSwKICAgICAgICAiY29udHJpYnV0b3JTdHJlYW1zIjogZmFsc2UsCiAgICAgICAgIm'
+    'NlcnRpZmljYXRpb25MZXZlbHNGaWx0ZXIiOiBbXSwKICAgICAgICAibnVkaXR5RmlsdGVyIjogW10KICAg'
+    'ICAgfQogICAgfQogIF0sAogICJmb3JtYXR0ZXIiOiB7CiAgICAiaWQiOiAidG9ycmVudGlvIiwKICAgICJk'
+    'ZWZpbml0aW9uIjogeyJuYW1lIjogIiIsICJkZXNjcmlwdGlvbiI6ICIifQogIH0sCiAgInNvcnRDcml0ZX'
+    'JpYSI6IHsiZ2xvYmFsIjogW119LAogICJkZWR1cGxpY2F0b3IiOiB7CiAgICAiZW5hYmxlZCI6IGZhbHNl'
+    'LAogICAgImtleXMiOiBbImZpbGVuYW1lIiwgImluZm9IYXNoIl0sCiAgICAibXVsdGlHcm91cEJlaGF2aW91'
+    'ciI6ICJhZ2dyZXNzaXZlIiwKICAgICJjYWNoZWQiOiAic2luZ2xlX3Jlc3VsdCIsCiAgICAidW5jYWNoZWQi'
+    'OiAicGVyX3NlcnZpY2UiLAogICAgInAycCI6ICJzaW5nbGVfcmVzdWx0IiwKICAgICJleGNsdWRlQWRkb25z'
+    'IjogW10KICB9Cn0='
+)
 
 
 class source:
@@ -89,10 +123,22 @@ class source:
 				params = {'type': 'movie', 'id': '%s' % imdb}
 			
 			if 'timeout' in data: self.timeout = int(data['timeout'])
-			results = requests.get(url, params=params, auth=self.auth, timeout=self.timeout)
-			if not results.ok: results.raise_for_status()
-			
-			items = results.json()['data']['results']
+			results = requests.get(url, params=params, headers=self._headers(), timeout=self.timeout)
+			response_json = results.json()
+			response_data = response_json.get('data')
+			if not response_data:
+				# AIOStreams returns {"data": null} when no configured presets
+				# return results for this title (e.g. content not in debrid cache).
+				# This is not an error — just no results available.
+				import logging
+				logging.getLogger('orac').debug(
+					'AIOSTREAMS - empty data for %s (status=%s, keys=%s)',
+					params, results.status_code, list(response_json.keys())
+				)
+				return sources
+			files = response_data.get('results', [])
+			if files is None:
+				return sources
 			undesirables = source_utils.get_undesirables()
 			check_foreign_audio = source_utils.check_foreign_audio()
 		except Exception as e:
@@ -101,13 +147,15 @@ class source:
 			source_utils.scraper_error('AIOSTREAMS')
 			return sources
 
-		for item in items:
+
+		for file in files:
 			try:
-				if 'p2p' in item.get('type', ''): continue
+				if 'p2p' in file.get('type', ''): continue
 				
 				# Flatten parsedFile fields as per client logic
-				file = {**item.pop('parsedFile', {})}
-				file.update(item)
+				parsed = {**file.pop('parsedFile', {})}
+				parsed.update(file)
+				file = parsed
 				
 				package, episode_start = None, 0
 				hash = file.get('infoHash')
@@ -162,6 +210,9 @@ class source:
 				source_utils.scraper_error('AIOSTREAMS')
 		return sources
 
+	def _headers(self):
+		value = _AIOSTREAMS_USER_DATA or _AIOSTREAMS_USER_DATA_FALLBACK
+		return {'x-aiostreams-user-data': value}
 
 class AIOStreamsService(ConcurrentScraperBase):
     """

@@ -20,6 +20,7 @@ from resources.lib.list_handler import handle_list_request, add_to_list, remove_
 from resources.lib.reload_handler import clear_databases
 from resources.lib.queue_worker import UpdateQueueWorker
 from resources.lib.trakt_maintenance_worker import TraktMaintenanceWorker
+from resources.lib.stale_episode_refresh import StaleEpisodeRefreshWorker
 from resources.lib.db_sync_manager import sync_lists_and_items
 from resources.lib.episodes_handler import get_next_episodes
 from resources.lib.watched import update_next_episode, mark_movie_watched, mark_tvshow_watched, drop_tvshow
@@ -37,6 +38,7 @@ from .internal_indexing import add_internal_index, del_internal_index, get_inter
 from .scrape_handler import handle_scrape_request
 from .tags_handler import get_all_tags, get_tags_for_item, add_tag_to_item, remove_tag_from_item, get_items_with_tag
 from .collections_handler import handle_collections_request
+from .providers_handler import init_watch_providers_db, sync_watch_providers, get_watch_providers
 
 def _vacuum_database(db_path, db_manager=None):
     if not db_path:
@@ -132,8 +134,36 @@ def app_factory(
             application.state.trakt_maintenance_worker = None
             log("[Orac] Trakt maintenance worker skipped (no history_sync_db_path).", level=LOGWARNING)
 
-        # Background sync loop
+        # Stale episode metadata refresh worker
+        stale_refresh_worker = StaleEpisodeRefreshWorker(
+            tmdb_handler=application.state.tmdb_handler,
+            tvshows_static_db_path=application.state.tvshows_static_db_path,
+            trakt_handler=application.state.trakt_handler,
+            refresh_interval=86400,   # 24-hour cycle
+            batch_size=100,
+            startup_delay=120,        # wait 2 min after startup before first pass
+        )
+        application.state.stale_refresh_worker = stale_refresh_worker
+        stale_refresh_worker.start()
+        log("[Orac] Stale episode refresh worker started.", level=LOGINFO)
+
+        # Watch-provider catalogue — init schema then do first sync (global, no region filter)
+        init_watch_providers_db(application.state.config_db_path)
+        import threading as _threading
+        _prov_thread = _threading.Thread(
+            target=sync_watch_providers,
+            args=(application.state.tmdb_handler, application.state.config_db_path),
+            daemon=True,
+            name="ProviderSync",
+        )
+        _prov_thread.start()
+        log("[Orac] Watch-provider sync started (global).", level=LOGINFO)
+
+        # Background sync loop — runs every hour; also re-syncs providers daily
+        _provider_sync_counter = 0
+
         async def hourly_sync_loop():
+            nonlocal _provider_sync_counter
             while True:
                 try:
                     current_username = get_trakt_user(config_db_path=application.state.config_db_path)
@@ -154,13 +184,29 @@ def app_factory(
                     )
                 except Exception as e:
                     log(f"[Orac] Error in hourly sync loop: {e}", level=LOGERROR)
+
+                # Re-sync providers every 24 loops (~24 hours)
+                _provider_sync_counter += 1
+                if _provider_sync_counter >= 24:
+                    _provider_sync_counter = 0
+                    try:
+                        sync_watch_providers(
+                            application.state.tmdb_handler,
+                            application.state.config_db_path,
+                        )
+                    except Exception as e:
+                        log(f"[Orac] Provider re-sync error: {e}", level=LOGERROR)
+
                 await asyncio.sleep(3600)
+
         
         sync_task = asyncio.create_task(hourly_sync_loop())
         yield
         sync_task.cancel()
         if application.state.trakt_maintenance_worker:
             application.state.trakt_maintenance_worker.stop()
+        if application.state.stale_refresh_worker:
+            application.state.stale_refresh_worker.stop()
         log("[Orac] Setup teardown complete", level=LOGINFO)
 
     app = FastAPI(lifespan=lifespan)
@@ -404,6 +450,18 @@ def app_factory(
              return PlainTextResponse("Missing keyword or item_type", status_code=400)
         keywords = app.state.tmdb_handler.get_keywords(keyword, item_type)
         return JSONResponse(status_code=200, content={"success": True, "keywords": keywords})
+
+    @app.get("/providers")
+    async def providers_route(request: Request):
+        """Returns the TMDB watch-provider catalogue stored in the config DB.
+
+        Query params:
+            media_type  — 'movie', 'tv', or omit for all providers
+        """
+        query = parse_qs_fastapi(request)
+        media_type = query.get("media_type", [None])[0]
+        providers = get_watch_providers(app.state.config_db_path, media_type)
+        return JSONResponse(status_code=200, content={"success": True, "providers": providers})
 
     @app.get("/force_sync")
     async def force_sync(request: Request):

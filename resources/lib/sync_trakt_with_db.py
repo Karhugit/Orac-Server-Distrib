@@ -500,11 +500,11 @@ def normalize_custom_lists(raw_lists: list, user: str, owned_by_user: bool) -> l
     return normalized
 
 
-async def _fetch_all_list_items(trakt_handler, user_slug, slug, page_size=1000):
+async def _fetch_all_list_items(trakt_handler, user_slug, slug, page_size=250):
     """
     Fetches ALL items from a Trakt custom list, handling pagination transparently.
-    Trakt caps a single response at 1000 items; lists larger than that require
-    multiple requests using the ?page= parameter.
+    Trakt caps a single response at 250 items (June 2026 hard limit); lists larger
+    than that require multiple requests using the ?page= parameter.
     Returns a flat list of all items across all pages.
     """
     all_items = []
@@ -541,29 +541,50 @@ async def _fetch_all_list_items(trakt_handler, user_slug, slug, page_size=1000):
 
 async def get_trakt_collection_movies(trakt_handler):
     try:
-        collection_resp = await trakt_handler.get("/users/me/collection/movies")
-        if collection_resp is None:
-            log(f"[Orac] No response received when fetching collection movies", level=LOGERROR)
-            return None
-        if collection_resp.status_code != 200:
-            log(f"[Orac] Failed to fetch collection movies: {collection_resp.status_code}", level=LOGWARNING)
-            return None
-        return collection_resp.json()
+        all_items = []
+        page = 1
+        while True:
+            collection_resp = await trakt_handler.get(
+                f"/users/me/collection/movies?limit=250&page={page}"
+            )
+            if collection_resp is None:
+                log(f"[Orac] No response received when fetching collection movies page {page}", level=LOGERROR)
+                break
+            if collection_resp.status_code != 200:
+                log(f"[Orac] Failed to fetch collection movies: {collection_resp.status_code}", level=LOGWARNING)
+                break
+            page_items = collection_resp.json()
+            all_items.extend(page_items)
+            total_pages = int(collection_resp.headers.get("X-Pagination-Page-Count", 1))
+            if page >= total_pages:
+                break
+            page += 1
+        return all_items if all_items else None
     except Exception as e:
         log(f"[Orac] Error fetching Trakt collection movies: {e}", level=LOGERROR)
         return None
 
 async def get_trakt_collection_tvshows(trakt_handler):
     try:
-        collection_resp = await trakt_handler.get("/users/me/collection/shows")
-    
-        if collection_resp is None:
-            log(f"[Orac] No response received when fetching collection tvshows", level=LOGERROR)
-            return None
-        if collection_resp.status_code != 200:
-            log(f"[Orac] Failed to fetch collection tvshows: {collection_resp.status_code}", level=LOGWARNING)
-            return None
-        return collection_resp.json()
+        all_items = []
+        page = 1
+        while True:
+            collection_resp = await trakt_handler.get(
+                f"/users/me/collection/shows?limit=250&page={page}"
+            )
+            if collection_resp is None:
+                log(f"[Orac] No response received when fetching collection tvshows page {page}", level=LOGERROR)
+                break
+            if collection_resp.status_code != 200:
+                log(f"[Orac] Failed to fetch collection tvshows: {collection_resp.status_code}", level=LOGWARNING)
+                break
+            page_items = collection_resp.json()
+            all_items.extend(page_items)
+            total_pages = int(collection_resp.headers.get("X-Pagination-Page-Count", 1))
+            if page >= total_pages:
+                break
+            page += 1
+        return all_items if all_items else None
     except Exception as e:
         log(f"[Orac] Error fetching Trakt collection tvshows: {e}", level=LOGERROR)
         return None

@@ -1,32 +1,53 @@
 from resources.lib.log_utils import log, LOGERROR, LOGINFO, LOGWARNING
 
+PAGE_SIZE = 250  # June 2026 Trakt hard limit per paginated response
 
 async def get_trakt_watchlist(trakt_handler):
     try:
-#        log("[Orac] Fetching Trakt watchlist...", level=LOGINFO)
-        watchlist_resp = await trakt_handler.get("/users/me/watchlist?extended=full")
-        if watchlist_resp is None:
-            log(f"[Orac] No response received when fetching watchlist", level=LOGERROR)
-            return None
-        if watchlist_resp.status_code != 200:
-            log(f"[Orac] Failed to fetch watchlist: {watchlist_resp.status_code}", level=LOGWARNING)
-            return None
-        return watchlist_resp.json()
+        all_items = []
+        page = 1
+        while True:
+            watchlist_resp = await trakt_handler.get(
+                f"/users/me/watchlist?extended=full&limit={PAGE_SIZE}&page={page}"
+            )
+            if watchlist_resp is None:
+                log(f"[Orac] No response received when fetching watchlist page {page}", level=LOGERROR)
+                break
+            if watchlist_resp.status_code != 200:
+                log(f"[Orac] Failed to fetch watchlist: {watchlist_resp.status_code}", level=LOGWARNING)
+                break
+            page_items = watchlist_resp.json()
+            all_items.extend(page_items)
+            total_pages = int(watchlist_resp.headers.get("X-Pagination-Page-Count", 1))
+            if page >= total_pages:
+                break
+            page += 1
+        return all_items if all_items else None
     except Exception as e:
         log(f"[Orac] Error fetching Trakt watchlist: {e}", level=LOGERROR)
         return None
     
 async def get_trakt_favorites(trakt_handler):
     try:
-#        log("[Orac] Fetching Trakt favorites...", level=LOGINFO)
-        favorites_resp = await trakt_handler.get("/users/me/favorites?extended=full")
-        if favorites_resp is None:
-            log(f"[Orac] No response received when fetching favorites", level=LOGERROR)
-            return None
-        if favorites_resp.status_code != 200:
-            log(f"[Orac] Failed to fetch favorites: {favorites_resp.status_code}", level=LOGWARNING)
-            return None
-        return favorites_resp.json()
+        all_items = []
+        page = 1
+        while True:
+            favorites_resp = await trakt_handler.get(
+                f"/users/me/favorites?extended=full&limit={PAGE_SIZE}&page={page}"
+            )
+            if favorites_resp is None:
+                log(f"[Orac] No response received when fetching favorites page {page}", level=LOGERROR)
+                break
+            if favorites_resp.status_code != 200:
+                log(f"[Orac] Failed to fetch favorites: {favorites_resp.status_code}", level=LOGWARNING)
+                break
+            page_items = favorites_resp.json()
+            all_items.extend(page_items)
+            total_pages = int(favorites_resp.headers.get("X-Pagination-Page-Count", 1))
+            if page >= total_pages:
+                break
+            page += 1
+        return all_items if all_items else None
     except Exception as e:
         log(f"[Orac] Error fetching Trakt favorites: {e}", level=LOGERROR)
         return None

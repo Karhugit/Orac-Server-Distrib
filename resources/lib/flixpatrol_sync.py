@@ -162,7 +162,7 @@ class FlixPatrolSync:
                 seen = set()
                 for item in items:
                     # HTML unescape just in case
-                    item = item.replace('&amp;', '&').replace('&#39;', "'")
+                    item = item.replace('&amp;', '&').replace('&#39;', "'").replace('&apos;', "'")
                     if item not in seen:
                         clean_items.append(item)
                         seen.add(item)

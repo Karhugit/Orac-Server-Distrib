@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 trakt_maintenance_worker.py
 ===========================

@@ -2,11 +2,11 @@
     "ORAC_ENV": "LOCAL",
     "ORAC_LOG_FILE": "TRUE",
     "TRAKT": {
-        "client_id": "YOUR_TRAKT_CLIENT_ID",
-        "client_secret": "YOUR_TRAKT_CLIENT_SECRET"
+        "client_id": "f986871799a140dc20a166adfa637c98c8fa474dc80757aabad8668b99e184de",
+        "client_secret": "579a93101ccf4cb251884dc1d632d74c3b3f34d275cee59d56e82cac31161f71"
     },
     "TMDB": {
-        "api_key": "YOUR_TMDB_API_KEY"
+        "api_key": "872d408b3d926ebb32f84f5167764cc3"
     },
     "SERVER": {
         "port": 5555

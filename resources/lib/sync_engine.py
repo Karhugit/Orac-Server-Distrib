@@ -106,29 +106,95 @@ async def sync_providers(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, c
     log("[Sync Engine] Starting dual-provider ingestion...", level=LOGINFO)
     
     # 1. Fetch Trakt
+    PAGE_SIZE = 250  # June 2026 hard limit per paginated response
     trakt_movies = {}
     trakt_shows = {}
+
+    # Timestamps from last_activities that we'll persist after a successful sync
+    _movies_watched_at = None
+    _episodes_watched_at = None
+
     if trakt_handler:
         try:
-             t_movies_resp = await trakt_handler.get("/sync/watched/movies")
-             t_movies = t_movies_resp.json() if t_movies_resp and t_movies_resp.status_code == 200 else []
-             for m in t_movies:
-                 tmdb_id = str(m.get('movie', {}).get('ids', {}).get('tmdb'))
-                 if tmdb_id != "None":
-                     trakt_movies[tmdb_id] = m.get('last_watched_at')
-                     
-             t_shows_resp = await trakt_handler.get("/sync/watched/shows")
-             t_shows = t_shows_resp.json() if t_shows_resp and t_shows_resp.status_code == 200 else []
-             for s in t_shows:
-                 show_tmdb_id = str(s.get('show', {}).get('ids', {}).get('tmdb'))
-                 if show_tmdb_id != "None":
-                     trakt_shows[show_tmdb_id] = {}
-                     for season in s.get('seasons', []):
-                         season_num = season.get('number')
-                         for ep in season.get('episodes', []):
-                             ep_num = ep.get('number')
-                             key = f"{season_num}_{ep_num}"
-                             trakt_shows[show_tmdb_id][key] = ep.get('last_watched_at')
+            # --- Check last_activities to skip fetches when nothing has changed ---
+            fetch_movies = True
+            fetch_shows = True
+
+            if config_db_path:
+                from resources.lib.config_handler import get_config_value
+                la_resp = await trakt_handler.get("/sync/last_activities")
+                if la_resp and la_resp.status_code == 200:
+                    la_data = la_resp.json()
+                    _movies_watched_at   = la_data.get("movies",   {}).get("watched_at", "")
+                    _episodes_watched_at = la_data.get("episodes", {}).get("watched_at", "")
+
+                    local_movies_at   = get_config_value("trakt_movies_watched_synced_at",   config_db_path, "")
+                    local_episodes_at = get_config_value("trakt_episodes_watched_synced_at", config_db_path, "")
+
+                    if _movies_watched_at and _movies_watched_at <= local_movies_at:
+                        log("[Sync Engine] Trakt movie watched history unchanged — skipping fetch.", level=LOGINFO)
+                        fetch_movies = False
+
+                    if _episodes_watched_at and _episodes_watched_at <= local_episodes_at:
+                        log("[Sync Engine] Trakt episode watched history unchanged — skipping fetch.", level=LOGINFO)
+                        fetch_shows = False
+                else:
+                    log("[Sync Engine] Could not fetch last_activities; proceeding with full watched sync.", level=LOGWARNING)
+
+            # --- Fetch watched movies (paginated) ---
+            if fetch_movies:
+                page = 1
+                while True:
+                    t_movies_resp = await trakt_handler.get(
+                        f"/sync/watched/movies?limit={PAGE_SIZE}&page={page}"
+                    )
+                    if not t_movies_resp or t_movies_resp.status_code != 200:
+                        log(f"[Sync Engine] Trakt watched/movies page {page} failed: "
+                            f"{t_movies_resp.status_code if t_movies_resp else 'no response'}",
+                            level=LOGWARNING)
+                        break
+                    t_movies = t_movies_resp.json()
+                    for m in t_movies:
+                        tmdb_id = str(m.get('movie', {}).get('ids', {}).get('tmdb'))
+                        if tmdb_id != "None":
+                            trakt_movies[tmdb_id] = m.get('last_watched_at')
+                    total_pages = int(t_movies_resp.headers.get("X-Pagination-Page-Count", 1))
+                    log(f"[Sync Engine] Trakt watched/movies page {page}/{total_pages} "
+                        f"({len(t_movies)} items)", level=LOGDEBUG)
+                    if page >= total_pages:
+                        break
+                    page += 1
+
+            # --- Fetch watched shows (paginated) ---
+            if fetch_shows:
+                page = 1
+                while True:
+                    t_shows_resp = await trakt_handler.get(
+                        f"/sync/watched/shows?limit={PAGE_SIZE}&page={page}"
+                    )
+                    if not t_shows_resp or t_shows_resp.status_code != 200:
+                        log(f"[Sync Engine] Trakt watched/shows page {page} failed: "
+                            f"{t_shows_resp.status_code if t_shows_resp else 'no response'}",
+                            level=LOGWARNING)
+                        break
+                    t_shows = t_shows_resp.json()
+                    for s in t_shows:
+                        show_tmdb_id = str(s.get('show', {}).get('ids', {}).get('tmdb'))
+                        if show_tmdb_id != "None":
+                            if show_tmdb_id not in trakt_shows:
+                                trakt_shows[show_tmdb_id] = {}
+                            for season in s.get('seasons', []):
+                                season_num = season.get('number')
+                                for ep in season.get('episodes', []):
+                                    ep_num = ep.get('number')
+                                    key = f"{season_num}_{ep_num}"
+                                    trakt_shows[show_tmdb_id][key] = ep.get('last_watched_at')
+                    total_pages = int(t_shows_resp.headers.get("X-Pagination-Page-Count", 1))
+                    log(f"[Sync Engine] Trakt watched/shows page {page}/{total_pages} "
+                        f"({len(t_shows)} items)", level=LOGDEBUG)
+                    if page >= total_pages:
+                        break
+                    page += 1
 
         except Exception as e:
              log(f"[Sync Engine] Trakt fetch error: {e}", level=LOGERROR)
@@ -149,6 +215,20 @@ async def sync_providers(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, c
     # 5. Reconcile shows
     reconcile_shows(tvshows_dynamic_db, trakt_shows, simkl_shows, mdblist_shows)
 
+    # 6. Persist the last_activities timestamps so future syncs can skip unchanged data
+    if config_db_path and trakt_handler:
+        try:
+            from resources.lib.config_handler import update_config_values
+            updates = {}
+            if _movies_watched_at:
+                updates["trakt_movies_watched_synced_at"] = _movies_watched_at
+            if _episodes_watched_at:
+                updates["trakt_episodes_watched_synced_at"] = _episodes_watched_at
+            if updates:
+                update_config_values(updates, config_db_path)
+                log(f"[Sync Engine] Stored last_activities timestamps: movies={_movies_watched_at}, episodes={_episodes_watched_at}", level=LOGDEBUG)
+        except Exception as e:
+            log(f"[Sync Engine] Failed to persist last_activities timestamps: {e}", level=LOGWARNING)
 
 def reconcile_movies(db_path, trakt_data, simkl_data, mdblist_data):
     log("[Sync Engine] Reconciling and flagging movies...", level=LOGINFO)
