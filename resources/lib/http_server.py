@@ -39,6 +39,8 @@ from .scrape_handler import handle_scrape_request
 from .tags_handler import get_all_tags, get_tags_for_item, add_tag_to_item, remove_tag_from_item, get_items_with_tag
 from .collections_handler import handle_collections_request
 from .providers_handler import init_watch_providers_db, sync_watch_providers, get_watch_providers
+from .version import __version__
+from .update_checker import check_for_update, get_update_state
 
 def _vacuum_database(db_path, db_manager=None):
     if not db_path:
@@ -159,11 +161,18 @@ def app_factory(
         _prov_thread.start()
         log("[Orac] Watch-provider sync started (global).", level=LOGINFO)
 
-        # Background sync loop — runs every hour; also re-syncs providers daily
+        # Startup update check — runs in background so it never delays startup
+        import threading as _threading
+        log(f"[Orac] Orac Server v{__version__} starting up.", level=LOGINFO)
+        _threading.Thread(target=check_for_update, daemon=True, name="UpdateCheck").start()
+
+        # Background sync loop — runs every hour; also re-syncs providers and
+        # checks for updates daily
         _provider_sync_counter = 0
+        _update_check_counter = 0
 
         async def hourly_sync_loop():
-            nonlocal _provider_sync_counter
+            nonlocal _provider_sync_counter, _update_check_counter
             while True:
                 try:
                     current_username = get_trakt_user(config_db_path=application.state.config_db_path)
@@ -196,6 +205,12 @@ def app_factory(
                         )
                     except Exception as e:
                         log(f"[Orac] Provider re-sync error: {e}", level=LOGERROR)
+
+                # Re-check for updates every 24 loops (~24 hours)
+                _update_check_counter += 1
+                if _update_check_counter >= 24:
+                    _update_check_counter = 0
+                    _threading.Thread(target=check_for_update, daemon=True, name="UpdateCheck").start()
 
                 await asyncio.sleep(3600)
 
@@ -654,7 +669,19 @@ def app_factory(
         except Exception as e:
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
+    # --- VERSION / UPDATE CHECK ROUTES ---
+    @app.get("/api/version")
+    async def api_version():
+        """Returns the running version and latest available version from GitHub."""
+        return JSONResponse(status_code=200, content=get_update_state())
+
+    @app.get("/api/web/version")
+    async def web_version_api():
+        """Web-dashboard version endpoint — same data wrapped with success flag."""
+        return JSONResponse(status_code=200, content={"success": True, **get_update_state()})
+
     # --- PUT ROUTES ---
+
     @app.put("/watched")
     async def put_watched(request: Request):
         query = parse_qs_fastapi(request)

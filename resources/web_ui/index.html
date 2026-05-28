@@ -368,13 +368,71 @@
             white-space: normal;
         }
 
+        /* Update Banner */
+        .update-banner {
+            display: none;
+            align-items: center;
+            gap: 0.6rem;
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.35);
+            border-radius: 2rem;
+            padding: 0.35rem 0.9rem 0.35rem 0.6rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #fbbf24;
+            text-decoration: none;
+            transition: background var(--animation-timing), border-color var(--animation-timing);
+            white-space: nowrap;
+        }
+
+        .update-banner:hover {
+            background: rgba(251, 191, 36, 0.18);
+            border-color: rgba(251, 191, 36, 0.6);
+        }
+
+        .update-banner.visible {
+            display: flex;
+        }
+
+        .update-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #fbbf24;
+            animation: pulse-dot 2s ease-in-out infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.75); }
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .version-label {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-family: 'Fira Code', monospace;
+        }
+
     </style>
 </head>
 <body>
 
     <header class="header">
         <div class="logo">Orac Server</div>
-        <div style="color: var(--text-muted); font-size: 0.9rem;">Command Center</div>
+        <div class="header-right">
+            <span class="version-label" id="version-label">Command Center</span>
+            <a id="update-banner" class="update-banner" href="#" target="_blank" rel="noopener">
+                <span class="update-dot"></span>
+                <span id="update-banner-text">Update available</span>
+            </a>
+        </div>
     </header>
 
     <main class="container">
@@ -480,6 +538,7 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            fetchVersionInfo();
             fetchScrapers();
             fetchPlatforms();
             fetchLibraryLists();
@@ -489,6 +548,35 @@
             // Poll logs every 3 seconds (No enforced auto-scrolling)
             setInterval(fetchLogs, 3000);
         });
+
+        async function fetchVersionInfo() {
+            try {
+                const response = await fetch('/api/web/version');
+                const data = await response.json();
+                if (!data.success) return;
+
+                // Update the subtitle to show current version
+                const label = document.getElementById('version-label');
+                if (label && data.current_version) {
+                    label.textContent = `v${data.current_version}`;
+                }
+
+                // Show update banner if a newer version is available
+                if (data.update_available && data.latest_version) {
+                    const banner = document.getElementById('update-banner');
+                    const bannerText = document.getElementById('update-banner-text');
+                    if (banner) {
+                        banner.href = data.release_url || '#';
+                        banner.classList.add('visible');
+                    }
+                    if (bannerText) {
+                        bannerText.textContent = `Update available: v${data.latest_version}`;
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load version info', error);
+            }
+        }
 
         async function fetchScrapers() {
             try {
