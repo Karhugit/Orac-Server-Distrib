@@ -78,9 +78,28 @@ async def tmdb_list_sync_task(trakt_auth, tmdb_handler, tmdb_user, tmdb_session_
                 for list_info in resp['results']:
                     # Fetch list details to get items
                     list_id = list_info['id']
-                    list_details = tmdb_handler.get_list_details(list_id, tmdb_session_id)
-                    if list_details and 'items' in list_details:
-                         lists_to_sync_data.append(normalize_tmdb_user_list(list_details, tmdb_user))
+                    list_details = None
+                    all_items = []
+                    detail_page = 1
+                    while True:
+                        resp_details = tmdb_handler.get_list_details(list_id, tmdb_session_id, page=detail_page)
+                        if resp_details and 'items' in resp_details:
+                            if not list_details:
+                                list_details = resp_details
+                                all_items.extend(resp_details['items'])
+                            else:
+                                all_items.extend(resp_details['items'])
+                            
+                            total_pages = resp_details.get('total_pages', 1)
+                            if detail_page >= total_pages:
+                                break
+                            detail_page += 1
+                        else:
+                            break
+                    
+                    if list_details:
+                        list_details['items'] = all_items
+                        lists_to_sync_data.append(normalize_tmdb_user_list(list_details, tmdb_user))
                 
                 if page >= resp.get('total_pages', 0):
                     break

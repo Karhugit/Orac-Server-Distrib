@@ -455,9 +455,9 @@ class TMDbAPI:
         """Fetches user's TV show watchlist."""
         return self._get(f"/account/{account_id}/watchlist/tv", params={"session_id": session_id, "page": page, "sort_by": "created_at.desc"})
 
-    def get_list_details(self, list_id, session_id=None):
+    def get_list_details(self, list_id, session_id=None, page=1):
         """Fetches details of a specific list."""
-        params = {}
+        params = {"page": page}
         if session_id:
             params["session_id"] = session_id
         return self._get(f"/list/{list_id}", params=params)

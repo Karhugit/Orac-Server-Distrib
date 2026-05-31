@@ -291,6 +291,55 @@ def insert_episode_combined(cursor, trakt_episode_data, tmdb_episode_data, show_
         if overview:
             log(f"Episode S{season_number}E{episode_number} of show {show_tmdb_id} is missing an overview. Using show's overview as fallback.", LOGDEBUG)
 
+    # Resolve dynamic DB path and migrate watched status if migrating from placeholder (negative) to real tmdb_id
+    if tmdb_id > 0 and season_number is not None and episode_number is not None:
+        cursor.execute("""
+            SELECT tmdb_id FROM episodes
+            WHERE show_id = ? AND season = ? AND episode_number = ?
+        """, (show_tmdb_id, season_number, episode_number))
+        existing_rows = cursor.fetchall()
+        for (old_tmdb_id,) in existing_rows:
+            if old_tmdb_id < 0 and old_tmdb_id != tmdb_id:
+                log(f"[DB] S{season_number}E{episode_number} tmdb_id is changing from placeholder {old_tmdb_id} to real {tmdb_id}. Migrating watched status.", level=LOGINFO)
+                
+                # Determine dynamic DB path
+                dynamic_db_path = None
+                try:
+                    cursor.execute("PRAGMA database_list")
+                    db_list = cursor.fetchall()
+                    for db in db_list:
+                        if db[1] == 'main' and db[2]:
+                            dynamic_db_path = db[2].replace("static", "dynamic")
+                            break
+                except Exception as e:
+                    log(f"[DB] Error finding dynamic DB path: {e}", level=LOGDEBUG)
+
+                if dynamic_db_path:
+                    try:
+                        with sqlite3.connect(dynamic_db_path, timeout=10) as d_conn:
+                            d_cursor = d_conn.cursor()
+                            # Check if new tmdb_id already exists in watched_episodes
+                            d_cursor.execute("SELECT 1 FROM watched_episodes WHERE tmdb_id = ?", (tmdb_id,))
+                            if not d_cursor.fetchone():
+                                d_cursor.execute("""
+                                    UPDATE watched_episodes SET tmdb_id = ?
+                                    WHERE tmdb_id = ?
+                                """, (tmdb_id, old_tmdb_id))
+                                d_conn.commit()
+                                log(f"[DB] Successfully migrated watched_episodes from placeholder {old_tmdb_id} to {tmdb_id}", level=LOGINFO)
+                            else:
+                                d_cursor.execute("DELETE FROM watched_episodes WHERE tmdb_id = ?", (old_tmdb_id,))
+                                d_conn.commit()
+                                log(f"[DB] Deleted duplicate watched_episodes placeholder {old_tmdb_id} (real {tmdb_id} already exists)", level=LOGINFO)
+                    except Exception as e:
+                        log(f"[DB] Error updating watched_episodes: {e}", level=LOGERROR)
+                
+                # Delete obsolete negative placeholder row in static episodes
+                try:
+                    cursor.execute("DELETE FROM episodes WHERE tmdb_id = ?", (old_tmdb_id,))
+                except Exception as e:
+                    log(f"[DB] Error deleting placeholder episode: {e}", level=LOGERROR)
+
     air_date = tmdb_episode_data.get("air_date") or trakt_episode_data.get("first_aired", "")
     runtime = tmdb_episode_data.get("runtime") or trakt_episode_data.get("runtime", 0)
     rating = tmdb_episode_data.get("vote_average") or trakt_episode_data.get("rating", 0.0)

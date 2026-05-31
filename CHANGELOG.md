@@ -6,6 +6,16 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.2.0] — 2026-06-01
+
+### Added
+- **`/api/status` endpoint** — returns central authorization status and access tokens (Trakt, Simkl, TMDb, MDbList) to seamlessly synchronize credentials across multiple active Liberator addon instances.
+
+### Fixed
+- **TMDB custom list pagination** — implemented a pagination loop to aggregate all items across multiple pages (bypassing the 20-item v3 details API limit) when syncing user-created lists.
+
+---
+
 ## [1.1.0] — 2026-05-29
 
 ### Added

@@ -267,6 +267,61 @@ def app_factory(
     async def ping():
         return PlainTextResponse("Yes, what do you want?")
 
+    @app.get("/api/status")
+    async def api_status():
+        try:
+            with sqlite3.connect(app.state.config_db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT key, value FROM config 
+                    WHERE key IN (
+                        'trakt_user', 'trakt_token', 'trakt_refresh', 'trakt_expires',
+                        'simkl.user', 'simkl_user', 'simkl.token',
+                        'tmdb_user', 'tmdb.user', 'tmdb_session_id',
+                        'mdblist_api'
+                    )
+                """)
+                rows = cursor.fetchall()
+                data = {row[0]: row[1] for row in rows}
+                
+                # Default missing keys to 'empty_setting'
+                trakt_user = data.get('trakt_user') or 'empty_setting'
+                trakt_token = data.get('trakt_token') or 'empty_setting'
+                trakt_refresh = data.get('trakt_refresh') or 'empty_setting'
+                trakt_expires = data.get('trakt_expires') or 'empty_setting'
+                
+                simkl_user = data.get('simkl.user') or data.get('simkl_user') or 'empty_setting'
+                simkl_token = data.get('simkl.token') or 'empty_setting'
+                
+                tmdb_user = data.get('tmdb_user') or data.get('tmdb.user') or 'empty_setting'
+                tmdb_session_id = data.get('tmdb_session_id') or 'empty_setting'
+                
+                mdblist_api = data.get('mdblist_api') or 'empty_setting'
+                
+                return JSONResponse(status_code=200, content={
+                    "status": "online",
+                    "trakt": {
+                        "user": trakt_user,
+                        "token": trakt_token,
+                        "refresh": trakt_refresh,
+                        "expires": trakt_expires
+                    },
+                    "simkl": {
+                        "user": simkl_user,
+                        "token": simkl_token
+                    },
+                    "tmdb": {
+                        "user": tmdb_user,
+                        "session_id": tmdb_session_id
+                    },
+                    "mdblist": {
+                        "api": mdblist_api
+                    }
+                })
+        except Exception as e:
+            log(f"Error in api_status: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"status": "error", "error": str(e)})
+
     @app.get("/movie")
     async def movie(request: Request):
         query = parse_qs_fastapi(request)
