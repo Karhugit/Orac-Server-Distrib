@@ -241,6 +241,9 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
             log(f"[Orac] Unknown source '{source}' for list {list_name}", level=LOGWARNING)
             results = []
 
+        # Enrich external results with watched/in-progress status from the local database
+        results = _enrich_external_results_watched_status(results, user, movies_dynamic_db_path, tvshows_dynamic_db_path, tvshows_static_db_path)
+
         return 200, json.dumps(results), "application/json"
 
     except Exception as e:
@@ -827,3 +830,104 @@ def remove_from_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies
         import traceback
         log(traceback.format_exc(), LOGERROR)
         return {'status': 'error', 'message': f'Failed to remove item from list: {e}'}
+
+def _enrich_external_results_watched_status(results, user, movies_dynamic_db_path, tvshows_dynamic_db_path, tvshows_static_db_path):
+    if not results:
+        return results
+
+    # 1. Separate movies and shows
+    movies = [item for item in results if item.get('media_type') == 'movie']
+    shows = [item for item in results if item.get('media_type') == 'show']
+    user_val = user or ''
+
+    # 2. Enrich movies
+    movie_ids = [m['tmdb_id'] for m in movies if m.get('tmdb_id') is not None]
+    if movie_ids:
+        try:
+            placeholders = ",".join(["?"] * len(movie_ids))
+            with sqlite3.connect(movies_dynamic_db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT tmdb_id, watched, watched_status 
+                    FROM movie_status 
+                    WHERE tmdb_id IN ({placeholders})
+                """, movie_ids)
+                rows = cursor.fetchall()
+                movie_status_map = {row['tmdb_id']: (row['watched'], row['watched_status']) for row in rows}
+                
+                for m in movies:
+                    tmdb_id = m['tmdb_id']
+                    if tmdb_id in movie_status_map:
+                        watched, watched_status = movie_status_map[tmdb_id]
+                        m['watched'] = watched
+                        m['watched_status'] = watched_status
+        except Exception as e:
+            log(f"[Orac] Error enriching external movie results: {e}", level=LOGERROR)
+
+    # 3. Enrich shows
+    show_ids = [s['tmdb_id'] for s in shows if s.get('tmdb_id') is not None]
+    if show_ids:
+        try:
+            placeholders = ",".join(["?"] * len(show_ids))
+            
+            seasons_map = {}
+            episodes_map = {}
+            watched_map = {}
+            unaired_map = {}
+            
+            with sqlite3.connect(tvshows_static_db_path) as static_conn:
+                static_conn.execute("ATTACH DATABASE ? AS dynamic_db", (tvshows_dynamic_db_path,))
+                cursor = static_conn.cursor()
+                
+                # Query 1: Total seasons
+                cursor.execute(f"""
+                    SELECT show_id, COUNT(DISTINCT season) 
+                    FROM episodes 
+                    WHERE show_id IN ({placeholders}) 
+                    GROUP BY show_id
+                """, show_ids)
+                seasons_map = {row[0]: row[1] for row in cursor.fetchall()}
+                
+                # Query 2: Total episodes
+                cursor.execute(f"""
+                    SELECT show_id, COUNT(*) 
+                    FROM episodes 
+                    WHERE show_id IN ({placeholders}) 
+                    GROUP BY show_id
+                """, show_ids)
+                episodes_map = {row[0]: row[1] for row in cursor.fetchall()}
+                
+                # Query 3: Total watched episodes
+                cursor.execute(f"""
+                    SELECT E.show_id, COUNT(DISTINCT E.tmdb_id)
+                    FROM episodes AS E
+                    JOIN dynamic_db.watched_episodes AS W ON E.tmdb_id = W.tmdb_id
+                    WHERE E.show_id IN ({placeholders}) AND W.user = ? COLLATE NOCASE
+                    GROUP BY E.show_id
+                """, (*show_ids, user_val))
+                watched_map = {row[0]: row[1] for row in cursor.fetchall()}
+                
+                # Query 4: Total unaired episodes
+                cursor.execute(f"""
+                    SELECT show_id, COUNT(*) 
+                    FROM episodes 
+                    WHERE show_id IN ({placeholders}) AND first_aired > strftime('%Y-%m-%d %H:%M:%S', 'now')
+                    GROUP BY show_id
+                """, show_ids)
+                unaired_map = {row[0]: row[1] for row in cursor.fetchall()}
+                
+                static_conn.execute("DETACH DATABASE dynamic_db")
+                
+            # Apply to shows
+            for s in shows:
+                show_id = s['tmdb_id']
+                s['total_seasons'] = seasons_map.get(show_id, 0)
+                s['total_episodes'] = episodes_map.get(show_id, 0)
+                s['total_watched_episodes'] = watched_map.get(show_id, 0)
+                s['total_unaired_episodes'] = unaired_map.get(show_id, 0)
+                
+        except Exception as e:
+            log(f"[Orac] Error enriching external show results: {e}", level=LOGERROR)
+
+    return results

@@ -6,6 +6,13 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.2.1] — 2026-06-02
+
+### Added
+- **External Lists Watched Status Enrichment** — implemented automatic local database lookup and status injection (watched ticks and resume percentage points) for movies and TV shows fetched from external lists (TMDB, Trakt, Simkl, MDblist) that are not imported into the library.
+
+---
+
 ## [1.2.0] — 2026-06-01
 
 ### Added
