@@ -1303,16 +1303,17 @@ async def sync_recent_tmdb_tv_changes(trakt_handler, tmdb_handler, tvshows_stati
         
         # Step 2: Fetch changes from TMDB
         # TMDB /tv/changes returns a list of show IDs
-        all_changed_ids = []
+        all_changed_ids = set()
         page = 1
-        while page <= 10: # Safety limit for pages
+        max_pages = 50 # Safety limit for pages (increased from 10 to fetch all daily changes)
+        while page <= max_pages:
             data = tmdb_handler.get_tv_changes(start_date=start_date_str, page=page)
             if not data:
                 break
             
             results = data.get("results", [])
             for res in results:
-                all_changed_ids.append(res["id"])
+                all_changed_ids.add(res["id"])
             
             if page >= data.get("total_pages", 1):
                 break

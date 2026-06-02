@@ -6,6 +6,14 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.2.2] — 2026-06-02
+
+### Fixed
+- **TMDB changes daily safety limit** — expanded the TMDB changes daily sync safety limit from 10 to 50 pages, allowing retrieval of up to 5,000 show updates per cycle so that no edits are lost on busy days where changes exceed 1,000.
+- **ID Deduplication** — optimized the TMDB TV changes sync engine to deduplicate incoming show IDs using a set, avoiding redundant thread spawning and database writes.
+
+---
+
 ## [1.2.1] — 2026-06-02
 
 ### Added
