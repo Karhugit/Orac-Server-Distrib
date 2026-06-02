@@ -15,6 +15,8 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
     provider = query.get("provider", [None])[0] or query.get("scraper", [None])[0]
     search_type = query.get("search_type", ["sources"])[0]
     strict_dedupe = query.get("strict_dedupe", ["false"])[0].lower() == 'true'
+    orac_scraping_pref = query.get("orac_scraping", ["true"])[0].lower() == 'true'
+    use_aiostreams_pref = query.get("use_aiostreams", ["true"])[0].lower() == 'true'
 
     if not tmdb_id:
         return 400, json.dumps({"success": False, "error": "tmdb_id is required"}), "application/json"
@@ -84,6 +86,29 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
         background_providers = []
     else:
         primary_providers, background_providers = scraper_manager.get_partitioned_providers()
+        
+        # Apply client-specified scraper preferences
+        if not orac_scraping_pref and not use_aiostreams_pref:
+            # Both disabled -> return no results
+            primary_providers = []
+            background_providers = []
+        elif not orac_scraping_pref and use_aiostreams_pref:
+            # Standalone AIOStreams mode: find AIOStreams, force active, and make it the ONLY primary
+            aiostreams_provider = None
+            for p in primary_providers + background_providers:
+                if p["name"] == "aiostreams":
+                    aiostreams_provider = p.copy()
+                    break
+            if not aiostreams_provider:
+                aiostreams_provider = {"name": "aiostreams", "active": 1, "score": 0.0, "total_scrapes": 0}
+            
+            aiostreams_provider["active"] = 1
+            primary_providers = [aiostreams_provider]
+            background_providers = []
+        elif orac_scraping_pref and not use_aiostreams_pref:
+            # Scrapers ON, AIOStreams OFF: Exclude AIOStreams completely
+            primary_providers = [p for p in primary_providers if p["name"] != "aiostreams"]
+            background_providers = [p for p in background_providers if p["name"] != "aiostreams"]
     
     # Extract names for the stats keys
     primary_names = [p['name'] for p in primary_providers]

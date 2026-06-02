@@ -6,6 +6,14 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.2.3] — 2026-06-02
+
+### Added
+- **Dynamic Scraper Modes** — implemented backend support for standalone AIOStreams mode, hybrid mode, and standard Orac scraper mode based on client setting preferences.
+- **Provider Partitioning Filtering** — added query parameter extraction and dynamic filtering for primary/background providers during scrape requests.
+
+---
+
 ## [1.2.2] — 2026-06-02
 
 ### Fixed
