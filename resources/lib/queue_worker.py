@@ -162,7 +162,7 @@ class UpdateQueueWorker:
             else:
                  log(f"[Queue] Adding item {tmdb_id} to TMDB List {slug}")
                  # Slug for TMDB lists is expected to be the List ID
-                 result = self.tmdb_handler.add_to_list(slug, session_id, tmdb_id)
+                 result = self.tmdb_handler.add_to_list(slug, session_id, tmdb_id, media_type=media_type)
                  
         elif update_type == 'remove_from_list':
              if slug == 'watchlist':
@@ -170,7 +170,7 @@ class UpdateQueueWorker:
                  result = self.tmdb_handler.remove_from_watchlist(account_id, session_id, media_type, tmdb_id)
              else:
                  log(f"[Queue] Removing item {tmdb_id} from TMDB List {slug}")
-                 result = self.tmdb_handler.remove_from_list(slug, session_id, tmdb_id)
+                 result = self.tmdb_handler.remove_from_list(slug, session_id, tmdb_id, media_type=media_type)
         
         else:
             log(f"[Queue] Unknown TMDB update type: {update_type}", level=LOGERROR)

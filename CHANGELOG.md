@@ -6,6 +6,13 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.2.4] — 2026-06-04
+
+### Fixed
+- **TMDB list v3 updates** — added the `"media_type"` parameter inside the request JSON payload body for custom list additions and removals, resolving the 403 Forbidden client error when adding or removing TV shows.
+
+---
+
 ## [1.2.3] — 2026-06-02
 
 ### Added

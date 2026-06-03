@@ -8,10 +8,25 @@ import re
 from resources.scrapers import source_utils
 from resources.scrapers.thread_manager_opt import ConcurrentScraperBase
 try:
-    from resources.lib.config_loader import OracConfig
-    _config = OracConfig()
-    _AIOSTREAMS_USER_DATA = _config.config.get('AIOSTREAMS', {}).get('user_data_header', None)
+    from resources.lib.log_utils import log, LOGDEBUG, LOGINFO, LOGWARNING, LOGERROR
 except Exception:
+    def log(msg, level=None):
+        print(msg)
+    LOGDEBUG = 0
+    LOGINFO = 1
+    LOGWARNING = 2
+    LOGERROR = 3
+
+try:
+    from resources.lib.config_loader import ConfigLoader
+    _config = ConfigLoader()
+    _AIOSTREAMS_USER_DATA = _config.config.get('AIOSTREAMS', {}).get('user_data_header', None)
+    if _AIOSTREAMS_USER_DATA:
+        log("[AIOStreams] Loaded custom user_data_header from config.json", level=LOGINFO)
+    else:
+        log("[AIOStreams] user_data_header not found in config.json AIOSTREAMS key, using fallback", level=LOGWARNING)
+except Exception as e:
+    log(f"[AIOStreams] Failed to load config: {e}. Using fallback user_data_header", level=LOGERROR)
     _AIOSTREAMS_USER_DATA = None
 
 # Fallback hardcoded header – used when config.json has no AIOSTREAMS.user_data_header.
@@ -54,7 +69,9 @@ class source:
 		self.movieSearch_link = '/api/v1/search'
 		self.tvSearch_link = '/api/v1/search'
 		self.min_seeders = 0
-		
+		self._load_credentials()
+
+	def _load_credentials(self):
 		# Load configuration from config.db
 		from resources.lib.config_loader import ConfigLoader
 		from resources.lib.config_handler import get_config_value
@@ -99,6 +116,7 @@ class source:
 				self.base_link = public_instance[self.instance_id].strip().rstrip('/')
 
 	def sources(self, data, hostDict):
+		self._load_credentials()
 		sources = []
 		if not self.is_active: return sources
 		if not data: return sources
@@ -123,26 +141,22 @@ class source:
 				params = {'type': 'movie', 'id': '%s' % imdb}
 			
 			if 'timeout' in data: self.timeout = int(data['timeout'])
-			results = requests.get(url, params=params, headers=self._headers(), timeout=self.timeout)
+			results = requests.get(url, params=params, headers=self._headers(), auth=self.auth, timeout=self.timeout)
 			response_json = results.json()
 			response_data = response_json.get('data')
 			if not response_data:
 				# AIOStreams returns {"data": null} when no configured presets
 				# return results for this title (e.g. content not in debrid cache).
 				# This is not an error — just no results available.
-				import logging
-				logging.getLogger('orac').debug(
-					'AIOSTREAMS - empty data for %s (status=%s, keys=%s)',
-					params, results.status_code, list(response_json.keys())
-				)
+				log(f"AIOSTREAMS - empty data for {params} (status={results.status_code}, keys={list(response_json.keys())})", level=LOGDEBUG)
 				return sources
 			files = response_data.get('results', [])
+			log(f"AIOSTREAMS - url: {url}, params: {params}, status_code: {results.status_code}, header_prefix: {(self._headers().get('x-aiostreams-user-data') or '')[:40]}..., raw_results: {len(files) if files else 0}", level=LOGINFO)
 			if files is None:
 				return sources
 			undesirables = source_utils.get_undesirables()
 			check_foreign_audio = source_utils.check_foreign_audio()
 		except Exception as e:
-			from resources.lib.log_utils import log, LOGERROR
 			log(f"aiostreams scraper error: {e}", level=LOGERROR)
 			source_utils.scraper_error('AIOSTREAMS')
 			return sources
@@ -150,8 +164,6 @@ class source:
 
 		for file in files:
 			try:
-				if 'p2p' in file.get('type', ''): continue
-				
 				# Flatten parsedFile fields as per client logic
 				parsed = {**file.pop('parsedFile', {})}
 				parsed.update(file)
@@ -211,7 +223,15 @@ class source:
 		return sources
 
 	def _headers(self):
-		value = _AIOSTREAMS_USER_DATA or _AIOSTREAMS_USER_DATA_FALLBACK
+		try:
+			from resources.lib.config_loader import ConfigLoader
+			_config = ConfigLoader()
+			value = _config.config.get('AIOSTREAMS', {}).get('user_data_header', None)
+		except Exception as e:
+			log(f"[AIOStreams] Failed to dynamically load config: {e}", level=LOGERROR)
+			value = None
+		if not value:
+			value = _AIOSTREAMS_USER_DATA or _AIOSTREAMS_USER_DATA_FALLBACK
 		return {'x-aiostreams-user-data': value}
 
 class AIOStreamsService(ConcurrentScraperBase):

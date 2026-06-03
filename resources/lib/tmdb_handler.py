@@ -494,19 +494,21 @@ class TMDbAPI:
         }
         return self._post(path, payload=payload, params={"session_id": session_id})
 
-    def add_to_list(self, list_id, session_id, media_id):
+    def add_to_list(self, list_id, session_id, media_id, media_type="movie"):
         """Adds an item to a custom TMDB list (v3)."""
         path = f"/list/{list_id}/add_item"
         payload = {
-            "media_id": media_id
+            "media_id": media_id,
+            "media_type": media_type
         }
         return self._post(path, payload=payload, params={"session_id": session_id})
 
-    def remove_from_list(self, list_id, session_id, media_id):
+    def remove_from_list(self, list_id, session_id, media_id, media_type="movie"):
         """Removes an item from a custom TMDB list (v3)."""
         path = f"/list/{list_id}/remove_item"
         payload = {
-            "media_id": media_id
+            "media_id": media_id,
+            "media_type": media_type
         }
         return self._post(path, payload=payload, params={"session_id": session_id})
     def discover_media(self, media_type, params=None):

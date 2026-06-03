@@ -57,6 +57,11 @@ class ConfigLoader:
                     for key in ["ORAC_ENV", "ORAC_LOG_FILE", "ORAC_LOG_PATH"]:
                         if key in file_config:
                             config[key] = file_config[key]
+
+                    # Load other top-level keys (e.g. AIOSTREAMS)
+                    for key, val in file_config.items():
+                        if key not in ["DB_PATHS", "TRAKT", "TMDB", "SERVER", "ORAC_ENV", "ORAC_LOG_FILE", "ORAC_LOG_PATH"]:
+                            config[key] = val
             except Exception as e:
                 print(f"Error loading config file: {e}")
         
@@ -80,3 +85,7 @@ class ConfigLoader:
     @property
     def server_config(self):
         return self.config["SERVER"]
+
+
+# Alias for compatibility with resources/scrapers/aiostreams.py or other files
+OracConfig = ConfigLoader
