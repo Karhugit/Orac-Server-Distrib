@@ -9,6 +9,7 @@ from resources.scrapers.torrentio import TorrentioService
 from resources.scrapers.piratebay import PirateBayService
 from resources.scrapers.comet import CometService
 from resources.scrapers.kickass import KickassService
+from resources.scrapers.torz import TorzService
 from resources.scrapers.torrentdownload import TorrentDownloadService
 from resources.scrapers.zilean import ZileanService
 from resources.scrapers.prowlarr import ProwlarrService
@@ -37,6 +38,7 @@ class ScraperManager:
         self.scrapers['piratebay'] = PirateBayService()
         self.scrapers['comet'] = CometService()
         self.scrapers['kickass'] = KickassService()
+        self.scrapers['torz'] = TorzService()
         self.scrapers['torrentdownload'] = TorrentDownloadService()
         self.scrapers['zilean'] = ZileanService()
         self.scrapers['prowlarr'] = ProwlarrService()

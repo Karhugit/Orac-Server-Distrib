@@ -354,10 +354,10 @@ def add_movie(movies_static_cursor, movies_dynamic_cursor, movie, media_id, tmdb
 # Build movie metadata
 
         movie_id = media_id.get("trakt")
-        title = movie["title"]
+        title = movie.get("title", "Unknown Movie")
         year = movie.get("year", 0)
-        tmdb_id = movie["ids"].get("tmdb")
-        imdb_id = movie["ids"].get("imdb")
+        tmdb_id = movie.get("ids", {}).get("tmdb")
+        imdb_id = movie.get("ids", {}).get("imdb")
         
         # If TMDB ID is missing, try to resolve it via IMDB ID
         if not tmdb_id and imdb_id:

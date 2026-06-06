@@ -56,6 +56,8 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
                      for k, v in tmdb_data.items():
                          if not scrape_data.get(k):
                              scrape_data[k] = v
+                     if is_episode and tmdb_data.get('imdb_id'):
+                         scrape_data['show_imdb'] = tmdb_data['imdb_id']
 
     # Ensure 'imdb' and 'tmdb_id' keys exist for scrapers as strings.
     for key in ["imdb", "imdb_id", "tmdb_id", "episode_imdb", "show_imdb"]:
@@ -68,7 +70,10 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
     if is_episode:
         # Priority for episode_imdb: scrape_data > query > None
         if not scrape_data.get("episode_imdb"):
-            scrape_data["episode_imdb"] = scrape_data.get("imdb_id") if not scrape_data.get("show_imdb") else None
+            if scrape_data.get("imdb_id") and scrape_data.get("show_imdb") and scrape_data.get("imdb_id") != scrape_data.get("show_imdb"):
+                scrape_data["episode_imdb"] = scrape_data["imdb_id"]
+            else:
+                scrape_data["episode_imdb"] = scrape_data.get("imdb_id") if not scrape_data.get("show_imdb") else None
             
         show_imdb = scrape_data.get("show_imdb") or scrape_data.get("imdb_id")
         scrape_data["show_imdb"] = show_imdb
@@ -401,11 +406,13 @@ def _get_metadata_from_tmdb(tmdb_id, item_type, tmdb_handler):
             # Try fetching as show first with external_ids appended
             show_data = tmdb_handler._get(f"/tv/{tmdb_id}", params={"append_to_response": "external_ids"})
             if show_data and "name" in show_data:
+                 show_imdb_id = show_data.get("external_ids", {}).get("imdb_id", "")
                  return {
                      "tvshowtitle": show_data.get("name"),
                      "title": "", # Unknown episode title at this stage
                      "year": show_data.get("first_air_date", "")[:4],
-                     "imdb_id": show_data.get("external_ids", {}).get("imdb_id", ""),
+                     "imdb_id": show_imdb_id,
+                     "show_imdb": show_imdb_id,
                      "aliases": []
                  }
             else:

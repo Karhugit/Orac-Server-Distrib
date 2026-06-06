@@ -315,7 +315,8 @@ class TMDbAPI:
         static_db_cursor.execute("""
             UPDATE movies
             SET belongs_to_collection = ?, poster_path = ?, fanart_path = ?, thumbnail_path = ?, landscape_path = ?, clearlogo_path = ?, studio = ?,
-                overview = ?, tagline = ?, rating = ?, runtime = ?, country = ?, released = ?, certification = ?, original_title = ?, imdb_id = ?
+                overview = ?, tagline = ?, rating = ?, runtime = ?, country = ?, released = ?, certification = ?, original_title = ?, imdb_id = ?,
+                title = ?, year = ?
             WHERE tmdb_id = ?
         """, (
             serialized_belongs_to, 
@@ -334,6 +335,8 @@ class TMDbAPI:
             details.get("certification", ""),
             details.get("original_title", ""),
             details.get("imdb_id", ""),
+            details.get("title", ""),
+            details.get("year", 0),
             tmdb_id
         ))
         

@@ -40,15 +40,8 @@ class GlobalScraperResourceManager:
         """Register a new scraper and get its resource allocation"""
         with self._lock:
             if scraper_name not in self._per_scraper_limits:
-                active_count = len(self._active_scrapers)
-                # Dynamically adjust limits based on active scrapers
-                if active_count == 0:
-                    threads = self.MAX_PER_SCRAPER_THREADS
-                else:
-                    # Distribute threads fairly among active scrapers
-                    threads = max(1, self.MAX_TOTAL_THREADS // (active_count + 1))
-                    threads = min(threads, self.MAX_PER_SCRAPER_THREADS)
-                
+                # Each scraper gets its own pool up to MAX_PER_SCRAPER_THREADS
+                threads = self.MAX_PER_SCRAPER_THREADS
                 self._per_scraper_limits[scraper_name] = threads
                 log(f"Registered scraper {scraper_name} with {threads} threads", LOGDEBUG)
             
