@@ -138,34 +138,35 @@ class FlixPatrolSync:
                     chunk = chunk[:split_match.start()]
                 
                 # Extract items
-                # Inspection showed items 2-10 are text-only links, while Item 1 has an image.
-                # However, Item 1 ALSO has a text link.
-                # Pattern: <a href="/title/..." ... title="The Title">
-                
                 # We'll match all anchor tags in the chunk, then filter for those with href="/title/..."
                 
-                # Check for two commons orders: href...title or title...href
-                # Regex to capture title from an anchor that contains /title/ in href
-                
-                # Option 1: href then title
-                p1 = r'<a[^>]+href=["\']/title/[^"\']+["\'][^>]+title=["\']([^"\']+)["\']'
-                # Option 2: title then href
-                p2 = r'<a[^>]+title=["\']([^"\']+)["\'][^>]+href=["\']/title/'
+                # Check for two common orders: href...title or title...href
+                p1 = r'<a[^>]+href=["\']/title/([^/\s"\']+)/?["\'][^>]+title=["\']([^"\']+)["\']'
+                p2 = r'<a[^>]+title=["\']([^"\']+)["\'][^>]+href=["\']/title/([^/\s"\']+)/?["\']'
                 
                 items_p1 = re.findall(p1, chunk)
                 items_p2 = re.findall(p2, chunk)
                 
-                items = items_p1 + items_p2
+                raw_items = []
+                for item_slug, item_title in items_p1:
+                    raw_items.append((item_title, item_slug))
+                for item_title, item_slug in items_p2:
+                    raw_items.append((item_title, item_slug))
                 
                 # Distinct and preserve order
                 clean_items = []
                 seen = set()
-                for item in items:
+                for title, item_slug in raw_items:
                     # HTML unescape just in case
-                    item = item.replace('&amp;', '&').replace('&#39;', "'").replace('&apos;', "'")
-                    if item not in seen:
-                        clean_items.append(item)
-                        seen.add(item)
+                    title = title.replace('&amp;', '&').replace('&#39;', "'").replace('&apos;', "'")
+                    if title not in seen:
+                        # Extract year from slug
+                        year = None
+                        year_match = re.search(r'-(\d{4})$', item_slug)
+                        if year_match:
+                            year = int(year_match.group(1))
+                        clean_items.append({'title': title, 'year': year})
+                        seen.add(title)
                         if len(clean_items) >= 10: # Limit to top 10
                             break
                             
@@ -251,8 +252,10 @@ class FlixPatrolSync:
                 lists_cursor.execute("DELETE FROM list_items WHERE list_id = ?", (list_id,))
                 
                 # 3. Resolve and Insert Items
-                for title in items:
-                    tmdb_id, info = await self._resolve_title(title, list_type)
+                for item in items:
+                    title = item['title']
+                    year = item.get('year')
+                    tmdb_id, info = await self._resolve_title(title, list_type, year=year)
                     
                     if tmdb_id:
                         # Add to Metadata Database First (Thread-Safe)
@@ -327,7 +330,7 @@ class FlixPatrolSync:
             d_conn.commit()
             q_conn.commit()
 
-    async def _resolve_title(self, title, item_type):
+    async def _resolve_title(self, title, item_type, year=None):
         """
         Searches TMDB for the title and returns the best match ID.
         """
@@ -345,13 +348,16 @@ class FlixPatrolSync:
             # Check if title has year: "Title (2025)"
             year_match = re.search(r'\((\d{4})\)$', title)
             if year_match:
-                params['year'] = year_match.group(1)
-                if search_type == 'movie':
-                    params['primary_release_year'] = params['year']
-                else:
-                    params['first_air_date_year'] = params['year']
+                year = int(year_match.group(1))
                 # Remove year from query
-                params['query'] = title.replace(f" ({params['year']})", "").strip()
+                params['query'] = title.replace(f" ({year})", "").strip()
+            
+            if year:
+                params['year'] = str(year)
+                if search_type == 'movie':
+                    params['primary_release_year'] = str(year)
+                else:
+                    params['first_air_date_year'] = str(year)
             
             # Wrap blocking call
             response = await asyncio.to_thread(self.tmdb_handler._get, f"/search/{search_type}", params)

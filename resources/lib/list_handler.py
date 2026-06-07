@@ -10,7 +10,7 @@ from resources.lib.trakt_list_sync import add_movie
 from resources.lib.db_utils import add_tvshow
 from resources.lib.formatting_utils import format_movie
 
-def _get_list_movies(list_name, user, movies_static_db_path, movies_dynamic_db_path, lists_db_path):
+def _get_list_movies(list_name, user, movies_static_db_path, movies_dynamic_db_path, lists_db_path, preserve_order=False):
     # Step 1: Get trakt_ids for movies in the specified list from list_items + lists DB
     with sqlite3.connect(lists_db_path) as lists_conn:
         lists_cursor = lists_conn.cursor()
@@ -19,6 +19,7 @@ def _get_list_movies(list_name, user, movies_static_db_path, movies_dynamic_db_p
             FROM list_items li
             JOIN lists l ON li.list_id = l.list_id 
             WHERE l.slug = ? AND li.media_type = 'movie' AND l.user = ?
+            ORDER BY li.id ASC
         """, (list_name, user,))
         tmdb_ids = [row[0] for row in lists_cursor.fetchall() if row[0]]
         log(f"[Orac] _get_list_movies: Found {len(tmdb_ids)} TMDB IDs for list '{list_name}': {tmdb_ids}", level=LOGDEBUG)
@@ -77,10 +78,14 @@ def _get_list_movies(list_name, user, movies_static_db_path, movies_dynamic_db_p
             movies_dict[tmdb_id]["genres"].append(genre)
 
     movies = [format_movie(m, None) for m in list(movies_dict.values())]
-    movies.sort(key=lambda x: str(x.get("released") or 0), reverse=True)
+    if preserve_order:
+        id_to_index = {int(tmdb_id): idx for idx, tmdb_id in enumerate(tmdb_ids)}
+        movies.sort(key=lambda x: id_to_index.get(x["tmdb_id"], 999))
+    else:
+        movies.sort(key=lambda x: str(x.get("released") or 0), reverse=True)
     return movies
 
-def _get_list_shows(list_name, user, tvshows_static_db_path, tvshows_dynamic_db_path, lists_db_path):
+def _get_list_shows(list_name, user, tvshows_static_db_path, tvshows_dynamic_db_path, lists_db_path, preserve_order=False):
     def get_total_seasons_and_episodes(show_tmdb_id, static_conn, dynamic_conn):
         static_cursor = static_conn.cursor()
         static_cursor.execute("SELECT COUNT(DISTINCT season) FROM episodes WHERE show_id = ?", (show_tmdb_id,))
@@ -107,6 +112,7 @@ def _get_list_shows(list_name, user, tvshows_static_db_path, tvshows_dynamic_db_
             FROM list_items li
             JOIN lists l ON li.list_id = l.list_id 
             WHERE l.slug = ? AND li.media_type = 'show' AND l.user = ?
+            ORDER BY li.id ASC
         """, (list_name, user,))
         show_ids = [row[0] for row in lists_cursor.fetchall() if row[0]]
 
@@ -155,6 +161,9 @@ def _get_list_shows(list_name, user, tvshows_static_db_path, tvshows_dynamic_db_
                 "genres": genres_dict.get(show[1], []), "status": show[17], "certification": show[18],
                 "network": show[19], "country": show[20], "rating": show[21], "votes": show[22], "media_type": "show"
             })
+        if preserve_order:
+            id_to_index = {int(show_id): idx for idx, show_id in enumerate(show_ids)}
+            shows.sort(key=lambda x: id_to_index.get(x["tmdb_id"], 999))
     return shows
 
 async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path, movies_static_db_path, tvshows_dynamic_db_path, tvshows_static_db_path, lists_db_path, trakt_handler=None, tmdb_handler=None, ext_indexes_db_path=None):
@@ -211,19 +220,23 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
             if source == 'web':
                  log(f"[Orac] List {list_name} is web-sourced. Serving from local database.", level=LOGDEBUG)
             
+            # If list source is in ('flixpatrol', 'web', 'mdblist'), we want to preserve insertion/rank order
+            preserve = source in ('flixpatrol', 'web', 'mdblist')
+            
             if item_type in ["movie", "all"]:
-                results.extend(_get_list_movies(list_name, user, movies_static_db_path, movies_dynamic_db_path, lists_db_path))
+                results.extend(_get_list_movies(list_name, user, movies_static_db_path, movies_dynamic_db_path, lists_db_path, preserve_order=preserve))
             if item_type in ["tvshow", "all"]:
-                results.extend(_get_list_shows(list_name, user, tvshows_static_db_path, tvshows_dynamic_db_path, lists_db_path))
+                results.extend(_get_list_shows(list_name, user, tvshows_static_db_path, tvshows_dynamic_db_path, lists_db_path, preserve_order=preserve))
             
             if not results and item_type not in ["movie", "tvshow", "all"]:
                 return 400, f"Unsupported item type: {item_type}", "text/plain"
 
-            # Sort combined results by date
-            def get_date(item):
-                return str(item.get("released") or item.get("premiered") or 0)
-            
-            results.sort(key=get_date, reverse=True)
+            if not preserve:
+                # Sort combined results by date
+                def get_date(item):
+                    return str(item.get("released") or item.get("premiered") or 0)
+                results.sort(key=get_date, reverse=True)
+                
             return 200, json.dumps(results), "application/json"
 
         # Step 3: If add_to_library is 0, fetch externally
