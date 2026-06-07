@@ -6,6 +6,21 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.2.5] — 2026-06-07
+
+### Added
+- **Torz Scraper** — registered a new scraper module wrapping StremThru aggregator providers with parallel querying and hash deduplication.
+- **Library List Items Detail Modal** — implemented a landscape-optimized glassmorphic grid overlay to show all items (movies and TV shows) inside any selected library list.
+- **Details & Reviews View** — added a detail overlay panel displaying poster, rating, type, overview, and user reviews from TMDb (with translation formatting for Kodi BBCode tags).
+- **Manual Scrape Action** — added a scrape button inside the list detail view cards to run scraper queries manually and inspect parsed results.
+
+### Fixed
+- **Thread pool worker starvation** — fixed thread allocation limits to guarantee dynamically registered scrapers receive a full thread pool.
+- **TMDb TV show fallback matching** — resolved a mapping error where show IMDb IDs were matched with episode IMDb IDs when enriching show cache fallbacks.
+- **Simkl watchlist sync crash** — fixed a KeyError when synchronizing lists lacking titles/years by enriching them from the TMDb API.
+
+---
+
 ## [1.2.4] — 2026-06-04
 
 ### Fixed

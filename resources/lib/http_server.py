@@ -694,12 +694,148 @@ def app_factory(
         try:
             with sqlite3.connect(app.state.lists_db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT name, source FROM lists WHERE add_to_library = 1 OR add_to_library = 'true' OR add_to_library = 'True'")
+                cursor.execute("SELECT list_id, name, source FROM lists WHERE add_to_library = 1 OR add_to_library = 'true' OR add_to_library = 'True'")
                 rows = cursor.fetchall()
-                lists = [{"name": row[0], "source": row[1]} for row in rows]
+                lists = [{"list_id": row[0], "name": row[1], "source": row[2]} for row in rows]
                 return JSONResponse(status_code=200, content={"success": True, "lists": lists})
         except Exception as e:
             log(f"Error fetching library lists: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.get("/api/web/list_items")
+    async def web_list_items_api(list_id: str):
+        try:
+            items = []
+            with sqlite3.connect(app.state.lists_db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT media_type, tmdb_id, trakt_id 
+                    FROM list_items 
+                    WHERE list_id = ?
+                """, (list_id,))
+                list_rows = [dict(r) for r in cursor.fetchall()]
+
+            # Fetch details from static DBs
+            movies_conn = sqlite3.connect(app.state.movies_static_db_path)
+            movies_conn.row_factory = sqlite3.Row
+            movies_cur = movies_conn.cursor()
+
+            tvshows_conn = sqlite3.connect(app.state.tvshows_static_db_path)
+            tvshows_conn.row_factory = sqlite3.Row
+            tvshows_cur = tvshows_conn.cursor()
+
+            try:
+                for row in list_rows:
+                    media_type = row["media_type"]
+                    tmdb_id = row["tmdb_id"]
+                    trakt_id = row["trakt_id"]
+
+                    item_details = {
+                        "media_type": media_type,
+                        "tmdb_id": tmdb_id,
+                        "trakt_id": trakt_id,
+                        "title": "Unknown",
+                        "year": 0,
+                        "poster_path": None,
+                        "rating": 0.0,
+                        "overview": ""
+                    }
+
+                    if media_type == "movie":
+                        if tmdb_id:
+                            movies_cur.execute("""
+                                SELECT title, year, poster_path, rating, overview 
+                                FROM movies 
+                                WHERE tmdb_id = ?
+                            """, (tmdb_id,))
+                        elif trakt_id:
+                            movies_cur.execute("""
+                                SELECT title, year, poster_path, rating, overview 
+                                FROM movies 
+                                WHERE trakt_id = ?
+                            """, (trakt_id,))
+                        else:
+                            movies_cur.execute("SELECT 1 WHERE 0")
+                        
+                        m_row = movies_cur.fetchone()
+                        if m_row:
+                            item_details.update({
+                                "title": m_row["title"],
+                                "year": m_row["year"],
+                                "poster_path": m_row["poster_path"],
+                                "rating": m_row["rating"] or 0.0,
+                                "overview": m_row["overview"] or ""
+                            })
+                    elif media_type == "show":
+                        if tmdb_id:
+                            tvshows_cur.execute("""
+                                SELECT title, year, poster_path, rating, overview 
+                                FROM shows 
+                                WHERE show_tmdb_id = ?
+                            """, (tmdb_id,))
+                        elif trakt_id:
+                            tvshows_cur.execute("""
+                                SELECT title, year, poster_path, rating, overview 
+                                FROM shows 
+                                WHERE show_trakt_id = ?
+                            """, (trakt_id,))
+                        else:
+                            tvshows_cur.execute("SELECT 1 WHERE 0")
+                        
+                        s_row = tvshows_cur.fetchone()
+                        if s_row:
+                            item_details.update({
+                                "title": s_row["title"],
+                                "year": s_row["year"],
+                                "poster_path": s_row["poster_path"],
+                                "rating": s_row["rating"] or 0.0,
+                                "overview": s_row["overview"] or ""
+                            })
+                    items.append(item_details)
+            finally:
+                movies_conn.close()
+                tvshows_conn.close()
+
+            return JSONResponse(status_code=200, content={"success": True, "items": items})
+        except Exception as e:
+            log(f"Error fetching list items for {list_id}: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/list_items/remove")
+    async def web_remove_list_item_api(request: Request):
+        try:
+            data = await request.json()
+            list_id = data.get("list_id")
+            media_type = data.get("media_type")
+            trakt_id = data.get("trakt_id")
+            tmdb_id = data.get("tmdb_id")
+
+            if not list_id or not media_type or (not trakt_id and not tmdb_id):
+                return JSONResponse(status_code=400, content={"success": False, "error": "Missing required fields"})
+
+            with sqlite3.connect(app.state.lists_db_path) as conn:
+                cursor = conn.cursor()
+                if trakt_id and tmdb_id:
+                    cursor.execute("""
+                        DELETE FROM list_items 
+                        WHERE list_id = ? AND media_type = ? AND (trakt_id = ? OR tmdb_id = ?)
+                    """, (list_id, media_type, str(trakt_id), str(tmdb_id)))
+                elif trakt_id:
+                    cursor.execute("""
+                        DELETE FROM list_items 
+                        WHERE list_id = ? AND media_type = ? AND trakt_id = ?
+                    """, (list_id, media_type, str(trakt_id)))
+                else:
+                    cursor.execute("""
+                        DELETE FROM list_items 
+                        WHERE list_id = ? AND media_type = ? AND tmdb_id = ?
+                    """, (list_id, media_type, str(tmdb_id)))
+                conn.commit()
+
+            return JSONResponse(status_code=200, content={"success": True})
+        except Exception as e:
+            log(f"Error removing list item: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
     @app.get("/api/web/logs")

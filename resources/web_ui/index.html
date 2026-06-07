@@ -420,6 +420,272 @@
             font-family: 'Fira Code', monospace;
         }
 
+        /* Modal Overlay */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(11, 15, 25, 0.7);
+            backdrop-filter: blur(20px);
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity var(--animation-timing);
+        }
+
+        .modal-overlay.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-container {
+            width: 94%;
+            max-width: 1400px;
+            height: 90%;
+            display: flex;
+            flex-direction: column;
+            background: var(--surface-color);
+            border: 1px solid var(--border-glass);
+            border-radius: 1.5rem;
+            padding: 1.75rem;
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+            transform: scale(0.95);
+            transition: transform var(--animation-timing);
+        }
+
+        .modal-overlay.visible .modal-container {
+            transform: scale(1);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.25rem;
+            border-bottom: 1px solid var(--border-glass);
+            padding-bottom: 0.75rem;
+        }
+
+        .modal-header h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0;
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .modal-close-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0.5rem;
+            transition: color var(--animation-timing);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close-btn:hover {
+            color: var(--text-main);
+        }
+
+        .items-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 1.25rem;
+            overflow-y: auto;
+            flex-grow: 1;
+            padding-right: 0.5rem;
+        }
+
+        .items-grid::-webkit-scrollbar {
+            width: 8px;
+        }
+        .items-grid::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+
+        /* Detail Card actions overlays */
+        .media-card {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            position: relative;
+        }
+
+        .media-poster-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 2/3;
+            border-radius: 0.6rem;
+            overflow: hidden;
+            background: rgba(0,0,0,0.3);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .media-poster {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform var(--animation-timing);
+        }
+
+        .media-card:hover .media-poster {
+            transform: scale(1.05);
+        }
+
+        .media-card-actions {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(11, 15, 25, 0.75);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 0.75rem;
+            opacity: 0;
+            transition: opacity var(--animation-timing);
+            border-radius: 0.6rem;
+        }
+
+        .media-card:hover .media-card-actions {
+            opacity: 1;
+        }
+
+        .action-btn {
+            padding: 0.35rem 0.75rem;
+            border-radius: 2rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            border: none;
+            transition: transform var(--animation-timing), background var(--animation-timing);
+            width: 80px;
+            text-align: center;
+        }
+
+        .action-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .action-btn.scrape {
+            background: var(--primary-gradient);
+            color: var(--text-main);
+        }
+
+        .action-btn.details {
+            background: rgba(255, 255, 255, 0.12);
+            color: var(--text-main);
+            border: 1px solid var(--border-glass);
+        }
+        .action-btn.details:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .action-btn.remove {
+            background: rgba(244, 63, 94, 0.2);
+            color: #fb7185;
+            border: 1px solid rgba(244, 63, 94, 0.4);
+        }
+        .action-btn.remove:hover {
+            background: rgba(244, 63, 94, 0.4);
+        }
+
+        .media-info {
+            display: flex;
+            flex-direction: column;
+            padding: 0 0.15rem;
+        }
+
+        .media-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: var(--text-main);
+        }
+
+        .media-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 0.15rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .scrape-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border-glass);
+            border-top: 3px solid #a855f7;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 1rem auto;
+        }
+
+        .scrape-results-list {
+            max-height: 250px;
+            overflow-y: auto;
+            margin-top: 1rem;
+            padding-right: 0.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            width: 100%;
+        }
+
+        .scrape-results-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        .scrape-results-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        .scrape-result-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-glass);
+            border-radius: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            font-size: 0.75rem;
+        }
+
+        .scrape-result-title {
+            font-weight: 500;
+            color: var(--text-main);
+            word-break: break-all;
+        }
+
+        .scrape-result-details {
+            display: flex;
+            justify-content: space-between;
+            color: var(--text-muted);
+            font-size: 0.7rem;
+        }
+
     </style>
 </head>
 <body>
@@ -535,6 +801,78 @@
             </div>
         </div>
     </main>
+
+    <!-- List Items Modal Overlay -->
+    <div id="list-items-modal" class="modal-overlay" onclick="closeListItemsModal(event)">
+        <div class="modal-container" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2 id="modal-list-title">List Items</h2>
+                <button class="modal-close-btn" onclick="toggleListItemsModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="items-grid" id="modal-items-container">
+                <!-- Dynamic cards -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Scraping Status / Results Overlay -->
+    <div id="scrape-overlay" class="modal-overlay" onclick="closeScrapeOverlay(event)" style="z-index: 1100;">
+        <div class="modal-container" style="max-width: 500px; height: auto; min-height: 200px; max-height: 85vh; padding: 1.75rem; align-items: center; justify-content: center; gap: 1rem;" onclick="event.stopPropagation()">
+            <h3 style="margin: 0; font-size: 1.25rem; background: var(--primary-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 700;">Scrape Results</h3>
+            <div id="scrape-loading-container" style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                <div class="scrape-spinner"></div>
+                <p id="scrape-status-text" style="color: var(--text-muted); font-size: 0.85rem; text-align: center; margin: 0.5rem 0 0 0;">Querying providers... This may take up to 25 seconds.</p>
+            </div>
+            <div id="scrape-results-summary" style="display: none; width: 100%; text-align: left;">
+                <div id="scrape-results-meta" style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.5rem; color: var(--text-main);">Found 0 sources</div>
+                <div id="scrape-results-items" class="scrape-results-list"></div>
+            </div>
+            <button id="scrape-close-btn" class="action-btn scrape" style="display: none; width: 100%; height: 35px; border-radius: 0.5rem; font-size: 0.8rem;" onclick="toggleScrapeOverlay(false)">Close</button>
+        </div>
+    </div>
+
+    <!-- Details / Reviews Modal Overlay -->
+    <div id="details-modal" class="modal-overlay" onclick="closeDetailsModal(event)" style="z-index: 1100;">
+        <div class="modal-container" style="max-width: 850px; height: 85%; padding: 1.75rem; gap: 1.5rem;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="margin-bottom: 0; border-bottom: none; padding-bottom: 0;">
+                <h2 id="details-modal-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 90%;">Item Details</h2>
+                <button class="modal-close-btn" onclick="toggleDetailsModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            
+            <div style="display: flex; flex-direction: row; gap: 1.5rem; height: 100%; min-height: 0; overflow: hidden;">
+                <!-- Left: Poster and Quick Info -->
+                <div style="flex-shrink: 0; width: 180px; display: flex; flex-direction: column; gap: 1rem;">
+                    <img id="details-poster" src="" alt="Poster" style="width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 0.8rem; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border: 1px solid var(--border-glass);" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';">
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.8rem;">
+                        <div><span style="color: var(--text-muted);">Year:</span> <strong id="details-year" style="color: var(--text-main);"></strong></div>
+                        <div><span style="color: var(--text-muted);">Rating:</span> <strong id="details-rating" style="color: var(--text-main);"></strong></div>
+                        <div><span style="color: var(--text-muted);">Type:</span> <span id="details-type-badge" class="badge" style="padding: 0.1rem 0.35rem; font-size: 0.65rem;"></span></div>
+                    </div>
+                </div>
+                
+                <!-- Right: Description and Reviews -->
+                <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 1rem; min-height: 0;">
+                    <!-- Overview -->
+                    <div style="flex-shrink: 0;">
+                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: 600; color: var(--text-main);">Overview</h4>
+                        <p id="details-overview" style="margin: 0; font-size: 0.85rem; line-height: 1.4; color: var(--text-muted); max-height: 120px; overflow-y: auto; padding-right: 0.25rem;"></p>
+                    </div>
+                    
+                    <!-- Reviews -->
+                    <div style="flex-grow: 1; display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--border-glass); padding-top: 1rem;">
+                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: 600; color: var(--text-main);">User Reviews</h4>
+                        <div id="details-reviews-container" style="flex-grow: 1; overflow-y: auto; padding-right: 0.25rem; display: flex; flex-direction: column; gap: 0.75rem;">
+                            <!-- Dynamic reviews or spinner -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -671,6 +1009,8 @@
             lists.forEach(list => {
                 const row = document.createElement('div');
                 row.className = 'platform-row';
+                row.style.cursor = 'pointer';
+                row.onclick = () => openListItems(list.list_id, list.name);
                 row.innerHTML = `
                     <div><span class="badge source">${list.source.toUpperCase()}</span></div>
                     <div class="item-name" style="font-size:0.9rem; font-weight:500;">${list.name}</div>
@@ -678,6 +1018,356 @@
                 container.appendChild(row);
             });
         }
+
+        async function openListItems(listId, listName) {
+            document.getElementById('modal-list-title').textContent = listName;
+            toggleListItemsModal(true);
+            
+            const container = document.getElementById('modal-items-container');
+            container.innerHTML = `
+                <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; color: var(--text-muted); gap: 1rem;">
+                    <div class="scrape-spinner" style="margin: 0;"></div>
+                    <span style="font-size: 0.9rem;">Loading list items...</span>
+                </div>
+            `;
+            
+            try {
+                const response = await fetch(`/api/web/list_items?list_id=${encodeURIComponent(listId)}`);
+                const data = await response.json();
+                if (data.success) {
+                    renderModalItems(listId, data.items);
+                } else {
+                    container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--log-error);">Failed to load items: ${data.error || 'Unknown error'}</div>`;
+                }
+            } catch (error) {
+                console.error('Failed to load list items', error);
+                container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--log-error);">Error loading items: ${error.message || error}</div>`;
+            }
+        }
+
+        function toggleListItemsModal(show) {
+            const modal = document.getElementById('list-items-modal');
+            if (show) {
+                modal.classList.add('visible');
+            } else {
+                modal.classList.remove('visible');
+            }
+        }
+
+        function closeListItemsModal(event) {
+            if (event.target === document.getElementById('list-items-modal')) {
+                toggleListItemsModal(false);
+            }
+        }
+
+        function renderModalItems(listId, items) {
+            const container = document.getElementById('modal-items-container');
+            container.innerHTML = '';
+            
+            if (!items || items.length === 0) {
+                container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted); font-style: italic; font-size: 0.95rem;">This list is empty.</div>';
+                return;
+            }
+            
+            items.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'media-card';
+                card.dataset.mediaType = item.media_type;
+                card.dataset.tmdbId = item.tmdb_id || '';
+                card.dataset.traktId = item.trakt_id || '';
+                card.dataset.title = item.title;
+                card.dataset.year = item.year || 0;
+                card.dataset.rating = item.rating ? parseFloat(item.rating).toFixed(1) : '0.0';
+                card.dataset.overview = item.overview || '';
+                card.dataset.listId = listId;
+                
+                let posterUrl = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';
+                if (item.poster_path) {
+                    if (item.poster_path.startsWith('http')) {
+                        posterUrl = item.poster_path;
+                    } else {
+                        posterUrl = `https://image.tmdb.org/t/p/w300${item.poster_path}`;
+                    }
+                }
+                card.dataset.posterUrl = posterUrl;
+                
+                card.innerHTML = `
+                    <div class="media-poster-container">
+                        <img src="${posterUrl}" alt="${item.title} Poster" class="media-poster" loading="lazy" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';">
+                        <div class="media-card-actions">
+                            <button class="action-btn details" onclick="handleDetailsClick(event)">Details</button>
+                            <button class="action-btn scrape" onclick="handleScrapeClick(event)">Scrape</button>
+                            <button class="action-btn remove" onclick="handleRemoveClick(event)">Remove</button>
+                        </div>
+                    </div>
+                    <div class="media-info">
+                        <div class="media-title" title="${item.title}">${item.title}</div>
+                        <div class="media-meta">
+                            <span class="badge ${item.media_type === 'movie' ? 'active' : 'platform'}" style="padding: 0.1rem 0.35rem; font-size: 0.6rem;">${item.media_type.toUpperCase()}</span>
+                            <span style="font-weight: 600;">★ ${card.dataset.rating}</span>
+                        </div>
+                        <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 0.15rem;">${item.year || 'N/A'}</div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function handleDetailsClick(event) {
+            event.stopPropagation();
+            const card = event.currentTarget.closest('.media-card');
+            const mediaType = card.dataset.mediaType;
+            const tmdbId = card.dataset.tmdbId;
+            const title = card.dataset.title;
+            const year = card.dataset.year;
+            const rating = card.dataset.rating;
+            const overview = card.dataset.overview;
+            const posterUrl = card.dataset.posterUrl;
+            
+            document.getElementById('details-modal-title').textContent = title;
+            document.getElementById('details-poster').src = posterUrl;
+            document.getElementById('details-year').textContent = year || 'N/A';
+            document.getElementById('details-rating').textContent = rating ? `★ ${rating}` : '★ 0.0';
+            document.getElementById('details-overview').textContent = overview || 'No overview available.';
+            
+            const badge = document.getElementById('details-type-badge');
+            badge.textContent = mediaType.toUpperCase();
+            badge.className = `badge ${mediaType === 'movie' ? 'active' : 'platform'}`;
+            
+            toggleDetailsModal(true);
+            fetchReviews(tmdbId, mediaType);
+        }
+
+        function toggleDetailsModal(show) {
+            const modal = document.getElementById('details-modal');
+            if (show) {
+                modal.classList.add('visible');
+            } else {
+                modal.classList.remove('visible');
+            }
+        }
+
+        function closeDetailsModal(event) {
+            if (event.target === document.getElementById('details-modal')) {
+                toggleDetailsModal(false);
+            }
+        }
+
+        function formatReviewText(text) {
+            if (!text) return '';
+            // Basic HTML escape helper
+            let escaped = text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+                
+            // Format BBCode tags
+            return escaped
+                .replace(/\[B\]/gi, '<strong>')
+                .replace(/\[\/B\]/gi, '</strong>')
+                .replace(/\[CR\]/gi, '<br>')
+                .replace(/\r\n/g, '<br>')
+                .replace(/\n/g, '<br>');
+        }
+
+        async function fetchReviews(tmdbId, mediaType) {
+            const container = document.getElementById('details-reviews-container');
+            container.innerHTML = `
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem 0; color: var(--text-muted); gap: 0.5rem;">
+                    <div class="scrape-spinner" style="margin: 0; width: 30px; height: 30px;"></div>
+                    <span style="font-size: 0.8rem;">Loading reviews...</span>
+                </div>
+            `;
+            
+            try {
+                const typeParam = mediaType === 'show' ? 'tv' : 'movie';
+                const response = await fetch(`/reviews?tmdb_id=${tmdbId}&media_type=${typeParam}`);
+                const data = await response.json();
+                
+                if (data.success && data.reviews && data.reviews.length > 0) {
+                    container.innerHTML = '';
+                    data.reviews.forEach(rev => {
+                        const div = document.createElement('div');
+                        div.className = 'scrape-result-item';
+                        div.style.padding = '0.75rem';
+                        div.style.background = 'rgba(255, 255, 255, 0.02)';
+                        div.style.lineHeight = '1.4';
+                        div.style.fontSize = '0.8rem';
+                        div.innerHTML = formatReviewText(rev);
+                        container.appendChild(div);
+                    });
+                } else {
+                    container.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 2rem 0; font-style: italic; font-size: 0.85rem;">No reviews found for this title.</div>';
+                }
+            } catch (err) {
+                console.error(err);
+                container.innerHTML = `<div style="color: var(--log-error); text-align: center; padding: 2rem 0; font-size: 0.8rem;">Error loading reviews: ${err.message || err}</div>`;
+            }
+        }
+
+        function handleScrapeClick(event) {
+            event.stopPropagation();
+            const card = event.currentTarget.closest('.media-card');
+            const mediaType = card.dataset.mediaType;
+            const tmdbId = card.dataset.tmdbId;
+            const title = card.dataset.title;
+            const year = parseInt(card.dataset.year) || null;
+            
+            triggerScrape(mediaType, tmdbId, title, year);
+        }
+
+        function handleRemoveClick(event) {
+            event.stopPropagation();
+            const card = event.currentTarget.closest('.media-card');
+            const listId = card.dataset.listId;
+            const mediaType = card.dataset.mediaType;
+            const traktId = card.dataset.traktId;
+            const tmdbId = card.dataset.tmdbId;
+            
+            removeListItem(listId, mediaType, traktId, tmdbId, card);
+        }
+
+        function toggleScrapeOverlay(show) {
+            const modal = document.getElementById('scrape-overlay');
+            if (show) {
+                modal.classList.add('visible');
+            } else {
+                modal.classList.remove('visible');
+            }
+        }
+
+        function closeScrapeOverlay(event) {
+            if (event.target === document.getElementById('scrape-overlay')) {
+                toggleScrapeOverlay(false);
+            }
+        }
+
+        async function triggerScrape(mediaType, tmdbId, title, year) {
+            let season = 1;
+            let episode = 1;
+            if (mediaType === 'show') {
+                const input = prompt(`Enter Season and Episode for "${title}" (e.g. 1x01 or 1 1):`, '1x01');
+                if (input === null) return;
+                const match = input.match(/(\d+)\D+(\d+)/);
+                if (match) {
+                    season = parseInt(match[1]);
+                    episode = parseInt(match[2]);
+                } else {
+                    alert('Invalid format. Scraping Season 1, Episode 1.');
+                }
+            }
+
+            toggleScrapeOverlay(true);
+            document.getElementById('scrape-loading-container').style.display = 'flex';
+            document.getElementById('scrape-results-summary').style.display = 'none';
+            document.getElementById('scrape-close-btn').style.display = 'none';
+            document.getElementById('scrape-status-text').textContent = `Querying scrapers for "${title}"${mediaType === 'show' ? ` S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}` : ''}...`;
+
+            try {
+                let url = `/scrape?tmdb_id=${tmdbId}&item_type=${mediaType === 'show' ? 'episode' : 'movie'}`;
+                if (mediaType === 'show') {
+                    url += `&season=${season}&episode=${episode}`;
+                }
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                document.getElementById('scrape-loading-container').style.display = 'none';
+                
+                if (data.success && data.results) {
+                    const count = data.results.length;
+                    document.getElementById('scrape-results-meta').textContent = `Found ${count} source${count === 1 ? '' : 's'} for "${title}"`;
+                    
+                    const itemsContainer = document.getElementById('scrape-results-items');
+                    itemsContainer.innerHTML = '';
+                    
+                    if (count === 0) {
+                        itemsContainer.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 2rem; font-style: italic;">No sources found.</div>';
+                    } else {
+                        data.results.slice(0, 30).forEach(res => {
+                            const div = document.createElement('div');
+                            div.className = 'scrape-result-item';
+                            
+                            let sizeStr = 'N/A';
+                            if (res.size) {
+                                const sizeGB = (res.size / (1024 * 1024 * 1024)).toFixed(2);
+                                sizeStr = `${sizeGB} GB`;
+                            } else if (res.size_bytes) {
+                                const sizeGB = (res.size_bytes / (1024 * 1024 * 1024)).toFixed(2);
+                                sizeStr = `${sizeGB} GB`;
+                            }
+                            
+                            const name = res.title || res.name || 'Unnamed Source';
+                            const provider = res.provider || res.source || 'unknown';
+                            const quality = res.quality || 'Unknown';
+                            const seeders = res.seeders !== undefined ? res.seeders : 'N/A';
+                            
+                            div.innerHTML = `
+                                <div class="scrape-result-title" title="${name}">${name}</div>
+                                <div class="scrape-result-details">
+                                    <span>Provider: <strong style="color: #a855f7;">${provider}</strong></span>
+                                    <span>Quality: <strong>${quality}</strong></span>
+                                    <span>Size: <strong>${sizeStr}</strong></span>
+                                    <span>Seeders: <strong>${seeders}</strong></span>
+                                </div>
+                            `;
+                            itemsContainer.appendChild(div);
+                        });
+                    }
+                    
+                    document.getElementById('scrape-results-summary').style.display = 'block';
+                } else {
+                    document.getElementById('scrape-status-text').textContent = `Scrape failed: ${data.error || 'Unknown error'}`;
+                    document.getElementById('scrape-loading-container').style.display = 'flex';
+                }
+            } catch (err) {
+                console.error(err);
+                document.getElementById('scrape-status-text').textContent = `Error: ${err.message || err}`;
+                document.getElementById('scrape-loading-container').style.display = 'flex';
+            } finally {
+                document.getElementById('scrape-close-btn').style.display = 'block';
+            }
+        }
+
+        async function removeListItem(listId, mediaType, traktId, tmdbId, cardElement) {
+            if (!confirm("Are you sure you want to remove this item from the list?")) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/web/list_items/remove', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        list_id: listId,
+                        media_type: mediaType,
+                        trakt_id: traktId ? parseInt(traktId) : null,
+                        tmdb_id: tmdbId ? parseInt(tmdbId) : null
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    cardElement.style.transition = 'transform 0.3s, opacity 0.3s';
+                    cardElement.style.transform = 'scale(0.8)';
+                    cardElement.style.opacity = '0';
+                    setTimeout(() => {
+                        cardElement.remove();
+                        const container = document.getElementById('modal-items-container');
+                        if (container.children.length === 0) {
+                            container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted); font-style: italic; font-size: 0.95rem;">This list is empty.</div>';
+                        }
+                    }, 300);
+                } else {
+                    alert(`Failed to remove item: ${data.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                console.error('Failed to remove item', error);
+                alert(`Error removing item: ${error.message || error}`);
+            }
+        }
+
 
         function renderNextEpisodes(episodes) {
             const container = document.getElementById('next-episodes-container');
@@ -692,12 +1382,19 @@
                 const card = document.createElement('div');
                 card.className = 'episode-card';
                 
-                // Prioritize show poster
                 let imageUrl = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';
                 if (ep.show_poster_path) {
-                    imageUrl = `https://image.tmdb.org/t/p/w300${ep.show_poster_path}`;
+                    if (ep.show_poster_path.startsWith('http')) {
+                        imageUrl = ep.show_poster_path;
+                    } else {
+                        imageUrl = `https://image.tmdb.org/t/p/w300${ep.show_poster_path}`;
+                    }
                 } else if (ep.episode_poster_path) {
-                    imageUrl = `https://image.tmdb.org/t/p/w300${ep.episode_poster_path}`;
+                    if (ep.episode_poster_path.startsWith('http')) {
+                        imageUrl = ep.episode_poster_path;
+                    } else {
+                        imageUrl = `https://image.tmdb.org/t/p/w300${ep.episode_poster_path}`;
+                    }
                 }
                 
                 const seasonNum = String(ep.season).padStart(2, '0');
