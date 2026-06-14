@@ -6,6 +6,19 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.2.6] — 2026-06-14
+
+### Added
+- **Higher-resolution images** — upgraded all TMDb image size parameters: posters `w500→w780`, fanart/landscape `w780→w1280`, thumbnails/episode stills `w300→w780`, clear logos `w300→w500`.
+- **Image resolution migration script** — added `migrate_image_resolution.py` to upgrade all existing stored image URLs in the database without requiring a full resync.
+- **AIOStreams diagnostic logging** — added detailed INFO-level logging across the full settings pipeline (Liberator send → Orac receive/store → scraper credential load → header source) with masked passwords.
+
+### Fixed
+- **FlixPatrol title resolution** — extract year from URL slug (e.g. `/title/the-babysitter-1995/`) and pass it to TMDb search, fixing wrong-version matches like The Babysitter (2017 vs 1995).
+- **FlixPatrol ranking order** — preserve scraped rank order for FlixPatrol/web/mdblist lists instead of resorting by release date. Fixed an int/string type mismatch in the `id_to_index` lookup that was silently defeating the sort.
+
+---
+
 ## [1.2.5] — 2026-06-07
 
 ### Added

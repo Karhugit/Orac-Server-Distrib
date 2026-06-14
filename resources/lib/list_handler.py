@@ -414,8 +414,8 @@ async def _fetch_single_tmdb_poster(tmdb_handler, tmdb_id, media_type, item):
         
         data = await asyncio.to_thread(_get_tmdb_data)
         if data:
-            item["poster_path"] = tmdb_handler._build_url(data.get("poster_path"), 'w500')
-            item["fanart_path"] = tmdb_handler._build_url(data.get("backdrop_path"), 'w780')
+            item["poster_path"] = tmdb_handler._build_url(data.get("poster_path"), 'w780')
+            item["fanart_path"] = tmdb_handler._build_url(data.get("backdrop_path"), 'w1280')
             if media_type == 'movie':
                 item["tagline"] = data.get("tagline")
                 item["runtime"] = data.get("runtime")
@@ -502,7 +502,7 @@ async def _fetch_tmdb_discover_external(tmdb_handler, slug, item_type, ext_index
                     "year": int(item.get("release_date")[:4]) if item.get("release_date") else None,
                     "released": item.get("release_date"),
                     "overview": item.get("overview"),
-                    "poster_path": tmdb_handler._build_url(item.get("poster_path"), 'w500'),
+                    "poster_path": tmdb_handler._build_url(item.get("poster_path"), 'w780'),
                     "media_type": "movie"
                 })
             else:
@@ -512,7 +512,7 @@ async def _fetch_tmdb_discover_external(tmdb_handler, slug, item_type, ext_index
                     "year": int(item.get("first_air_date")[:4]) if item.get("first_air_date") else None,
                     "premiered": item.get("first_air_date"),
                     "overview": item.get("overview"),
-                    "poster_path": tmdb_handler._build_url(item.get("poster_path"), 'w500'),
+                    "poster_path": tmdb_handler._build_url(item.get("poster_path"), 'w780'),
                     "media_type": "show"
                 })
 
@@ -579,7 +579,7 @@ async def _fetch_tmdb_list_external(tmdb_handler, slug, item_type):
                     "year": int(item.get("release_date")[:4]) if item.get("release_date") else None,
                     "released": item.get("release_date"),
                     "overview": item.get("overview"),
-                    "poster_path": tmdb_handler._build_url(item.get("poster_path"), 'w500'),
+                    "poster_path": tmdb_handler._build_url(item.get("poster_path"), 'w780'),
                     "media_type": "movie"
                 })
             elif media_type == 'tv' and item_type in ['tvshow', 'all']:
@@ -589,7 +589,7 @@ async def _fetch_tmdb_list_external(tmdb_handler, slug, item_type):
                     "year": int(item.get("first_air_date")[:4]) if item.get("first_air_date") else None,
                     "premiered": item.get("first_air_date"),
                     "overview": item.get("overview"),
-                    "poster_path": tmdb_handler._build_url(item.get("poster_path"), 'w500'),
+                    "poster_path": tmdb_handler._build_url(item.get("poster_path"), 'w780'),
                     "media_type": "show"
                 })
 

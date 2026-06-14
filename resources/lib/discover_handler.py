@@ -116,8 +116,8 @@ def handle_discover_request(item_type, query_params, tmdb_handler, ext_indexes_c
                     'year': year,
                     'premiered': first_aired,
                     'overview': show.get('overview'),
-                    'poster_path': tmdb_handler._build_url(show.get('poster_path'), 'w500'),
-                    'fanart_path': tmdb_handler._build_url(show.get('backdrop_path'), 'w780'),
+                    'poster_path': tmdb_handler._build_url(show.get('poster_path'), 'w780'),
+                    'fanart_path': tmdb_handler._build_url(show.get('backdrop_path'), 'w1280'),
                     'rating': show.get('vote_average'),
                     'votes': show.get('vote_count')
                 })
@@ -132,8 +132,8 @@ def handle_discover_request(item_type, query_params, tmdb_handler, ext_indexes_c
                     'year': year,
                     'premiered': release_date,
                     'overview': movie.get('overview'),
-                    'poster_path': tmdb_handler._build_url(movie.get('poster_path'), 'w500'),
-                    'fanart_path': tmdb_handler._build_url(movie.get('backdrop_path'), 'w780'),
+                    'poster_path': tmdb_handler._build_url(movie.get('poster_path'), 'w780'),
+                    'fanart_path': tmdb_handler._build_url(movie.get('backdrop_path'), 'w1280'),
                     'rating': movie.get('vote_average'),
                     'votes': movie.get('vote_count')
                 })

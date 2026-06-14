@@ -80,8 +80,8 @@ class TMDbAPI:
             fanart_path = show_main_data.get("backdrop_path") if show_main_data else None
 
             result = {
-                "poster": self._build_url(poster_path, "w500"),
-                "fanart": self._build_url(fanart_path, "w780"),
+                "poster": self._build_url(poster_path, "w780"),
+                "fanart": self._build_url(fanart_path, "w1280"),
                 "thumb": None,
                 "clearlogo": None,
                 "landscape": None,
@@ -89,19 +89,19 @@ class TMDbAPI:
 
             # Find the best poster if not already set
             if not result["poster"] and image_data.get("posters"):
-                result["poster"] = self._build_url(image_data["posters"][0].get("file_path"), "w500")
+                result["poster"] = self._build_url(image_data["posters"][0].get("file_path"), "w780")
 
             # Find the best backdrop for fanart and landscape
             backdrops = image_data.get("backdrops", [])
             if backdrops:
-                result["fanart"] = self._build_url(backdrops[0].get("file_path"), "w780")
-                result["landscape"] = self._build_url(backdrops[0].get("file_path"), "w780")
-                result["thumb"] = self._build_url(backdrops[0].get("file_path"), "w300")
+                result["fanart"] = self._build_url(backdrops[0].get("file_path"), "w1280")
+                result["landscape"] = self._build_url(backdrops[0].get("file_path"), "w1280")
+                result["thumb"] = self._build_url(backdrops[0].get("file_path"), "w780")
 
             # ClearLogo
             for logo in image_data.get("logos", []):
                 if logo.get("iso_639_1") in ("en", None):
-                    result["clearlogo"] = self._build_url(logo["file_path"], "w300")
+                    result["clearlogo"] = self._build_url(logo["file_path"], "w500")
                     break
 
             return result
@@ -162,20 +162,20 @@ class TMDbAPI:
         """Extracts image URLs for a season from pre-fetched data."""
         # A season's primary image is its poster. Other art types can fallback to the show's art.
         return {
-            "poster": self._build_url(season_data.get("poster_path"), "w500"),
-            "fanart": self._build_url(show_data.get("backdrop_path"), "w780"),
-            "thumb": self._build_url(season_data.get("poster_path"), "w300"),
-            "landscape": self._build_url(show_data.get("backdrop_path"), "w780"),
+            "poster": self._build_url(season_data.get("poster_path"), "w780"),
+            "fanart": self._build_url(show_data.get("backdrop_path"), "w1280"),
+            "thumb": self._build_url(season_data.get("poster_path"), "w780"),
+            "landscape": self._build_url(show_data.get("backdrop_path"), "w1280"),
         }
 
     def get_episode_images_from_data(self, episode_data, show_data):
         """Extracts image URLs for an episode from pre-fetched data."""
         # An episode's primary image is its still (thumbnail). Others fallback to show art.
         return {
-            "poster": self._build_url(show_data.get("poster_path"), "w500"),
-            "fanart": self._build_url(show_data.get("backdrop_path"), "w780"),
-            "thumb": self._build_url(episode_data.get("still_path"), "w300"),
-            "landscape": self._build_url(show_data.get("backdrop_path"), "w780"),
+            "poster": self._build_url(show_data.get("poster_path"), "w780"),
+            "fanart": self._build_url(show_data.get("backdrop_path"), "w1280"),
+            "thumb": self._build_url(episode_data.get("still_path"), "w780"),
+            "landscape": self._build_url(show_data.get("backdrop_path"), "w1280"),
         }
 
     def get_reviews(self, tmdb_id, media_type='movie', max_reviews=20):
@@ -220,8 +220,8 @@ class TMDbAPI:
             # Landscape (reuse a backdrop)
 
             images = {
-                "poster": self._build_url(data.get("poster_path"), "w500"),
-                "fanart": self._build_url(data.get("backdrop_path"), "w780"),
+                "poster": self._build_url(data.get("poster_path"), "w780"),
+                "fanart": self._build_url(data.get("backdrop_path"), "w1280"),
                 "thumb": None,
                 "clearlogo": None,
                 "landscape": None,
@@ -230,16 +230,16 @@ class TMDbAPI:
             movie_images_data = data.get("images", {})
             backdrops = movie_images_data.get("backdrops", [])
             if backdrops:
-                images["landscape"] = self._build_url(backdrops[0]["file_path"], "w780")
-                images["thumb"] = self._build_url(backdrops[0]["file_path"], "w300")  # Reuse the first backdrop as thumb
+                images["landscape"] = self._build_url(backdrops[0]["file_path"], "w1280")
+                images["thumb"] = self._build_url(backdrops[0]["file_path"], "w780")  # Reuse the first backdrop as thumb
             elif data.get("poster_path"):
                 # If no backdrops, use poster as fallback for thumb
-                images["thumb"] = self._build_url(data.get("poster_path"), "w185")
+                images["thumb"] = self._build_url(data.get("poster_path"), "w780")
 
             # ClearLogo
             for logo in movie_images_data.get("logos", []):
                 if logo.get("iso_639_1") in ("en", None):
-                    images["clearlogo"] = self._build_url(logo["file_path"], "w300")
+                    images["clearlogo"] = self._build_url(logo["file_path"], "w500")
                     break
 
             # Production companies(aka studios)

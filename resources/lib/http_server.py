@@ -960,20 +960,36 @@ def app_factory(
     @app.put("/update_aiostreams_settings")
     async def update_aio_settings(request: Request):
         params = flat_qs(request)
+        # Mask password for logging
+        log_params = {k: (v[:2] + '***' if k == 'aio.password' and v and v not in ('empty_setting', '') else v)
+                      for k, v in params.items()}
+        log(f"[AIOStreams] PUT /update_aiostreams_settings received: {log_params}", level=LOGINFO)
         success = update_config_values(params, app.state.config_db_path)
+        log(f"[AIOStreams] update_config_values result: {success}", level=LOGINFO)
         if success:
             username = get_config_value("aio.username", app.state.config_db_path, "empty_setting")
             password = get_config_value("aio.password", app.state.config_db_path, "empty_setting")
             instance = get_config_value("aiostreams_instance", app.state.config_db_path, "0")
             custom_url = get_config_value("aio.custom_url", app.state.config_db_path, "empty_setting")
-            
+            masked_pw = (password[:2] + '***') if password and password not in ('empty_setting', '') else repr(password)
+            log(f"[AIOStreams] Values now in config DB: username={repr(username)}, password={masked_pw}, instance={repr(instance)}, custom_url={repr(custom_url)}", level=LOGINFO)
+
             is_active = (
                 username not in (None, "", "empty_setting") and
                 password not in (None, "", "empty_setting") and
                 (instance != "1" or custom_url not in (None, "", "empty_setting"))
             )
+            if not is_active:
+                log(f"[AIOStreams] is_active=False because: "
+                    f"username_ok={username not in (None, '', 'empty_setting')}, "
+                    f"password_ok={password not in (None, '', 'empty_setting')}, "
+                    f"instance={repr(instance)}, "
+                    f"custom_url_ok={custom_url not in (None, '', 'empty_setting')}", level=LOGINFO)
+            else:
+                log(f"[AIOStreams] is_active=True - scraper will be enabled", level=LOGINFO)
             scraper_db = ScraperDB('scrapers.db')
             scraper_db.set_active_status('aiostreams', is_active)
+            log(f"[AIOStreams] Scraper active status set to: {is_active}", level=LOGINFO)
         return Response(status_code=204) if success else PlainTextResponse("Error", status_code=500)
 
     @app.put("/update_tmdb_tokens")

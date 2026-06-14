@@ -85,6 +85,13 @@ class source:
 		instance_val = get_config_value("aiostreams_instance", config_db_path, "0")
 		self.instance_id = int(instance_val) if instance_val and instance_val.isdigit() else 0
 		self.custom_url = get_config_value("aio.custom_url", config_db_path, "empty_setting")
+
+		masked_pw = (self.password[:2] + '***') if self.password and self.password not in ('empty_setting', '') else repr(self.password)
+		log(f"[AIOStreams] _load_credentials from config DB:", level=LOGINFO)
+		log(f"[AIOStreams]   username    = {repr(self.username)}", level=LOGINFO)
+		log(f"[AIOStreams]   password    = {masked_pw}", level=LOGINFO)
+		log(f"[AIOStreams]   instance_id = {self.instance_id} (raw='{instance_val}')", level=LOGINFO)
+		log(f"[AIOStreams]   custom_url  = {repr(self.custom_url)}", level=LOGINFO)
 		
 		# Validate credentials
 		self.is_active = (
@@ -95,6 +102,11 @@ class source:
 		
 		# Self-deactivation safeguard
 		if not self.is_active:
+			log(f"[AIOStreams] is_active=False - scraper will not run. "
+				f"username_ok={self.username not in (None, '', 'empty_setting')}, "
+				f"password_ok={self.password not in (None, '', 'empty_setting')}, "
+				f"instance_id={self.instance_id}, "
+				f"custom_url_ok={self.custom_url not in (None, '', 'empty_setting')}", level=LOGINFO)
 			try:
 				scraper_db = ScraperDB('scrapers.db')
 				scraper_db.set_active_status('aiostreams', False)
@@ -114,6 +126,7 @@ class source:
 				self.base_link = self.custom_url.strip().rstrip('/')
 			else:
 				self.base_link = public_instance[self.instance_id].strip().rstrip('/')
+			log(f"[AIOStreams] is_active=True, base_link={repr(self.base_link)}", level=LOGINFO)
 
 	def sources(self, data, hostDict):
 		self._load_credentials()
@@ -232,6 +245,12 @@ class source:
 			value = None
 		if not value:
 			value = _AIOSTREAMS_USER_DATA or _AIOSTREAMS_USER_DATA_FALLBACK
+			if _AIOSTREAMS_USER_DATA:
+				log(f"[AIOStreams] _headers: using user_data_header from module-level config load (len={len(value)})", level=LOGDEBUG)
+			else:
+				log(f"[AIOStreams] _headers: using FALLBACK hardcoded user_data_header (len={len(value)})", level=LOGDEBUG)
+		else:
+			log(f"[AIOStreams] _headers: using user_data_header from config.json (len={len(value)})", level=LOGDEBUG)
 		return {'x-aiostreams-user-data': value}
 
 class AIOStreamsService(ConcurrentScraperBase):
