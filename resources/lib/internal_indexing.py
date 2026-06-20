@@ -412,7 +412,12 @@ def get_internal_index_contents(db_path, index_id, media_type, static_db, dynami
                 if min_votes: conditions.append("s.votes >= ?"); params_list.append(int(min_votes))
                 if country: conditions.append("s.country LIKE ?"); params_list.append(f"%{country}%")
                 if certification: conditions.append("s.certification = ?"); params_list.append(certification)
-                if status: conditions.append("s.status = ?"); params_list.append(status)
+                if status:
+                    status_list = [s.strip().lower() for s in status.split('|') if s.strip()]
+                    if status_list:
+                        placeholders = ','.join(['?' for _ in status_list])
+                        conditions.append(f"LOWER(s.status) IN ({placeholders})")
+                        params_list.extend(status_list)
                 if dropped != '' and dropped is not None: conditions.append("s.dropped = ?"); params_list.append(int(dropped))
                 if network: conditions.append("s.network LIKE ?"); params_list.append(f"%{network}%")
                 if language: conditions.append("s.language = ?"); params_list.append(language)
