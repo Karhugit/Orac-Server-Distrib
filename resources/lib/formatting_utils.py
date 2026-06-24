@@ -1,6 +1,28 @@
 import json
 from resources.lib.log_utils import log, LOGDEBUG
 
+def get_lan_ip():
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = '127.0.0.1'
+    finally:
+        s.close()
+    return ip
+
+def get_asset_url(path_value):
+    if not path_value:
+        return None
+    if path_value.startswith(('http://', 'https://')):
+        return path_value
+    from resources.lib.config_loader import ConfigLoader
+    port = ConfigLoader().server_config.get("port", 5555)
+    ip = get_lan_ip()
+    return f"http://{ip}:{port}/assets/images/{path_value.replace('\\', '/')}"
+
 movie_genres = [
     {'id': 28, 'name': 'Action'}, {'id': 12, 'name': 'Adventure'}, {'id': 16, 'name': 'Animation'},
     {'id': 35, 'name': 'Comedy'}, {'id': 80, 'name': 'Crime'}, {'id': 99, 'name': 'Documentary'},
@@ -118,4 +140,26 @@ def format_movie(item, tmdb_handler, media_type='movie'):
         "watched_status": item.get("watched_status", 0)
     }
     
+    # Fanart.tv Overrides
+    try:
+        from resources.lib.config_handler import get_fanart_config
+        fanart_cfg = get_fanart_config()
+        if fanart_cfg["fanart_enabled"]:
+            f_poster = item.get("fanart_poster_path")
+            f_fanart = item.get("fanart_fanart_path")
+            f_clearlogo = item.get("fanart_clearlogo_path")
+            
+            if f_poster:
+                url_poster = get_asset_url(f_poster)
+                formatted["poster_path"] = url_poster
+                formatted["thumbnail_path"] = url_poster
+            if f_fanart:
+                url_fanart = get_asset_url(f_fanart)
+                formatted["fanart_path"] = url_fanart
+                formatted["landscape_path"] = url_fanart
+            if f_clearlogo:
+                formatted["clearlogo_path"] = get_asset_url(f_clearlogo)
+    except Exception as e:
+        log(f"Error overriding fanart in format_movie: {e}")
+
     return formatted

@@ -418,3 +418,19 @@ def add_movie(movies_static_cursor, movies_dynamic_cursor, movie, media_id, tmdb
 
         log(f"Updating static data for movie", level=LOGINFO)
         tmdb_handler.update_movie_static_data_from_tmdb(movie_id, tmdb_id, movies_static_cursor)
+
+        # Sync Fanart.tv if enabled
+        try:
+            from resources.lib.config_handler import get_fanart_config
+            config = get_fanart_config()
+            if config["fanart_enabled"]:
+                import threading
+                from resources.lib.fanart_client import sync_fanart_for_item
+                threading.Thread(
+                    target=sync_fanart_for_item,
+                    args=(tmdb_id, "movie", tmdb_handler, None),
+                    daemon=True,
+                    name=f"FanartSyncMovie_{tmdb_id}"
+                ).start()
+        except Exception as e:
+            log(f"[Fanart] Error triggering movie sync in add_movie: {e}", level=LOGERROR)

@@ -215,9 +215,26 @@ def app_factory(
                 await asyncio.sleep(3600)
 
         
+        async def fanart_sync_loop():
+            # Wait 10 seconds before the first sync run
+            await asyncio.sleep(10)
+            while True:
+                try:
+                    from resources.lib.fanart_client import run_fanart_latest_sync
+                    # Run in an executor/thread pool because requests is synchronous and blocking
+                    await asyncio.get_event_loop().run_in_executor(
+                        None, run_fanart_latest_sync, application.state.config_db_path, application.state.tmdb_handler
+                    )
+                except Exception as e:
+                    log(f"[Orac] Error in fanart sync loop: {e}", level=LOGERROR)
+                # Sleep for 30 minutes (1800 seconds)
+                await asyncio.sleep(1800)
+
         sync_task = asyncio.create_task(hourly_sync_loop())
+        fanart_sync_task = asyncio.create_task(fanart_sync_loop())
         yield
         sync_task.cancel()
+        fanart_sync_task.cancel()
         if application.state.trakt_maintenance_worker:
             application.state.trakt_maintenance_worker.stop()
         if application.state.stale_refresh_worker:
@@ -253,8 +270,92 @@ def app_factory(
     else:
         app.state.scraper_manager = ScraperManager()
 
+    def apply_fanart_overrides_to_payload(data):
+        try:
+            from resources.lib.config_handler import get_fanart_config
+            config = get_fanart_config(app.state.config_db_path)
+            if not config["fanart_enabled"]:
+                return data
+                
+            from resources.lib.formatting_utils import get_asset_url
+            
+            is_list = isinstance(data, list)
+            items = data if is_list else [data]
+            
+            movie_ids = []
+            show_ids = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                media_type = item.get("media_type")
+                tmdb_id = item.get("tmdb_id") or item.get("show_tmdb_id") or item.get("show_id")
+                if not tmdb_id:
+                    continue
+                if media_type == "movie" or ("title" in item and "seasons" not in item and "show_tmdb_id" not in item):
+                    movie_ids.append(tmdb_id)
+                elif media_type in ("tvshow", "tv", "show") or "seasons" in item or "show_tmdb_id" in item:
+                    show_ids.append(tmdb_id)
+                    
+            movie_fanart_map = {}
+            if movie_ids:
+                with sqlite3.connect(app.state.movies_static_db_path) as conn:
+                    cursor = conn.cursor()
+                    placeholders = ",".join("?" for _ in movie_ids)
+                    cursor.execute(f"SELECT tmdb_id, fanart_poster_path, fanart_fanart_path, fanart_clearlogo_path FROM movies WHERE tmdb_id IN ({placeholders})", movie_ids)
+                    for row in cursor.fetchall():
+                        movie_fanart_map[row[0]] = {
+                            "poster": get_asset_url(row[1]),
+                            "fanart": get_asset_url(row[2]),
+                            "clearlogo": get_asset_url(row[3])
+                        }
+                        
+            show_fanart_map = {}
+            if show_ids:
+                with sqlite3.connect(app.state.tvshows_static_db_path) as conn:
+                    cursor = conn.cursor()
+                    placeholders = ",".join("?" for _ in show_ids)
+                    cursor.execute(f"SELECT show_tmdb_id, fanart_poster_path, fanart_fanart_path, fanart_clearlogo_path FROM shows WHERE show_tmdb_id IN ({placeholders})", show_ids)
+                    for row in cursor.fetchall():
+                        show_fanart_map[row[0]] = {
+                            "poster": get_asset_url(row[1]),
+                            "fanart": get_asset_url(row[2]),
+                            "clearlogo": get_asset_url(row[3])
+                        }
+                        
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                tmdb_id = item.get("tmdb_id") or item.get("show_tmdb_id") or item.get("show_id")
+                if not tmdb_id:
+                    continue
+                    
+                f_data = movie_fanart_map.get(tmdb_id) or show_fanart_map.get(tmdb_id)
+                if f_data:
+                    if f_data["poster"]:
+                        item["poster_path"] = f_data["poster"]
+                        item["thumbnail_path"] = f_data["poster"]
+                    if f_data["fanart"]:
+                        item["fanart_path"] = f_data["fanart"]
+                        item["landscape_path"] = f_data["fanart"]
+                    if f_data["clearlogo"]:
+                        item["clearlogo_path"] = f_data["clearlogo"]
+        except Exception as e:
+            log(f"[Orac] Error applying fanart overrides in send_safe: {e}", level=LOGERROR)
+        return data
+
     # Create responses safely
     def send_safe(status, body, content_type="application/json"):
+        if content_type == "application/json":
+            if isinstance(body, (dict, list)):
+                body = apply_fanart_overrides_to_payload(body)
+            elif isinstance(body, str):
+                try:
+                    data = json.loads(body)
+                    data = apply_fanart_overrides_to_payload(data)
+                    body = json.dumps(data)
+                except Exception:
+                    pass
+
         if isinstance(body, dict) or isinstance(body, list):
             return JSONResponse(status_code=status, content=body)
         if isinstance(body, bytes):
@@ -1089,11 +1190,41 @@ def app_factory(
          success = remove_tag_from_item(app.state.tags_db_path, params.get('media_type'), int(params.get('tmdb_id')), params.get('tag'))
          return JSONResponse(status_code=200 if success else 500, content={"success": success})
 
+    @app.post("/api/config/fanart")
+    async def update_fanart_settings_endpoint(request: Request):
+        try:
+            data = await request.json()
+            success = update_config_values(data, app.state.config_db_path)
+            return JSONResponse(status_code=200 if success else 500, content={"success": success})
+        except Exception as e:
+            log(f"Error updating fanart settings: {e}", level=LOGERROR)
+            return JSONResponse(status_code=400, content={"success": False, "error": str(e)})
+
+    @app.post("/api/sync/fanart/latest")
+    async def force_fanart_latest_sync(request: Request):
+        try:
+            from resources.lib.fanart_client import run_fanart_latest_sync
+            import threading
+            threading.Thread(
+                target=run_fanart_latest_sync,
+                args=(app.state.config_db_path, app.state.tmdb_handler),
+                daemon=True,
+                name="ManualFanartSync"
+            ).start()
+            return JSONResponse(status_code=200, content={"success": True, "message": "Fanart latest sync triggered."})
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
     # Serve static UI files at /web
     # The directory needs to exist to mount properly
     ui_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web_ui")
     if os.path.exists(ui_dir):
         app.mount("/web", StaticFiles(directory=ui_dir, html=True), name="web")
+
+    # Serve static downloaded image files at /assets/images
+    assets_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "images")
+    os.makedirs(assets_dir, exist_ok=True)
+    app.mount("/assets/images", StaticFiles(directory=assets_dir), name="assets_images")
 
     return app
 

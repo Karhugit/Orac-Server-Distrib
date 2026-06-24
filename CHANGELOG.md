@@ -6,6 +6,14 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.2.7] — 2026-06-23
+
+### Added
+- **Fanart.tv API (v3.2) Integration** — implemented frontend configuration options inside the Accounts settings tab of the Liberator addon (`fanart_enabled`, `fanart_api_key`, `fanart_storage_mode`) to sync and redirect artwork queries.
+- **Background Latest Sync Worker** — created a delta sync runner that queries Fanart.tv's `/latest` movies and TV show changes endpoints and refreshes static databases selectively.
+- **Local Asset Streaming** — added dynamic asset streaming by mounting the downloaded local images directory (`/assets/images`) statically via FastAPI, rewriting media endpoints on the fly using the host LAN address.
+- **Database Schema Upgrades** — added `fanart_poster_path`, `fanart_fanart_path`, `fanart_clearlogo_path`, and `fanart_last_updated` columns, and integrated TVDB ID tracking to TV Show tables.
+
 ## [1.2.6] — 2026-06-14
 
 ### Added

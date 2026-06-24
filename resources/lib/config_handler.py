@@ -106,3 +106,22 @@ def update_config_values(params, config_db_path):
     except Exception as e:
         log(f"Error updating config values: {e}", LOGERROR)
         return False
+
+
+def get_fanart_config(config_db_path=None):
+    if config_db_path is None:
+        from resources.lib.database_manager import DatabaseManager
+        config_db_path = DatabaseManager().get_path('config')
+    if not config_db_path:
+        from pathlib import Path
+        config_db_path = str(Path(__file__).resolve().parent.parent.parent / "config.db")
+    
+    enabled = get_config_value('fanart_enabled', config_db_path, 'false') == 'true'
+    api_key = get_config_value('fanart_api_key', config_db_path, '')
+    storage_mode = get_config_value('fanart_storage_mode', config_db_path, 'URL')
+    
+    return {
+        'fanart_enabled': enabled,
+        'fanart_api_key': api_key,
+        'fanart_storage_mode': storage_mode
+    }

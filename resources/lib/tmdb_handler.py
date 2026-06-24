@@ -370,7 +370,7 @@ class TMDbAPI:
             return None
 
         # Step 1: Get basic show info to find out what seasons exist.
-        initial_show_info = self._get(f"/tv/{tmdb_id}")
+        initial_show_info = self._get(f"/tv/{tmdb_id}", params={"append_to_response": "external_ids"})
         if not initial_show_info:
             log(f"[TMDbAPI] Could not fetch initial data for show TMDb ID {tmdb_id}", level=LOGERROR)
             return None

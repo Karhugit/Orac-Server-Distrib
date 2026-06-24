@@ -100,6 +100,9 @@ def add_tvshow(tvshows_static_cursor, tvshows_dynamic_cursor, trakt_queue_cursor
     slug = show.get("ids", {}).get("slug", "")
     overview = show.get("overview") or tmdb_full_data.get("overview", "")
     imdb_id = show.get("ids", {}).get("imdb", "")
+    tvdb_id = tmdb_full_data.get("external_ids", {}).get("tvdb_id") or show.get("ids", {}).get("tvdb", "")
+    if tvdb_id:
+        tvdb_id = str(tvdb_id)
     last_updated = show.get("updated_at") or 0
     trailer = show.get("trailer", "")
     tagline = show.get("tagline") or tmdb_full_data.get("tagline", "")
@@ -129,10 +132,10 @@ def add_tvshow(tvshows_static_cursor, tvshows_dynamic_cursor, trakt_queue_cursor
     # Always update the show details to ensure data is fresh
     tvshows_static_cursor.execute("""
         UPDATE shows SET
-            title = ?, original_title = ?, year = ?, first_aired = ?, slug = ?, overview = ?, show_trakt_id = ?, imdb_id = ?, last_updated = ?,
+            title = ?, original_title = ?, year = ?, first_aired = ?, slug = ?, overview = ?, show_trakt_id = ?, imdb_id = ?, tvdb_id = ?, last_updated = ?,
             trailer = ?, tagline = ?, status = ?, certification = ?, network = ?, country = ?, rating = ?, votes = ?, language = ?
         WHERE show_tmdb_id = ?
-    """, (title, original_title, year, first_aired, slug, overview, show_trakt_id, imdb_id, last_updated, trailer, tagline, status,
+    """, (title, original_title, year, first_aired, slug, overview, show_trakt_id, imdb_id, tvdb_id, last_updated, trailer, tagline, status,
           certification, network, country, rating, votes, language, show_tmdb_id))
 
 
@@ -236,6 +239,22 @@ def add_tvshow(tvshows_static_cursor, tvshows_dynamic_cursor, trakt_queue_cursor
                 continue
             
             insert_episode_combined(tvshows_static_cursor, trakt_episode_data, {}, show_tmdb_id)
+
+    # Sync Fanart.tv if enabled
+    try:
+        from resources.lib.config_handler import get_fanart_config
+        config = get_fanart_config()
+        if config["fanart_enabled"]:
+            import threading
+            from resources.lib.fanart_client import sync_fanart_for_item
+            threading.Thread(
+                target=sync_fanart_for_item,
+                args=(show_tmdb_id, "show", tmdb_handler, None),
+                daemon=True,
+                name=f"FanartSyncShow_{show_tmdb_id}"
+            ).start()
+    except Exception as e:
+        log(f"[Fanart] Error triggering show sync in add_tvshow: {e}", level=LOGERROR)
 
 def insert_tv_season(cursor, show_tmdb_id, season):
     season_number = season.get("season_number")
