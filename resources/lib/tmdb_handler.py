@@ -211,7 +211,7 @@ class TMDbAPI:
 
     def get_movie_details_from_tmdb(self, tmdb_id):
         """Fetches movie release year from TMDb."""
-        data = self._get(f"/movie/{tmdb_id}?append_to_response=images,release_dates")
+        data = self._get(f"/movie/{tmdb_id}?append_to_response=images,release_dates,videos")
         if data:
             belongs_to = data.get("belongs_to_collection")
             log(f"[TMDbAPI] Fetching movie details for TMDb ID {tmdb_id} - Belongs to Collection: {belongs_to}", level=LOGINFO)
@@ -284,6 +284,28 @@ class TMDbAPI:
                 "genres": data.get("genres", [])
             }
 
+            # Extract trailer video ID/URL
+            trailer_url = ""
+            videos = data.get("videos", {}).get("results", [])
+            youtube_videos = [v for v in videos if v.get("site") == "YouTube"]
+            if youtube_videos:
+                trailers = [v for v in youtube_videos if v.get("type") == "Trailer"]
+                teasers = [v for v in youtube_videos if v.get("type") == "Teaser"]
+                selected_video = None
+                if trailers:
+                    official = [v for v in trailers if v.get("official")]
+                    selected_video = official[0] if official else trailers[0]
+                elif teasers:
+                    official = [v for v in teasers if v.get("official")]
+                    selected_video = official[0] if official else teasers[0]
+                else:
+                    selected_video = youtube_videos[0]
+                
+                if selected_video:
+                    trailer_url = f"https://youtube.com/watch?v={selected_video.get('key')}"
+            
+            details["trailer"] = trailer_url
+
             return True, details
         return False, None
 
@@ -316,7 +338,7 @@ class TMDbAPI:
             UPDATE movies
             SET belongs_to_collection = ?, poster_path = ?, fanart_path = ?, thumbnail_path = ?, landscape_path = ?, clearlogo_path = ?, studio = ?,
                 overview = ?, tagline = ?, rating = ?, runtime = ?, country = ?, released = ?, certification = ?, original_title = ?, imdb_id = ?,
-                title = ?, year = ?
+                title = ?, year = ?, trailer = ?
             WHERE tmdb_id = ?
         """, (
             serialized_belongs_to, 
@@ -337,6 +359,7 @@ class TMDbAPI:
             details.get("imdb_id", ""),
             details.get("title", ""),
             details.get("year", 0),
+            details.get("trailer", ""),
             tmdb_id
         ))
         

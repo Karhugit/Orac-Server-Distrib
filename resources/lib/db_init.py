@@ -80,7 +80,8 @@ def init_static_movie_db(db_path=None, conn=None):
         thumbnail_path TEXT,  -- Path to thumbnail image
         clearlogo_path TEXT,  -- Path to clear logo image
         landscape_path TEXT,  -- Path to landscape image
-        belongs_to_collection TEXT  -- JSON string of collection details
+        belongs_to_collection TEXT,  -- JSON string of collection details
+        trailer           TEXT
         )
         """)
 
@@ -102,8 +103,8 @@ def init_static_movie_db(db_path=None, conn=None):
         FOREIGN KEY (genre)  REFERENCES genres(name) ON DELETE CASCADE
         )
         """)
-        # Migration: Add fanart columns if they do not exist
-        for col, col_type in [("fanart_poster_path", "TEXT"), ("fanart_fanart_path", "TEXT"), ("fanart_clearlogo_path", "TEXT"), ("fanart_last_updated", "INTEGER")]:
+        # Migration: Add fanart and trailer columns if they do not exist
+        for col, col_type in [("fanart_poster_path", "TEXT"), ("fanart_fanart_path", "TEXT"), ("fanart_clearlogo_path", "TEXT"), ("fanart_last_updated", "INTEGER"), ("trailer", "TEXT")]:
             try:
                 cursor.execute(f"ALTER TABLE movies ADD COLUMN {col} {col_type}")
             except sqlite3.OperationalError:

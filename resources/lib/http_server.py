@@ -284,18 +284,43 @@ def app_factory(
             
             movie_ids = []
             show_ids = []
+            resolved_items = []
+            
             for item in items:
                 if not isinstance(item, dict):
+                    resolved_items.append(None)
                     continue
+                
                 media_type = item.get("media_type")
-                tmdb_id = item.get("tmdb_id") or item.get("show_tmdb_id") or item.get("show_id")
-                if not tmdb_id:
-                    continue
-                if media_type == "movie" or ("title" in item and "seasons" not in item and "show_tmdb_id" not in item):
-                    movie_ids.append(tmdb_id)
-                elif media_type in ("tvshow", "tv", "show") or "seasons" in item or "show_tmdb_id" in item:
-                    show_ids.append(tmdb_id)
-                    
+                show_tmdb_id = item.get("show_tmdb_id") or item.get("show_id")
+                tmdb_id = item.get("tmdb_id")
+                
+                is_movie = False
+                if media_type == "movie":
+                    is_movie = True
+                elif media_type in ("tvshow", "tv", "show", "episode"):
+                    is_movie = False
+                else:
+                    if "show_tmdb_id" in item or "show_id" in item or "seasons" in item:
+                        is_movie = False
+                    elif "title" in item and "seasons" not in item:
+                        is_movie = True
+                
+                if is_movie:
+                    lookup_id = tmdb_id
+                    if lookup_id:
+                        movie_ids.append(lookup_id)
+                        resolved_items.append(("movie", lookup_id))
+                    else:
+                        resolved_items.append(None)
+                else:
+                    lookup_id = show_tmdb_id or tmdb_id
+                    if lookup_id:
+                        show_ids.append(lookup_id)
+                        resolved_items.append(("show", lookup_id))
+                    else:
+                        resolved_items.append(None)
+                        
             movie_fanart_map = {}
             if movie_ids:
                 with sqlite3.connect(app.state.movies_static_db_path) as conn:
@@ -322,23 +347,57 @@ def app_factory(
                             "clearlogo": get_asset_url(row[3])
                         }
                         
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                tmdb_id = item.get("tmdb_id") or item.get("show_tmdb_id") or item.get("show_id")
-                if not tmdb_id:
+            for idx, item in enumerate(items):
+                if not isinstance(item, dict) or not resolved_items[idx]:
                     continue
                     
-                f_data = movie_fanart_map.get(tmdb_id) or show_fanart_map.get(tmdb_id)
-                if f_data:
-                    if f_data["poster"]:
-                        item["poster_path"] = f_data["poster"]
-                        item["thumbnail_path"] = f_data["poster"]
-                    if f_data["fanart"]:
-                        item["fanart_path"] = f_data["fanart"]
-                        item["landscape_path"] = f_data["fanart"]
-                    if f_data["clearlogo"]:
-                        item["clearlogo_path"] = f_data["clearlogo"]
+                media_type_resolved, lookup_id = resolved_items[idx]
+                if media_type_resolved == "movie":
+                    f_data = movie_fanart_map.get(lookup_id)
+                    if f_data:
+                        if f_data["poster"]:
+                            item["poster_path"] = f_data["poster"]
+                            item["thumbnail_path"] = f_data["poster"]
+                        if f_data["fanart"]:
+                            item["fanart_path"] = f_data["fanart"]
+                            item["landscape_path"] = f_data["fanart"]
+                        if f_data["clearlogo"]:
+                            item["clearlogo_path"] = f_data["clearlogo"]
+                else:
+                    f_data = show_fanart_map.get(lookup_id)
+                    if f_data:
+                        # Override standard keys
+                        if f_data["poster"]:
+                            item["poster_path"] = f_data["poster"]
+                            item["thumbnail_path"] = f_data["poster"]
+                        if f_data["fanart"]:
+                            item["fanart_path"] = f_data["fanart"]
+                            item["landscape_path"] = f_data["fanart"]
+                        if f_data["clearlogo"]:
+                            item["clearlogo_path"] = f_data["clearlogo"]
+                            
+                        # Override show-specific/episode-specific keys
+                        if f_data["poster"]:
+                            if "show_poster_path" in item:
+                                item["show_poster_path"] = f_data["poster"]
+                            if "show_thumbnail_path" in item:
+                                item["show_thumbnail_path"] = f_data["poster"]
+                            if "episode_poster_path" in item:
+                                item["episode_poster_path"] = f_data["poster"]
+                        if f_data["fanart"]:
+                            if "show_fanart_path" in item:
+                                item["show_fanart_path"] = f_data["fanart"]
+                            if "show_landscape_path" in item:
+                                item["show_landscape_path"] = f_data["fanart"]
+                            if "episode_fanart_path" in item:
+                                item["episode_fanart_path"] = f_data["fanart"]
+                            if "episode_landscape_path" in item:
+                                item["episode_landscape_path"] = f_data["fanart"]
+                        if f_data["clearlogo"]:
+                            if "show_clearlogo_path" in item:
+                                item["show_clearlogo_path"] = f_data["clearlogo"]
+                            if "episode_clearlogo_path" in item:
+                                item["episode_clearlogo_path"] = f_data["clearlogo"]
         except Exception as e:
             log(f"[Orac] Error applying fanart overrides in send_safe: {e}", level=LOGERROR)
         return data
@@ -493,7 +552,7 @@ def app_factory(
         trakt_user = query.get("user", [None])[0] or await get_t_user(app)
         result = get_next_episodes(app.state.tvshows_dynamic_db_path, app.state.tvshows_static_db_path, trakt_user)
         if result is not None:
-            return JSONResponse(status_code=200, content=result)
+            return send_safe(200, result)
         return PlainTextResponse("Error getting next episodes", status_code=500)
 
     @app.get("/search_tmdb")

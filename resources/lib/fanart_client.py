@@ -12,6 +12,24 @@ def _get_api_headers_or_params(api_key):
     """Returns requests parameters for API authentication."""
     return {"api_key": api_key}
 
+def _select_best_asset(assets_list):
+    """
+    Selects the best asset from a list of Fanart.tv assets.
+    Prioritizes English ('en'), then Textless ('00'), and falls back to the absolute most popular.
+    """
+    if not assets_list:
+        return None
+    # 1. Try English
+    english = [a for a in assets_list if a.get("lang") == "en"]
+    if english:
+        return english[0]["url"]
+    # 2. Try Textless
+    textless = [a for a in assets_list if a.get("lang") == "00"]
+    if textless:
+        return textless[0]["url"]
+    # 3. Fallback to most popular
+    return assets_list[0]["url"]
+
 def fetch_fanart_movie_assets(tmdb_id, api_key):
     """Fetches movie assets from Fanart.tv for a given TMDB ID."""
     url = f"{BASE_URL}/movies/{tmdb_id}"
@@ -25,19 +43,14 @@ def fetch_fanart_movie_assets(tmdb_id, api_key):
         resp.raise_for_status()
         data = resp.json()
         
-        poster = None
-        if "movieposter" in data and data["movieposter"]:
-            poster = data["movieposter"][0]["url"]
-            
-        fanart = None
-        if "moviebackground" in data and data["moviebackground"]:
-            fanart = data["moviebackground"][0]["url"]
-            
+        poster = _select_best_asset(data.get("movieposter"))
+        fanart = _select_best_asset(data.get("moviebackground"))
+        
         clearlogo = None
         if "hdmovielogo" in data and data["hdmovielogo"]:
-            clearlogo = data["hdmovielogo"][0]["url"]
+            clearlogo = _select_best_asset(data["hdmovielogo"])
         elif "movielogo" in data and data["movielogo"]:
-            clearlogo = data["movielogo"][0]["url"]
+            clearlogo = _select_best_asset(data["movielogo"])
             
         return {"poster": poster, "fanart": fanart, "clearlogo": clearlogo}
     except Exception as e:
@@ -57,19 +70,14 @@ def fetch_fanart_show_assets(tvdb_id, api_key):
         resp.raise_for_status()
         data = resp.json()
         
-        poster = None
-        if "tvposter" in data and data["tvposter"]:
-            poster = data["tvposter"][0]["url"]
-            
-        fanart = None
-        if "showbackground" in data and data["showbackground"]:
-            fanart = data["showbackground"][0]["url"]
-            
+        poster = _select_best_asset(data.get("tvposter"))
+        fanart = _select_best_asset(data.get("showbackground"))
+        
         clearlogo = None
         if "hdtvlogo" in data and data["hdtvlogo"]:
-            clearlogo = data["hdtvlogo"][0]["url"]
+            clearlogo = _select_best_asset(data["hdtvlogo"])
         elif "clearlogo" in data and data["clearlogo"]:
-            clearlogo = data["clearlogo"][0]["url"]
+            clearlogo = _select_best_asset(data["clearlogo"])
             
         return {"poster": poster, "fanart": fanart, "clearlogo": clearlogo}
     except Exception as e:

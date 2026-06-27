@@ -137,7 +137,8 @@ def format_movie(item, tmdb_handler, media_type='movie'):
         "genres": genre_names,
         "media_type": media_type,
         "watched": item.get("watched", 0),
-        "watched_status": item.get("watched_status", 0)
+        "watched_status": item.get("watched_status", 0),
+        "trailer": item.get("trailer", "")
     }
     
     # Fanart.tv Overrides

@@ -51,7 +51,8 @@ def handle_movie_request(movie_tmdb_id, movies_dynamic_db_path, movies_static_db
                     m.fanart_clearlogo_path,
                     m.fanart_last_updated,
                     ms.watched, 
-                    mg.genre
+                    mg.genre,
+                    m.trailer
                 FROM movies m
                 LEFT JOIN movie_genres mg ON m.tmdb_id = mg.tmdb_id
                 LEFT JOIN dynamic.movie_status ms ON m.tmdb_id = ms.tmdb_id
@@ -86,7 +87,7 @@ def handle_movie_request(movie_tmdb_id, movies_dynamic_db_path, movies_static_db
                 "rating": None, "language": None, "certification": None, "original_title": None,
                 "trakt_id": None, "poster_path": None, "fanart_path": None, "thumbnail_path": None,
                 "landscape_path": None, "clearlogo_path": None, "belongs_to_collection": None,
-                "studio": None, "watched": None, "genres": []
+                "studio": None, "watched": None, "genres": [], "trailer": None
             })
             
             for row in rows:
@@ -121,7 +122,8 @@ def handle_movie_request(movie_tmdb_id, movies_dynamic_db_path, movies_static_db
                         "fanart_fanart_path": row[22],
                         "fanart_clearlogo_path": row[23],
                         "fanart_last_updated": row[24],
-                        "watched": row[25] if row[25] is not None else 0
+                        "watched": row[25] if row[25] is not None else 0,
+                        "trailer": row[27]
                     })
     
                     # Add the genre if it exists (it will be None for movies without genres)
