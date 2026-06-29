@@ -6,6 +6,12 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.2.8] — 2026-06-29
+
+### Added
+- **Movie Trailer Support** — implemented backend database, scraper, and payload support to retrieve, save, and return YouTube movie trailers from TMDb.
+- **Improved Distribution Packaging** — updated the distribution packaging script to exclude local testing image assets.
+
 ## [1.2.7] — 2026-06-23
 
 ### Added
