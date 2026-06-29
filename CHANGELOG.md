@@ -6,6 +6,11 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.2.9] — 2026-06-30
+
+### Fixed
+- **Python 3.11 Startup Crash** — fixed `SyntaxError: f-string expression part cannot include a backslash` in `formatting_utils.py` by extracting path string replacement outside of the f-string, resolving startup crashes when running in Docker or older Python environments.
+
 ## [1.2.8] — 2026-06-29
 
 ### Added

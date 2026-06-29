@@ -21,7 +21,8 @@ def get_asset_url(path_value):
     from resources.lib.config_loader import ConfigLoader
     port = ConfigLoader().server_config.get("port", 5555)
     ip = get_lan_ip()
-    return f"http://{ip}:{port}/assets/images/{path_value.replace('\\', '/')}"
+    clean_path = path_value.replace('\\', '/')
+    return f"http://{ip}:{port}/assets/images/{clean_path}"
 
 movie_genres = [
     {'id': 28, 'name': 'Action'}, {'id': 12, 'name': 'Adventure'}, {'id': 16, 'name': 'Animation'},
