@@ -243,7 +243,7 @@ def _update_show_watched_status(dynamic_cursor, static_cursor, user, show_tmdb_i
     
     # Get total episodes from static DB
     # Note: episodes.show_id is now the show_tmdb_id
-    static_cursor.execute("SELECT tmdb_id FROM episodes WHERE show_id = ?", (show_tmdb_id,))
+    static_cursor.execute("SELECT tmdb_id FROM episodes WHERE show_id = ? AND season > 0", (show_tmdb_id,))
     rows = static_cursor.fetchall()
     total_count = len(rows)
     

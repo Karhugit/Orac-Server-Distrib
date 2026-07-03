@@ -6,6 +6,11 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.3.0] — 2026-07-04
+
+### Fixed
+- **TV Show Watched Status Calculation** — excluded Specials (Season 0) when computing a show's overall tri-state `watched_status` (Unwatched/In Progress/Watched). This resolves issues where fully watched shows were incorrectly categorized as "In Progress" due to unwatched special episodes.
+
 ## [1.2.9] — 2026-06-30
 
 ### Fixed
