@@ -6,6 +6,12 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.3.1] — 2026-07-04
+
+### Added
+- **Database Migration Runner** — introduced a generic, version-based sequential database migration framework to safely upgrade users' databases.
+- **TV Show Specials Watched Recalculation** — added a v1 migration to automatically recalculate stored TV show watched status values to exclude Season 0 specials, ensuring "In Progress" lists immediately reflect the fix introduced in 1.3.0.
+
 ## [1.3.0] — 2026-07-04
 
 ### Fixed

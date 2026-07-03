@@ -24,6 +24,7 @@ from resources.lib.stale_episode_refresh import StaleEpisodeRefreshWorker
 from resources.lib.db_sync_manager import sync_lists_and_items
 from resources.lib.episodes_handler import get_next_episodes
 from resources.lib.watched import update_next_episode, mark_movie_watched, mark_tvshow_watched, drop_tvshow
+from resources.lib.migrate_database import migrate_database
 from resources.lib.indexing import get_genres
 from resources.scrapers.scraper_manager import ScraperManager
 from resources.lib.scraper_db import ScraperDB
@@ -106,6 +107,9 @@ def app_factory(
         _vacuum_database(application.state.tvshows_static_db_path, application.state.db_manager)
         _vacuum_database(application.state.lists_db_path, application.state.db_manager)
         _schedule_vacuum(application.state.tvshows_static_db_path, application.state.db_manager)
+
+        # Run database migrations
+        migrate_database(application.state.tvshows_static_db_path, application.state.tvshows_dynamic_db_path)
 
         trakt_queue_worker = UpdateQueueWorker(
             application.state.trakt_update_queue_path, application.state.tvshows_static_db_path,

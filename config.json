@@ -1,0 +1,18 @@
+{
+    "ORAC_ENV": "LOCAL",
+    "ORAC_LOG_FILE": "TRUE",
+    "TRAKT": {
+        "client_id": "f986871799a140dc20a166adfa637c98c8fa474dc80757aabad8668b99e184de",
+        "client_secret": "579a93101ccf4cb251884dc1d632d74c3b3f34d275cee59d56e82cac31161f71"
+    },
+    "TMDB": {
+        "api_key": "872d408b3d926ebb32f84f5167764cc3",
+        "region": "AU"
+    },
+    "SERVER": {
+        "port": 5555
+    },
+    "AIOSTREAMS": {
+        "user_data_header": "eyJwcmVzZXRzIjpbeyJ0eXBlIjoidG9ycmVudGlvIiwiaW5zdGFuY2VJZCI6InRpbzEiLCJlbmFibGVkIjp0cnVlLCJvcHRpb25zIjp7Im5hbWUiOiJUb3JyZW50aW8iLCJ0aW1lb3V0Ijo2NTAwLCJyZXNvdXJjZXMiOlsic3RyZWFtIl0sInNvcnQiOiJxdWFsaXR5In19LHsidHlwZSI6ImNvbWV0IiwiaW5zdGFuY2VJZCI6ImY3YiIsImVuYWJsZWQiOnRydWUsIm9wdGlvbnMiOnsibmFtZSI6IkNvbWV0IiwidGltZW91dCI6NjUwMCwicmVzb3VyY2VzIjpbInN0cmVhbSJdLCJpbmNsdWRlUDJQIjp0cnVlLCJyZW1vdmVUcmFzaCI6ZmFsc2V9fSx7InR5cGUiOiJtZWRpYWZ1c2lvbiIsImluc3RhbmNlSWQiOiI0NTAiLCJlbmFibGVkIjp0cnVlLCJvcHRpb25zIjp7Im5hbWUiOiJNZWRpYUZ1c2lvbiIsInRpbWVvdXQiOjY1MDAsInJlc291cmNlcyI6WyJzdHJlYW0iXSwidXNlQ2FjaGVkUmVzdWx0c09ubHkiOnRydWUsImVuYWJsZVdhdGNobGlzdENhdGFsb2dzIjpmYWxzZSwiZG93bmxvYWRWaWFCcm93c2VyIjpmYWxzZSwiY29udHJpYnV0b3JTdHJlYW1zIjpmYWxzZSwiY2VydGlmaWNhdGlvbkxldmVsc0ZpbHRlciI6W10sIm51ZGl0eUZpbHRlciI6W119fSx7InR5cGUiOiJhbmltZSIsImluc3RhbmNlSWQiOiJhbmkxIiwiZW5hYmxlZCI6ZmFsc2UsIm9wdGlvbnMiOnsic291cmNlcyI6WyJyb3JvIiwiZ29nb2FuaW1lIiwidGVuc2hpIiwiYW5pbWVwYWhlIl19fV0sImZvcm1hdHRlciI6eyJpZCI6InRvcnJlbnRpbyIsImRlZmluaXRpb24iOnsibmFtZSI6IlRvcnJlbnRpbyBGb3JtYXR0ZXIiLCJkZXNjcmlwdGlvbiI6IlNvcnQgYnkgcXVhbGl0eSJ9fSwic29ydENyaXRlcmlhIjp7Imdsb2JhbCI6W3sia2V5IjoicXVhbGl0eSIsImRpcmVjdGlvbiI6ImRlc2MifV19LCJkZWR1cGxpY2F0b3IiOnsiZW5hYmxlZCI6dHJ1ZSwia2V5cyI6WyJmaWxlbmFtZSIsImluZm9IYXNoIl0sIm11bHRpR3JvdXBCZWhhdmlvdXIiOiJhZ2dyZXNzaXZlIiwiY2FjaGVkIjoic2luZ2xlX3Jlc3VsdCIsInVuY2FjaGVkIjoicGVyX3NlcnZpY2UiLCJwMnAiOiJzaW5nbGVfcmVzdWx0IiwiZXhjbHVkZUFkZG9ucyI6W119fQ=="
+    }
+}
