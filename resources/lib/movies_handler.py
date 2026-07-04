@@ -113,15 +113,15 @@ def handle_movie_request(movie_tmdb_id, movies_dynamic_db_path, movies_static_db
                         "thumbnail_path": row[16],
                         "landscape_path": row[17],
                         "clearlogo_path": row[18],
-                        "belongs_to_collection": json.loads(row[18]) if row[18] else None,
-                        "studio": json.loads(row[19]) if row[19] else None,
-                        "fanart_last_updated": row[20],
-                        "watched": row[21] if row[21] is not None else 0,
-                        "trailer": row[23]
+                        "belongs_to_collection": json.loads(row[19]) if row[19] else None,
+                        "studio": json.loads(row[20]) if row[20] else None,
+                        "fanart_last_updated": row[21],
+                        "watched": row[22] if row[22] is not None else 0,
+                        "trailer": row[24]
                     })
     
                     # Add the genre if it exists (it will be None for movies without genres)
-                genre = row[22]
+                genre = row[23]
                 if genre is not None:
                     # Avoid duplicate genres if the same movie_genre entry exists multiple times (shouldn't happen with PRIMARY KEY)
                     if genre not in movies_dict[tmdb_id]["genres"]:
