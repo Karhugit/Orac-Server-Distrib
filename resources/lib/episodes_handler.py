@@ -121,6 +121,22 @@ def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None
             results = [dict(zip(columns, row)) for row in rows]
             log(f"[Orac] Retrieved {len(results)} next episodes for user '{user}' in {time() - starttime:.2f} seconds", level=LOGDEBUG)
 
+            # Format show and episode artwork paths using format_image_url
+            from resources.lib.formatting_utils import format_image_url
+            for r in results:
+                # Show artwork
+                r["show_poster_path"] = format_image_url(r.get("show_poster_path"), "w780")
+                r["show_fanart_path"] = format_image_url(r.get("show_fanart_path"), "w1280")
+                r["show_thumbnail_path"] = format_image_url(r.get("show_thumbnail_path"), "w780")
+                r["show_clearlogo_path"] = format_image_url(r.get("show_clearlogo_path"), "w500")
+                r["show_landscape_path"] = format_image_url(r.get("show_landscape_path"), "w1280")
+                # Episode artwork
+                r["episode_poster_path"] = format_image_url(r.get("episode_poster_path"), "w780")
+                r["episode_fanart_path"] = format_image_url(r.get("episode_fanart_path"), "w1280")
+                r["episode_clearlogo_path"] = format_image_url(r.get("episode_clearlogo_path"), "w500")
+                r["episode_landscape_path"] = format_image_url(r.get("episode_landscape_path"), "w1280")
+                r["episode_thumbnail_path"] = format_image_url(r.get("episode_thumbnail_path"), "w780")
+
             return results
 
     except Exception as e:

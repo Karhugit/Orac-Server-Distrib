@@ -157,33 +157,26 @@ def handle_show_request(show_tmdb_id, user, tvshows_static_db_path, tvshows_dyna
                         log(f"[ShowsHandler] Fanart enabled but not populated for TV show TMDb ID {show_tmdb_id}, fetching on-the-fly...", LOGINFO)
                         from resources.lib.fanart_client import sync_fanart_for_item
                         sync_fanart_for_item(show_tmdb_id, "show", tmdb_handler, config_db_path=None, force=True)
-                        # Re-read the database row to get updated fanart values
-                        static_cursor.execute("SELECT fanart_poster_path, fanart_fanart_path, fanart_clearlogo_path, fanart_last_updated FROM shows WHERE show_tmdb_id = ?", (show_tmdb_id,))
+                        # Re-read the database row to get updated values
+                        static_cursor.execute("SELECT poster_path, fanart_path, clearlogo_path, thumbnail_path, landscape_path, fanart_last_updated FROM shows WHERE show_tmdb_id = ?", (show_tmdb_id,))
                         row2 = static_cursor.fetchone()
                         if row2:
-                            show_result["fanart_poster_path"] = row2["fanart_poster_path"]
-                            show_result["fanart_fanart_path"] = row2["fanart_fanart_path"]
-                            show_result["fanart_clearlogo_path"] = row2["fanart_clearlogo_path"]
-                            show_result["fanart_last_updated"] = row2["fanart_last_updated"]
-                    
-                    # Override show artwork with fanart ones
-                    from resources.lib.formatting_utils import get_asset_url
-                    f_poster = show_result.get("fanart_poster_path")
-                    f_fanart = show_result.get("fanart_fanart_path")
-                    f_clearlogo = show_result.get("fanart_clearlogo_path")
-                    
-                    if f_poster:
-                        url_poster = get_asset_url(f_poster)
-                        show_result["poster_path"] = url_poster
-                        show_result["thumbnail_path"] = url_poster
-                    if f_fanart:
-                        url_fanart = get_asset_url(f_fanart)
-                        show_result["fanart_path"] = url_fanart
-                        show_result["landscape_path"] = url_fanart
-                    if f_clearlogo:
-                        show_result["clearlogo_path"] = get_asset_url(f_clearlogo)
+                            show_result["poster_path"] = row2[0]
+                            show_result["fanart_path"] = row2[1]
+                            show_result["clearlogo_path"] = row2[2]
+                            show_result["thumbnail_path"] = row2[3]
+                            show_result["landscape_path"] = row2[4]
+                            show_result["fanart_last_updated"] = row2[5]
             except Exception as e:
-                log(f"[ShowsHandler] Error in fanart sync/override: {e}", LOGERROR)
+                log(f"[ShowsHandler] Error in fanart sync: {e}", LOGERROR)
+
+            # Format all artwork keys using format_image_url to ensure absolute URLs
+            from resources.lib.formatting_utils import format_image_url
+            show_result["poster_path"] = format_image_url(show_result.get("poster_path"), "w780", tmdb_handler)
+            show_result["fanart_path"] = format_image_url(show_result.get("fanart_path"), "w1280", tmdb_handler)
+            show_result["thumbnail_path"] = format_image_url(show_result.get("thumbnail_path"), "w780", tmdb_handler)
+            show_result["landscape_path"] = format_image_url(show_result.get("landscape_path"), "w1280", tmdb_handler)
+            show_result["clearlogo_path"] = format_image_url(show_result.get("clearlogo_path"), "w500", tmdb_handler)
 
             static_conn.execute("DETACH DATABASE dynamic_db")
 

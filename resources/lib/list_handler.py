@@ -149,13 +149,18 @@ def _get_list_shows(list_name, user, tvshows_static_db_path, tvshows_dynamic_db_
                 genres_dict[tmdb_id].append(genre)
 
         shows = []
+        from resources.lib.formatting_utils import format_image_url
         for show in rows:
             total_seasons, total_episodes, total_watched_episodes, total_unaired_episodes = get_total_seasons_and_episodes(show[1], static_conn, dynamic_conn)
             shows.append({
                 "trakt_id": show[0], "tmdb_id": show[1], "imdb_id": show[2], "title": show[3], "year": show[4],
-                "slug": show[5], "last_updated": show[6], "premiered": show[7], "poster_path": show[8],
-                "fanart_path": show[9], "thumbnail_path": show[10], "landscape_path": show[11],
-                "clearlogo_path": show[12], "total_seasons": total_seasons, "total_episodes": total_episodes,
+                "slug": show[5], "last_updated": show[6], "premiered": show[7],
+                "poster_path": format_image_url(show[8], "w780"),
+                "fanart_path": format_image_url(show[9], "w1280"),
+                "thumbnail_path": format_image_url(show[10], "w780"),
+                "landscape_path": format_image_url(show[11], "w1280"),
+                "clearlogo_path": format_image_url(show[12], "w500"),
+                "total_seasons": total_seasons, "total_episodes": total_episodes,
                 "total_watched_episodes": total_watched_episodes, "total_unaired_episodes": total_unaired_episodes,
                 "original_title": show[13], "trailer": show[14], "overview": show[15], "tagline": show[16],
                 "genres": genres_dict.get(show[1], []), "status": show[17], "certification": show[18],

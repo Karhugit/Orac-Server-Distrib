@@ -205,23 +205,49 @@ def sync_fanart_for_item(item_id, media_type, tmdb_handler, config_db_path, forc
             timestamp = int(time.time())
             
             if media_type == "movie":
-                cursor.execute("""
-                    UPDATE movies SET
-                        fanart_poster_path = ?,
-                        fanart_fanart_path = ?,
-                        fanart_clearlogo_path = ?,
-                        fanart_last_updated = ?
-                    WHERE tmdb_id = ?
-                """, (poster_path, fanart_path, clearlogo_path, timestamp, item_id))
+                updates = []
+                params = []
+                if poster_path:
+                    updates.append("poster_path = ?")
+                    updates.append("thumbnail_path = ?")
+                    params.extend([poster_path, poster_path])
+                if fanart_path:
+                    updates.append("fanart_path = ?")
+                    updates.append("landscape_path = ?")
+                    params.extend([fanart_path, fanart_path])
+                if clearlogo_path:
+                    updates.append("clearlogo_path = ?")
+                    params.append(clearlogo_path)
+                
+                updates.append("fanart_last_updated = ?")
+                params.append(timestamp)
+                params.append(item_id)
+                
+                if updates:
+                    sql = f"UPDATE movies SET {', '.join(updates)} WHERE tmdb_id = ?"
+                    cursor.execute(sql, tuple(params))
             else:
-                cursor.execute("""
-                    UPDATE shows SET
-                        fanart_poster_path = ?,
-                        fanart_fanart_path = ?,
-                        fanart_clearlogo_path = ?,
-                        fanart_last_updated = ?
-                    WHERE show_tmdb_id = ?
-                """, (poster_path, fanart_path, clearlogo_path, timestamp, item_id))
+                updates = []
+                params = []
+                if poster_path:
+                    updates.append("poster_path = ?")
+                    updates.append("thumbnail_path = ?")
+                    params.extend([poster_path, poster_path])
+                if fanart_path:
+                    updates.append("fanart_path = ?")
+                    updates.append("landscape_path = ?")
+                    params.extend([fanart_path, fanart_path])
+                if clearlogo_path:
+                    updates.append("clearlogo_path = ?")
+                    params.append(clearlogo_path)
+                
+                updates.append("fanart_last_updated = ?")
+                params.append(timestamp)
+                params.append(item_id)
+                
+                if updates:
+                    sql = f"UPDATE shows SET {', '.join(updates)} WHERE show_tmdb_id = ?"
+                    cursor.execute(sql, tuple(params))
                 
             conn.commit()
             log(f"[Fanart] Successfully synced assets for {media_type} {item_id}", level=LOGINFO)

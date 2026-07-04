@@ -103,8 +103,8 @@ def init_static_movie_db(db_path=None, conn=None):
         FOREIGN KEY (genre)  REFERENCES genres(name) ON DELETE CASCADE
         )
         """)
-        # Migration: Add fanart and trailer columns if they do not exist
-        for col, col_type in [("fanart_poster_path", "TEXT"), ("fanart_fanart_path", "TEXT"), ("fanart_clearlogo_path", "TEXT"), ("fanart_last_updated", "INTEGER"), ("trailer", "TEXT")]:
+        # Migration: Add fanart last updated and trailer columns if they do not exist
+        for col, col_type in [("fanart_last_updated", "INTEGER"), ("trailer", "TEXT")]:
             try:
                 cursor.execute(f"ALTER TABLE movies ADD COLUMN {col} {col_type}")
             except sqlite3.OperationalError:
@@ -158,13 +158,10 @@ def init_static_tvshows_db(db_path=None, conn=None):
             );
         """)
 
-        # Migration: Add language, tvdb_id, and fanart columns if they do not exist
+        # Migration: Add language, tvdb_id, and fanart_last_updated columns if they do not exist
         for col, col_type in [
             ("language", "TEXT"),
             ("tvdb_id", "TEXT"),
-            ("fanart_poster_path", "TEXT"),
-            ("fanart_fanart_path", "TEXT"),
-            ("fanart_clearlogo_path", "TEXT"),
             ("fanart_last_updated", "INTEGER")
         ]:
             try:

@@ -110,6 +110,7 @@ def app_factory(
 
         # Run database migrations
         migrate_database(application.state.tvshows_static_db_path, application.state.tvshows_dynamic_db_path)
+        migrate_database(application.state.movies_static_db_path, application.state.movies_dynamic_db_path)
 
         trakt_queue_worker = UpdateQueueWorker(
             application.state.trakt_update_queue_path, application.state.tvshows_static_db_path,
@@ -281,7 +282,7 @@ def app_factory(
             if not config["fanart_enabled"]:
                 return data
                 
-            from resources.lib.formatting_utils import get_asset_url
+            from resources.lib.formatting_utils import format_image_url
             
             is_list = isinstance(data, list)
             items = data if is_list else [data]
@@ -324,18 +325,18 @@ def app_factory(
                         resolved_items.append(("show", lookup_id))
                     else:
                         resolved_items.append(None)
-                        
+            
             movie_fanart_map = {}
             if movie_ids:
                 with sqlite3.connect(app.state.movies_static_db_path) as conn:
                     cursor = conn.cursor()
                     placeholders = ",".join("?" for _ in movie_ids)
-                    cursor.execute(f"SELECT tmdb_id, fanart_poster_path, fanart_fanart_path, fanart_clearlogo_path FROM movies WHERE tmdb_id IN ({placeholders})", movie_ids)
+                    cursor.execute(f"SELECT tmdb_id, poster_path, fanart_path, clearlogo_path FROM movies WHERE tmdb_id IN ({placeholders})", movie_ids)
                     for row in cursor.fetchall():
                         movie_fanart_map[row[0]] = {
-                            "poster": get_asset_url(row[1]),
-                            "fanart": get_asset_url(row[2]),
-                            "clearlogo": get_asset_url(row[3])
+                            "poster": format_image_url(row[1], "w780", app.state.tmdb_handler),
+                            "fanart": format_image_url(row[2], "w1280", app.state.tmdb_handler),
+                            "clearlogo": format_image_url(row[3], "w500", app.state.tmdb_handler)
                         }
                         
             show_fanart_map = {}
@@ -343,12 +344,12 @@ def app_factory(
                 with sqlite3.connect(app.state.tvshows_static_db_path) as conn:
                     cursor = conn.cursor()
                     placeholders = ",".join("?" for _ in show_ids)
-                    cursor.execute(f"SELECT show_tmdb_id, fanart_poster_path, fanart_fanart_path, fanart_clearlogo_path FROM shows WHERE show_tmdb_id IN ({placeholders})", show_ids)
+                    cursor.execute(f"SELECT show_tmdb_id, poster_path, fanart_path, clearlogo_path FROM shows WHERE show_tmdb_id IN ({placeholders})", show_ids)
                     for row in cursor.fetchall():
                         show_fanart_map[row[0]] = {
-                            "poster": get_asset_url(row[1]),
-                            "fanart": get_asset_url(row[2]),
-                            "clearlogo": get_asset_url(row[3])
+                            "poster": format_image_url(row[1], "w780", app.state.tmdb_handler),
+                            "fanart": format_image_url(row[2], "w1280", app.state.tmdb_handler),
+                            "clearlogo": format_image_url(row[3], "w500", app.state.tmdb_handler)
                         }
                         
             for idx, item in enumerate(items):

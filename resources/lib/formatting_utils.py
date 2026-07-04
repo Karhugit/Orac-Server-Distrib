@@ -24,6 +24,18 @@ def get_asset_url(path_value):
     clean_path = path_value.replace('\\', '/')
     return f"http://{ip}:{port}/assets/images/{clean_path}"
 
+
+def format_image_url(path, size='w500', tmdb_handler=None):
+    if not path:
+        return None
+    if path.startswith(('http://', 'https://')):
+        return path
+    if not path.startswith('/'):
+        return get_asset_url(path)
+    if tmdb_handler:
+        return tmdb_handler._build_url(path, size)
+    return f"https://image.tmdb.org/t/p/{size}{path}"
+
 movie_genres = [
     {'id': 28, 'name': 'Action'}, {'id': 12, 'name': 'Adventure'}, {'id': 16, 'name': 'Animation'},
     {'id': 35, 'name': 'Comedy'}, {'id': 80, 'name': 'Crime'}, {'id': 99, 'name': 'Documentary'},
@@ -107,9 +119,7 @@ def format_movie(item, tmdb_handler, media_type='movie'):
 
     # Image URL construction helper
     def get_url(path, size='w500'):
-        if not path: return None
-        if path.startswith('http'): return path
-        return tmdb_handler._build_url(path, size)
+        return format_image_url(path, size, tmdb_handler)
 
     # Standardized response object
     formatted = {
@@ -141,27 +151,4 @@ def format_movie(item, tmdb_handler, media_type='movie'):
         "watched_status": item.get("watched_status", 0),
         "trailer": item.get("trailer", "")
     }
-    
-    # Fanart.tv Overrides
-    try:
-        from resources.lib.config_handler import get_fanart_config
-        fanart_cfg = get_fanart_config()
-        if fanart_cfg["fanart_enabled"]:
-            f_poster = item.get("fanart_poster_path")
-            f_fanart = item.get("fanart_fanart_path")
-            f_clearlogo = item.get("fanart_clearlogo_path")
-            
-            if f_poster:
-                url_poster = get_asset_url(f_poster)
-                formatted["poster_path"] = url_poster
-                formatted["thumbnail_path"] = url_poster
-            if f_fanart:
-                url_fanart = get_asset_url(f_fanart)
-                formatted["fanart_path"] = url_fanart
-                formatted["landscape_path"] = url_fanart
-            if f_clearlogo:
-                formatted["clearlogo_path"] = get_asset_url(f_clearlogo)
-    except Exception as e:
-        log(f"Error overriding fanart in format_movie: {e}")
-
     return formatted

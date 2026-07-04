@@ -116,7 +116,7 @@ def get_internal_index_contents(db_path, index_id, media_type, static_db, dynami
     Query local media based on an internal index's filter parameters.
     Standardizes output to match normal list requests.
     """
-    from resources.lib.formatting_utils import format_movie
+    from resources.lib.formatting_utils import format_movie, format_image_url
     from collections import defaultdict
     
     # TMDb genre IDs mapped to Trakt genre names (database uses Trakt names)
@@ -607,7 +607,26 @@ def get_internal_index_contents(db_path, index_id, media_type, static_db, dynami
             for item_id, item in results_dict.items():
                 if media_type == 'movie':
                     final_results.append(format_movie(item, None))
-                else:
+                elif media_type == 'tvshow':
+                    item["poster_path"] = format_image_url(item.get("poster_path"), "w780")
+                    item["fanart_path"] = format_image_url(item.get("fanart_path"), "w1280")
+                    item["thumbnail_path"] = format_image_url(item.get("thumbnail_path"), "w780")
+                    item["landscape_path"] = format_image_url(item.get("landscape_path"), "w1280")
+                    item["clearlogo_path"] = format_image_url(item.get("clearlogo_path"), "w500")
+                    final_results.append(item)
+                else: # episode
+                    # Show artwork
+                    item["show_poster_path"] = format_image_url(item.get("show_poster_path"), "w780")
+                    item["show_fanart_path"] = format_image_url(item.get("show_fanart_path"), "w1280")
+                    item["show_thumbnail_path"] = format_image_url(item.get("show_thumbnail_path"), "w780")
+                    item["show_clearlogo_path"] = format_image_url(item.get("show_clearlogo_path"), "w500")
+                    item["show_landscape_path"] = format_image_url(item.get("show_landscape_path"), "w1280")
+                    # Episode artwork
+                    item["episode_poster_path"] = format_image_url(item.get("episode_poster_path"), "w780")
+                    item["episode_fanart_path"] = format_image_url(item.get("episode_fanart_path"), "w1280")
+                    item["episode_clearlogo_path"] = format_image_url(item.get("episode_clearlogo_path"), "w500")
+                    item["episode_landscape_path"] = format_image_url(item.get("episode_landscape_path"), "w1280")
+                    item["episode_thumbnail_path"] = format_image_url(item.get("episode_thumbnail_path"), "w780")
                     final_results.append(item)
             
             if media_type == 'episode':

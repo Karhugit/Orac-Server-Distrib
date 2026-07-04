@@ -46,9 +46,6 @@ def handle_movie_request(movie_tmdb_id, movies_dynamic_db_path, movies_static_db
                     m.clearlogo_path, 
                     m.belongs_to_collection,
                     m.studio,
-                    m.fanart_poster_path,
-                    m.fanart_fanart_path,
-                    m.fanart_clearlogo_path,
                     m.fanart_last_updated,
                     ms.watched, 
                     mg.genre,
@@ -116,18 +113,15 @@ def handle_movie_request(movie_tmdb_id, movies_dynamic_db_path, movies_static_db
                         "thumbnail_path": row[16],
                         "landscape_path": row[17],
                         "clearlogo_path": row[18],
-                        "belongs_to_collection": json.loads(row[19]) if row[19] else None,
-                        "studio": json.loads(row[20]) if row[20] else None,
-                        "fanart_poster_path": row[21],
-                        "fanart_fanart_path": row[22],
-                        "fanart_clearlogo_path": row[23],
-                        "fanart_last_updated": row[24],
-                        "watched": row[25] if row[25] is not None else 0,
-                        "trailer": row[27]
+                        "belongs_to_collection": json.loads(row[18]) if row[18] else None,
+                        "studio": json.loads(row[19]) if row[19] else None,
+                        "fanart_last_updated": row[20],
+                        "watched": row[21] if row[21] is not None else 0,
+                        "trailer": row[23]
                     })
     
                     # Add the genre if it exists (it will be None for movies without genres)
-                genre = row[26]
+                genre = row[22]
                 if genre is not None:
                     # Avoid duplicate genres if the same movie_genre entry exists multiple times (shouldn't happen with PRIMARY KEY)
                     if genre not in movies_dict[tmdb_id]["genres"]:
@@ -148,19 +142,21 @@ def handle_movie_request(movie_tmdb_id, movies_dynamic_db_path, movies_static_db
                 log(f"[MoviesHandler] Fanart enabled but not populated for TMDB ID {movie_tmdb_id}, fetching on-the-fly...", LOGINFO)
                 from resources.lib.fanart_client import sync_fanart_for_item
                 sync_fanart_for_item(movie_tmdb_id, "movie", tmdb_handler, config_db_path=None, force=True)
-                # Re-query the fanart columns to get the new paths
+                # Re-query the updated artwork columns
                 with sqlite3.connect(movies_static_db_path) as conn2:
                     cursor2 = conn2.cursor()
                     cursor2.execute("""
-                        SELECT fanart_poster_path, fanart_fanart_path, fanart_clearlogo_path, fanart_last_updated
+                        SELECT poster_path, fanart_path, clearlogo_path, thumbnail_path, landscape_path, fanart_last_updated
                         FROM movies WHERE tmdb_id = ?
                     """, (movie_tmdb_id,))
                     row2 = cursor2.fetchone()
                     if row2:
-                        movie["fanart_poster_path"] = row2[0]
-                        movie["fanart_fanart_path"] = row2[1]
-                        movie["fanart_clearlogo_path"] = row2[2]
-                        movie["fanart_last_updated"] = row2[3]
+                        movie["poster_path"] = row2[0]
+                        movie["fanart_path"] = row2[1]
+                        movie["clearlogo_path"] = row2[2]
+                        movie["thumbnail_path"] = row2[3]
+                        movie["landscape_path"] = row2[4]
+                        movie["fanart_last_updated"] = row2[5]
         except Exception as e:
             log(f"[MoviesHandler] Error syncing fanart on-the-fly: {e}", LOGERROR)
 

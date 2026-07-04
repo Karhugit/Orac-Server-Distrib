@@ -7,6 +7,13 @@ def migration_1_recalculate_specials(static_db_path, dynamic_db_path):
     Migration v1: Recalculates the watched_status for all shows in user_show_sync,
     excluding Specials (Season 0).
     """
+    with sqlite3.connect(dynamic_db_path) as dynamic_conn:
+        cursor = dynamic_conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_show_sync'")
+        if not cursor.fetchone():
+            log("[Orac] Table 'user_show_sync' not found. Skipping v1 migration.", level=LOGINFO)
+            return
+
     log("[Orac] Running migration v1: Recalculating TV show watched status (excluding Specials)...", level=LOGINFO)
     with sqlite3.connect(dynamic_db_path) as dynamic_conn, \
          sqlite3.connect(static_db_path) as static_conn:
@@ -23,10 +30,74 @@ def migration_1_recalculate_specials(static_db_path, dynamic_db_path):
     log("[Orac] Migration v1 completed successfully.", level=LOGINFO)
 
 
+def migration_2_refactor_fanart_columns(static_db_path, dynamic_db_path):
+    """
+    Migration v2: Unifies artwork columns and drops deprecated fanart_ columns.
+    If fanart_enabled is True, it copies the fanart paths to the standard columns.
+    """
+    log(f"[Orac] Running migration v2: Unifying artwork columns in {static_db_path}...", level=LOGINFO)
+    
+    # 1. Determine media type and table name
+    table = None
+    with sqlite3.connect(static_db_path) as static_conn:
+        cursor = static_conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='movies'")
+        if cursor.fetchone():
+            table = "movies"
+        else:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='shows'")
+            if cursor.fetchone():
+                table = "shows"
+                
+    if not table:
+        log(f"[Orac] No movies or shows table found in {static_db_path}. Skipping v2 migration.", level=LOGINFO)
+        return
+
+    # 2. Check if fanart is enabled in settings
+    from resources.lib.config_handler import get_fanart_config
+    config = get_fanart_config()
+    fanart_enabled = config.get("fanart_enabled", False)
+
+    with sqlite3.connect(static_db_path) as static_conn:
+        cursor = static_conn.cursor()
+        
+        # 3. If fanart_enabled is True, migrate the values
+        if fanart_enabled:
+            log(f"[Orac] Fanart is enabled. Backfilling fanart paths to standard artwork columns in table '{table}'...", level=LOGINFO)
+            cursor.execute(f"PRAGMA table_info({table})")
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            if "fanart_poster_path" in columns and "fanart_fanart_path" in columns and "fanart_clearlogo_path" in columns:
+                cursor.execute(f"""
+                    UPDATE {table} SET
+                        poster_path = COALESCE(fanart_poster_path, poster_path),
+                        thumbnail_path = COALESCE(fanart_poster_path, thumbnail_path),
+                        fanart_path = COALESCE(fanart_fanart_path, fanart_path),
+                        landscape_path = COALESCE(fanart_fanart_path, landscape_path),
+                        clearlogo_path = COALESCE(fanart_clearlogo_path, clearlogo_path)
+                """)
+                static_conn.commit()
+                log(f"[Orac] Backfill completed for '{table}' table.", level=LOGINFO)
+            else:
+                log(f"[Orac] Old fanart columns not present in '{table}' table. Skipping backfill.", level=LOGINFO)
+
+        # 4. Drop the deprecated columns
+        log(f"[Orac] Dropping deprecated fanart columns from '{table}' table...", level=LOGINFO)
+        for col in ["fanart_poster_path", "fanart_fanart_path", "fanart_clearlogo_path"]:
+            try:
+                cursor.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
+            except sqlite3.OperationalError:
+                # Column already dropped or SQLite doesn't support DROP COLUMN
+                pass
+        static_conn.commit()
+        log(f"[Orac] Finished dropping deprecated columns from '{table}' table.", level=LOGINFO)
+
+
 # Map version numbers to migration functions.
 # New migrations should be appended here with incremented version numbers (2, 3, etc.)
 MIGRATIONS = {
     1: migration_1_recalculate_specials,
+    2: migration_2_refactor_fanart_columns,
 }
 
 TARGET_VERSION = max(MIGRATIONS.keys()) if MIGRATIONS else 0
