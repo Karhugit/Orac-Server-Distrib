@@ -270,6 +270,42 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
         log(traceback.format_exc(), LOGERROR)
         return 500, "Error getting list", "text/plain"
 
+async def _fetch_all_trakt_items(trakt_handler, base_path, page_size=250):
+    """Fetches all items from a Trakt list handling pagination headers."""
+    all_items = []
+    page = 1
+    max_pages = 50
+    
+    while page <= max_pages:
+        sep = "&" if "?" in base_path else "?"
+        path = f"{base_path}{sep}limit={page_size}&page={page}"
+        log(f"[Orac] Fetching Trakt page {page} from path: {path}", level=LOGINFO)
+        resp = await trakt_handler.get(path)
+        
+        if not resp:
+            log(f"[Orac] No response from Trakt handler for page {page}", level=LOGERROR)
+            break
+        if resp.status_code != 200:
+            log(f"[Orac] Failed to fetch Trakt page {page}: status {resp.status_code}", level=LOGWARNING)
+            break
+            
+        page_items = resp.json()
+        if not page_items:
+            break
+            
+        all_items.extend(page_items)
+        
+        try:
+            total_pages = int(resp.headers.get("X-Pagination-Page-Count", 1))
+        except:
+            total_pages = 1
+            
+        if page >= total_pages:
+            break
+        page += 1
+        
+    return all_items
+
 async def _fetch_trakt_list_external(trakt_handler, tmdb_handler, user, slug, item_type, movies_static_db_path, tvshows_static_db_path):
     """Fetches list items directly from Trakt API."""
     if not trakt_handler:
@@ -277,40 +313,37 @@ async def _fetch_trakt_list_external(trakt_handler, tmdb_handler, user, slug, it
         return []
 
     try:
-        path = ""
-        if slug == "watchlist":
-            path = "/users/me/watchlist/all?extended=full"
-        elif slug == "favorites":
-            path = "/users/me/favorites?extended=full"
-        elif slug == "collection-movies":
-            path = "/users/me/collection/movies?extended=full"
-        elif slug == "collection-tvshows":
-            path = "/users/me/collection/shows?extended=full"
-        # Check if this is a Trakt generic list
         from resources.lib.trakt_lists import is_generic_list, get_list_config
         
-        if is_generic_list(slug):
+        is_generic = False
+        if slug == "watchlist":
+            base_path = "/users/me/watchlist?extended=full"
+        elif slug == "favorites":
+            base_path = "/users/me/favorites?extended=full"
+        elif slug == "collection-movies":
+            base_path = "/users/me/collection/movies?extended=full"
+        elif slug == "collection-tvshows":
+            base_path = "/users/me/collection/shows?extended=full"
+        elif is_generic_list(slug):
+            is_generic = True
             config = get_list_config(slug)
-            path = config["endpoint"]
-            log(f"[Orac] Fetching Trakt items from external path: {path}", level=LOGINFO)
-            resp = await trakt_handler.get(path, authenticated=config.get("requires_auth", False))
+            base_path = config["endpoint"]
         else:
             # Custom lists
             if not user or user == 'None':
                 log(f"[Orac] Custom list '{slug}' requested without a valid user. Attempting to use 'me' as fallback.", level=LOGWARNING)
                 user = "me"
-            path = f"/users/{user}/lists/{slug}/items?extended=full&limit=1000"
-            log(f"[Orac] Fetching Trakt items from external path: {path}", level=LOGINFO)
-            resp = await trakt_handler.get(path)
-        if not resp:
-            log(f"[Orac] No response from Trakt handler for path: {path}", level=LOGERROR)
-            return []
-            
-        if resp.status_code != 200:
-            log(f"[Orac] Failed to fetch Trakt list {slug} from path {path}: status {resp.status_code}", level=LOGWARNING)
-            return []
+            base_path = f"/users/{user}/lists/{slug}/items?extended=full"
 
-        data = resp.json()
+        if is_generic:
+            log(f"[Orac] Fetching Trakt items from external path: {base_path}", level=LOGINFO)
+            resp = await trakt_handler.get(base_path, authenticated=config.get("requires_auth", False))
+            if not resp or resp.status_code != 200:
+                log(f"[Orac] Failed to fetch Trakt generic list {slug} from path {base_path}", level=LOGWARNING)
+                return []
+            data = resp.json()
+        else:
+            data = await _fetch_all_trakt_items(trakt_handler, base_path)
         items = []
         
         for item in data:
