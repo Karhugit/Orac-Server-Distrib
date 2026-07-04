@@ -432,7 +432,7 @@ async def _enrich_items_with_metadata(items, tmdb_handler, movies_static_db_path
                 tmdb_id = item.get("tmdb_id")
                 if tmdb_id:
                     media_type = 'movie' if item['media_type'] == 'movie' else 'tv'
-                    tasks.append(_fetch_single_tmdb_poster(tmdb_handler, tmdb_id, media_type, item))
+                    tasks.append(_fetch_single_tmdb_poster(tmdb_handler, tmdb_id, media_type, item, movies_static_db_path, tvshows_static_db_path))
             
             if tasks:
                 await asyncio.gather(*tasks)
@@ -442,8 +442,8 @@ async def _enrich_items_with_metadata(items, tmdb_handler, movies_static_db_path
         log(f"[Orac] Error enriching metadata: {e}", level=LOGERROR)
         return items
 
-async def _fetch_single_tmdb_poster(tmdb_handler, tmdb_id, media_type, item):
-    """Helper to fetch a single poster path from TMDb asynchronously."""
+async def _fetch_single_tmdb_poster(tmdb_handler, tmdb_id, media_type, item, movies_static_db_path, tvshows_static_db_path):
+    """Helper to fetch a single poster path from TMDb asynchronously and cache in local DB."""
     try:
         # Wrap the blocking TMDbAPI calls in a thread
         def _get_tmdb_data():
@@ -452,15 +452,72 @@ async def _fetch_single_tmdb_poster(tmdb_handler, tmdb_id, media_type, item):
         
         data = await asyncio.to_thread(_get_tmdb_data)
         if data:
-            item["poster_path"] = tmdb_handler._build_url(data.get("poster_path"), 'w780')
-            item["fanart_path"] = tmdb_handler._build_url(data.get("backdrop_path"), 'w1280')
+            poster_path = tmdb_handler._build_url(data.get("poster_path"), 'w780')
+            fanart_path = tmdb_handler._build_url(data.get("backdrop_path"), 'w1280')
+            item["poster_path"] = poster_path
+            item["fanart_path"] = fanart_path
+            
             if media_type == 'movie':
-                item["tagline"] = data.get("tagline")
-                item["runtime"] = data.get("runtime")
-                item["rating"] = data.get("vote_average")
+                tagline = data.get("tagline")
+                runtime = data.get("runtime")
+                rating = data.get("vote_average")
+                item["tagline"] = tagline
+                item["runtime"] = runtime
+                item["rating"] = rating
+                
+                # Cache in DB asynchronously
+                def _write_to_db():
+                    with sqlite3.connect(movies_static_db_path) as conn:
+                        cursor = conn.cursor()
+                        try:
+                            cursor.execute("""
+                                INSERT INTO movies (tmdb_id, trakt_id, title, year, poster_path, fanart_path, tagline, runtime, rating)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                tmdb_id, item.get("trakt_id"), item.get("title"), item.get("year"),
+                                poster_path, fanart_path, tagline, runtime, rating
+                            ))
+                        except sqlite3.IntegrityError:
+                            cursor.execute("""
+                                UPDATE movies SET 
+                                    poster_path = COALESCE(poster_path, ?), 
+                                    fanart_path = COALESCE(fanart_path, ?),
+                                    tagline = COALESCE(tagline, ?),
+                                    runtime = COALESCE(runtime, ?),
+                                    rating = COALESCE(rating, ?)
+                                WHERE tmdb_id = ?
+                            """, (poster_path, fanart_path, tagline, runtime, rating, tmdb_id))
+                        conn.commit()
+                await asyncio.to_thread(_write_to_db)
             else:
-                item["status"] = data.get("status")
-                item["rating"] = data.get("vote_average")
+                status = data.get("status")
+                rating = data.get("vote_average")
+                item["status"] = status
+                item["rating"] = rating
+                
+                # Cache in DB asynchronously
+                def _write_to_db():
+                    with sqlite3.connect(tvshows_static_db_path) as conn:
+                        cursor = conn.cursor()
+                        try:
+                            cursor.execute("""
+                                INSERT INTO shows (show_tmdb_id, show_trakt_id, title, year, poster_path, fanart_path, status, rating)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                tmdb_id, item.get("trakt_id"), item.get("title"), item.get("year"),
+                                poster_path, fanart_path, status, rating
+                            ))
+                        except sqlite3.IntegrityError:
+                            cursor.execute("""
+                                UPDATE shows SET 
+                                    poster_path = COALESCE(poster_path, ?), 
+                                    fanart_path = COALESCE(fanart_path, ?),
+                                    status = COALESCE(status, ?),
+                                    rating = COALESCE(rating, ?)
+                                WHERE show_tmdb_id = ?
+                            """, (poster_path, fanart_path, status, rating, tmdb_id))
+                        conn.commit()
+                await asyncio.to_thread(_write_to_db)
     except Exception as e:
         log(f"[Orac] Error fetching TMDb data for {media_type} {tmdb_id}: {e}", level=LOGWARNING)
 
