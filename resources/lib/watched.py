@@ -17,7 +17,7 @@ async def update_dynamic_tvshow_data(trakt_handler, tmdb_handler, username, tvsh
 
     try:
         # Step 1: Get watched shows/episodes from Trakt
-        watched_resp = await trakt_handler.get("/sync/watched/shows")
+        watched_resp = await trakt_handler.get("/sync/watched/shows?extended=full,progress")
         if watched_resp is None:
             log(f"[Orac] No response received when fetching watched TV shows for {username}", level=LOGERROR)
             return

@@ -170,7 +170,7 @@ async def sync_providers(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, c
                 page = 1
                 while True:
                     t_shows_resp = await trakt_handler.get(
-                        f"/sync/watched/shows?limit={PAGE_SIZE}&page={page}"
+                        f"/sync/watched/shows?extended=full,progress&limit={PAGE_SIZE}&page={page}"
                     )
                     if not t_shows_resp or t_shows_resp.status_code != 200:
                         log(f"[Sync Engine] Trakt watched/shows page {page} failed: "
