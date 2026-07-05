@@ -1,5 +1,4 @@
 import sqlite3
-import xbmc
 from resources.lib.log_utils import log, LOGERROR, LOGINFO
 from resources.lib.database_manager import DatabaseManager
 
