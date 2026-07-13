@@ -443,7 +443,13 @@ def app_factory(
                         'trakt_user', 'trakt_token', 'trakt_refresh', 'trakt_expires',
                         'simkl.user', 'simkl_user', 'simkl.token',
                         'tmdb_user', 'tmdb.user', 'tmdb_session_id',
-                        'mdblist_api'
+                        'mdblist_api',
+                        'rd.token', 'rd.enabled', 'rd.refresh', 'rd.account_id',
+                        'pm.token', 'pm.enabled', 'pm.account_id',
+                        'oc.token', 'oc.enabled',
+                        'ed.token', 'ed.enabled',
+                        'tb.token', 'tb.enabled',
+                        'easynews_user', 'easynews_password', 'provider.easynews'
                     )
                 """)
                 rows = cursor.fetchall()
@@ -462,6 +468,27 @@ def app_factory(
                 tmdb_session_id = data.get('tmdb_session_id') or 'empty_setting'
                 
                 mdblist_api = data.get('mdblist_api') or 'empty_setting'
+
+                # Build debrid data with correct default values
+                debrid_keys = {
+                    'rd.token': 'empty_setting',
+                    'rd.enabled': 'false',
+                    'rd.refresh': 'empty_setting',
+                    'rd.account_id': 'empty_setting',
+                    'pm.token': 'empty_setting',
+                    'pm.enabled': 'false',
+                    'pm.account_id': 'empty_setting',
+                    'oc.token': 'empty_setting',
+                    'oc.enabled': 'false',
+                    'ed.token': 'empty_setting',
+                    'ed.enabled': 'false',
+                    'tb.token': 'empty_setting',
+                    'tb.enabled': 'false',
+                    'easynews_user': 'empty_setting',
+                    'easynews_password': 'empty_setting',
+                    'provider.easynews': 'false'
+                }
+                debrid_data = {k: data.get(k) if data.get(k) is not None else default for k, default in debrid_keys.items()}
                 
                 return JSONResponse(status_code=200, content={
                     "status": "online",
@@ -481,7 +508,8 @@ def app_factory(
                     },
                     "mdblist": {
                         "api": mdblist_api
-                    }
+                    },
+                    "debrid": debrid_data
                 })
         except Exception as e:
             log(f"Error in api_status: {e}", level=LOGERROR)
@@ -1119,6 +1147,11 @@ def app_factory(
 
     @app.put("/update_mdblist_tokens")
     async def update_m_tokens(request: Request):
+        success = update_config_values(flat_qs(request), app.state.config_db_path)
+        return Response(status_code=204) if success else PlainTextResponse("Error", status_code=500)
+
+    @app.put("/update_debrid_tokens")
+    async def update_deb_tokens(request: Request):
         success = update_config_values(flat_qs(request), app.state.config_db_path)
         return Response(status_code=204) if success else PlainTextResponse("Error", status_code=500)
 
