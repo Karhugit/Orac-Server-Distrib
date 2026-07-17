@@ -24,6 +24,13 @@ def get_local_list_updated_at(db_path, list_id):
 async def trakt_list_sync_task(trakt_auth, tmdb_handler, lists_db_path, movie_static_db_path, movie_dynamic_db_path, tvshows_static_db_path, tvshows_dynamic_db_path, 
                                 trakt_queue_path, username=None, external_indexes_db_path=None):
     try:
+        from resources.lib.config_handler import get_trakt_access_token
+        config_db_path = getattr(trakt_auth, 'config_db_path', None)
+        trakt_token = get_trakt_access_token(config_db_path) if config_db_path else None
+        if not username or not trakt_token:
+            log("[Orac] Skipping Trakt list sync task: No Trakt username/credentials authorized", level=LOGINFO)
+            return
+
         # Get the add_to_library settings for each list
         lists_library_settings = {}
         with sqlite3.connect(lists_db_path) as conn:
@@ -1169,6 +1176,12 @@ async def sync_recent_tvshow_updates(trakt_handler, tmdb_handler, tvshows_static
     Sync TV shows that have been updated on Trakt since the last sync to static DB
     """
     try:
+        from resources.lib.config_handler import get_trakt_access_token
+        trakt_token = get_trakt_access_token(config_db_path) if config_db_path else None
+        if not trakt_token:
+            log("[Orac] Skipping recent TV show updates from Trakt: No Trakt credentials authorized", level=LOGINFO)
+            return
+
         # Step 1: Determine start date
         start_date_str = None
         if config_db_path:

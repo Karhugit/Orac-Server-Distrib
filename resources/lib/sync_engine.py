@@ -114,7 +114,12 @@ async def sync_providers(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, c
     _movies_watched_at = None
     _episodes_watched_at = None
 
-    if trakt_handler:
+    from resources.lib.config_handler import get_trakt_access_token, get_trakt_client_id
+    trakt_token = get_trakt_access_token(config_db_path) if config_db_path else None
+    trakt_client = get_trakt_client_id(config_db_path) if config_db_path else None
+    has_trakt = bool(trakt_handler and trakt_token and trakt_client)
+
+    if has_trakt:
         try:
             # --- Check last_activities to skip fetches when nothing has changed ---
             fetch_movies = True
@@ -198,6 +203,8 @@ async def sync_providers(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, c
 
         except Exception as e:
              log(f"[Sync Engine] Trakt fetch error: {e}", level=LOGERROR)
+    else:
+        log("[Sync Engine] Missing Trakt credentials — skipping Trakt watched history fetch.", level=LOGINFO)
 
     # 2. Fetch Simkl
     simkl_history = fetch_simkl_history(config_db_path)
@@ -349,6 +356,11 @@ def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data):
 def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, config_db_path, tvshows_static_db=None):
     log("[Sync Engine] Starting bulk sync history...", level=LOGINFO)
     
+    from resources.lib.config_handler import get_trakt_access_token, get_trakt_client_id
+    trakt_token = get_trakt_access_token(config_db_path) if config_db_path else None
+    trakt_client = get_trakt_client_id(config_db_path) if config_db_path else None
+    has_trakt = bool(trakt_handler and trakt_token and trakt_client)
+
     # 1. Collect pending
     trakt_payload = {"movies": [], "shows": []}
     simkl_payload = {"movies": [], "shows": []}
@@ -362,11 +374,12 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
         with sqlite3.connect(movies_dynamic_db) as conn:
              cursor = conn.cursor()
              # We only send those watched where they are missing the synced timestamp
-             cursor.execute("SELECT tmdb_id, last_watched_at FROM watched_history WHERE is_watched = 1 AND trakt_synced_at IS NULL")
-             for row in cursor.fetchall():
-                  tmdb_id, watched_at = row
-                  trakt_payload["movies"].append({"watched_at": watched_at, "ids": {"tmdb": tmdb_id}})
-                  m_trakt_ids.append(tmdb_id)
+             if has_trakt:
+                  cursor.execute("SELECT tmdb_id, last_watched_at FROM watched_history WHERE is_watched = 1 AND trakt_synced_at IS NULL")
+                  for row in cursor.fetchall():
+                       tmdb_id, watched_at = row
+                       trakt_payload["movies"].append({"watched_at": watched_at, "ids": {"tmdb": tmdb_id}})
+                       m_trakt_ids.append(tmdb_id)
                   
              cursor.execute("SELECT tmdb_id, last_watched_at FROM watched_history WHERE is_watched = 1 AND (simkl_synced_at IS NULL OR simkl_synced_at = '')")
              for row in cursor.fetchall():
@@ -394,13 +407,14 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
     try:
          with sqlite3.connect(tvshows_dynamic_db) as conn:
              cursor = conn.cursor()
-             cursor.execute("SELECT show_tmdb_id, season, episode, last_watched_at FROM watched_history WHERE is_watched = 1 AND trakt_synced_at IS NULL")
-             for row in cursor.fetchall():
-                  sid, sea, ep, wat = row
-                  if sid not in t_trakt_grouped: t_trakt_grouped[sid] = {}
-                  if sea not in t_trakt_grouped[sid]: t_trakt_grouped[sid][sea] = []
-                  t_trakt_grouped[sid][sea].append({"number": ep, "watched_at": wat})
-                  t_trakt_updates.append((sid, sea, ep))
+             if has_trakt:
+                  cursor.execute("SELECT show_tmdb_id, season, episode, last_watched_at FROM watched_history WHERE is_watched = 1 AND trakt_synced_at IS NULL")
+                  for row in cursor.fetchall():
+                       sid, sea, ep, wat = row
+                       if sid not in t_trakt_grouped: t_trakt_grouped[sid] = {}
+                       if sea not in t_trakt_grouped[sid]: t_trakt_grouped[sid][sea] = []
+                       t_trakt_grouped[sid][sea].append({"number": ep, "watched_at": wat})
+                       t_trakt_updates.append((sid, sea, ep))
                   
              cursor.execute("SELECT show_tmdb_id, season, episode, last_watched_at FROM watched_history WHERE is_watched = 1 AND (simkl_synced_at IS NULL OR simkl_synced_at = '')")
              for row in cursor.fetchall():
