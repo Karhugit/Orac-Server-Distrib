@@ -12,17 +12,27 @@ def add_internal_index(params, db_path):
     try:
         with sqlite3.connect(db_path, timeout=10.0) as conn:
             cursor = conn.cursor()
+            original_label = params.get('original_label')
+            label = params.get('label')
+            item_type = params.get('item_type')
+            
+            if original_label and original_label != label:
+                cursor.execute("""
+                    DELETE FROM internal_indexes
+                    WHERE id = ? AND media_type = ?
+                """, (original_label, item_type))
+                
             cursor.execute("""
                 INSERT OR REPLACE INTO internal_indexes (id, media_type, parameters, add_to_library)
                 VALUES (?, ?, ?, ?)
             """, (
-                params.get('label'),
-                params.get('item_type'),
+                label,
+                item_type,
                 json.dumps(params.get('parameters', {})),
                 params.get('add_to_library', 0)
             ))
             conn.commit()
-            log(f"[InternalIndexing] Added/Updated internal index: {params.get('label')}", level=LOGINFO)
+            log(f"[InternalIndexing] Added/Updated internal index: {label}", level=LOGINFO)
             return True
     except Exception as e:
         log(f"[InternalIndexing] Error adding internal index: {e}", level=LOGERROR)
@@ -205,7 +215,15 @@ def get_internal_index_contents(db_path, index_id, media_type, static_db, dynami
                         if list_ids:
                             placeholders = ','.join(['?' for _ in list_ids])
                             cursor.execute(f"SELECT tmdb_id FROM list_items WHERE list_id IN ({placeholders}) AND tmdb_id IS NOT NULL", list_ids)
-                            list_tmdb_ids = {int(row[0]) for row in cursor.fetchall()}
+                            for row in cursor.fetchall():
+                                val = row[0]
+                                if val is not None:
+                                    val_str = str(val).strip()
+                                    if val_str and val_str.lower() not in ('none', 'null'):
+                                        try:
+                                            list_tmdb_ids.add(int(val_str))
+                                        except ValueError:
+                                            pass
                             
                 log(f"[InternalIndexing] Filtering by lists: {with_lists} -> Found {len(list_tmdb_ids)} items", level=LOGINFO)
             except Exception as e:

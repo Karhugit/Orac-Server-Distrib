@@ -34,17 +34,27 @@ def add_external_index(params, external_indexes_db_path):
         # Set a longer timeout to handle potential locks
         with sqlite3.connect(external_indexes_db_path, timeout=10.0) as conn:
             cursor = conn.cursor()
+            original_label = params.get('original_label')
+            label = params.get('label')
+            item_type = params.get('item_type')
+            
+            if original_label and original_label != label:
+                cursor.execute("""
+                    DELETE FROM external_indexes
+                    WHERE id = ? AND media_type = ?
+                """, (original_label, item_type))
+                
             cursor.execute("""
                 INSERT OR REPLACE INTO external_indexes (id, media_type, parameters, add_to_library)
                 VALUES (?, ?, ?, ?)
             """, (
-                params.get('label'),
-                params.get('item_type'),
+                label,
+                item_type,
                 json.dumps(params.get('parameters', {})),
                 params.get('add_to_library', False)
             ))
             conn.commit()  # Explicitly commit the transaction
-            log(f"[Orac] Added/Updated external index for ID {params.get('label')}", level=LOGDEBUG)
+            log(f"[Orac] Added/Updated external index for ID {label}", level=LOGDEBUG)
             return True
     except Exception as e:
         log(f"[Orac] Error adding/updating external index: {str(e)}", level=LOGERROR)

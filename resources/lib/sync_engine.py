@@ -356,10 +356,11 @@ def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data):
 def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, config_db_path, tvshows_static_db=None):
     log("[Sync Engine] Starting bulk sync history...", level=LOGINFO)
     
-    from resources.lib.config_handler import get_trakt_access_token, get_trakt_client_id
-    trakt_token = get_trakt_access_token(config_db_path) if config_db_path else None
-    trakt_client = get_trakt_client_id(config_db_path) if config_db_path else None
-    has_trakt = bool(trakt_handler and trakt_token and trakt_client)
+    from resources.lib.config_handler import get_authorized_watched_providers
+    authed_providers = get_authorized_watched_providers(config_db_path)
+    has_trakt = 'trakt' in authed_providers and bool(trakt_handler)
+    has_simkl = 'simkl' in authed_providers
+    has_mdblist = 'mdblist' in authed_providers
 
     # 1. Collect pending
     trakt_payload = {"movies": [], "shows": []}
@@ -375,23 +376,26 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
              cursor = conn.cursor()
              # We only send those watched where they are missing the synced timestamp
              if has_trakt:
-                  cursor.execute("SELECT tmdb_id, last_watched_at FROM watched_history WHERE is_watched = 1 AND trakt_synced_at IS NULL")
+                  cursor.execute("SELECT tmdb_id, last_watched_at FROM watched_history WHERE is_watched = 1 AND (trakt_synced_at IS NULL OR trakt_synced_at = '')")
                   for row in cursor.fetchall():
                        tmdb_id, watched_at = row
                        trakt_payload["movies"].append({"watched_at": watched_at, "ids": {"tmdb": tmdb_id}})
                        m_trakt_ids.append(tmdb_id)
                   
-             cursor.execute("SELECT tmdb_id, last_watched_at FROM watched_history WHERE is_watched = 1 AND (simkl_synced_at IS NULL OR simkl_synced_at = '')")
-             for row in cursor.fetchall():
-                  tmdb_id, watched_at = row
-                  simkl_payload["movies"].append({"watched_at": watched_at, "ids": {"tmdb": tmdb_id}})
-                  m_simkl_ids.append(tmdb_id)
+             if has_simkl:
+                  cursor.execute("SELECT tmdb_id, last_watched_at FROM watched_history WHERE is_watched = 1 AND (simkl_synced_at IS NULL OR simkl_synced_at = '')")
+                  for row in cursor.fetchall():
+                       tmdb_id, watched_at = row
+                       simkl_payload["movies"].append({"watched_at": watched_at, "ids": {"tmdb": tmdb_id}})
+                       m_simkl_ids.append(tmdb_id)
                   
-             cursor.execute("SELECT tmdb_id, last_watched_at FROM watched_history WHERE is_watched = 1 AND (mdblist_synced_at IS NULL OR mdblist_synced_at = '')")
-             for row in cursor.fetchall():
-                  tmdb_id, watched_at = row
-                  mdblist_payload["movies"].append({"watched_at": watched_at, "ids": {"tmdb": tmdb_id}})
-                  m_mdblist_ids.append(tmdb_id)
+             if has_mdblist:
+                  cursor.execute("SELECT tmdb_id, last_watched_at FROM watched_history WHERE is_watched = 1 AND (mdblist_synced_at IS NULL OR mdblist_synced_at = '')")
+                  for row in cursor.fetchall():
+                       tmdb_id, watched_at = row
+                       mdblist_payload["movies"].append({"watched_at": watched_at, "ids": {"tmdb": tmdb_id}})
+                       m_mdblist_ids.append(tmdb_id)
+
     except Exception as e:
          log(f"[Sync Engine] Error collecting movies for bulk sync: {e}", level=LOGERROR)
          
@@ -408,7 +412,7 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
          with sqlite3.connect(tvshows_dynamic_db) as conn:
              cursor = conn.cursor()
              if has_trakt:
-                  cursor.execute("SELECT show_tmdb_id, season, episode, last_watched_at FROM watched_history WHERE is_watched = 1 AND trakt_synced_at IS NULL")
+                  cursor.execute("SELECT show_tmdb_id, season, episode, last_watched_at FROM watched_history WHERE is_watched = 1 AND (trakt_synced_at IS NULL OR trakt_synced_at = '')")
                   for row in cursor.fetchall():
                        sid, sea, ep, wat = row
                        if sid not in t_trakt_grouped: t_trakt_grouped[sid] = {}
@@ -416,21 +420,24 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
                        t_trakt_grouped[sid][sea].append({"number": ep, "watched_at": wat})
                        t_trakt_updates.append((sid, sea, ep))
                   
-             cursor.execute("SELECT show_tmdb_id, season, episode, last_watched_at FROM watched_history WHERE is_watched = 1 AND (simkl_synced_at IS NULL OR simkl_synced_at = '')")
-             for row in cursor.fetchall():
-                  sid, sea, ep, wat = row
-                  if sid not in t_simkl_grouped: t_simkl_grouped[sid] = {}
-                  if sea not in t_simkl_grouped[sid]: t_simkl_grouped[sid][sea] = []
-                  t_simkl_grouped[sid][sea].append({"number": ep, "watched_at": wat})
-                  t_simkl_updates.append((sid, sea, ep))
+             if has_simkl:
+                  cursor.execute("SELECT show_tmdb_id, season, episode, last_watched_at FROM watched_history WHERE is_watched = 1 AND (simkl_synced_at IS NULL OR simkl_synced_at = '')")
+                  for row in cursor.fetchall():
+                       sid, sea, ep, wat = row
+                       if sid not in t_simkl_grouped: t_simkl_grouped[sid] = {}
+                       if sea not in t_simkl_grouped[sid]: t_simkl_grouped[sid][sea] = []
+                       t_simkl_grouped[sid][sea].append({"number": ep, "watched_at": wat})
+                       t_simkl_updates.append((sid, sea, ep))
                   
-             cursor.execute("SELECT show_tmdb_id, season, episode, last_watched_at FROM watched_history WHERE is_watched = 1 AND (mdblist_synced_at IS NULL OR mdblist_synced_at = '')")
-             for row in cursor.fetchall():
-                  sid, sea, ep, wat = row
-                  if sid not in t_mdblist_grouped: t_mdblist_grouped[sid] = {}
-                  if sea not in t_mdblist_grouped[sid]: t_mdblist_grouped[sid][sea] = []
-                  t_mdblist_grouped[sid][sea].append({"number": ep, "watched_at": wat})
-                  t_mdblist_updates.append((sid, sea, ep))
+             if has_mdblist:
+                  cursor.execute("SELECT show_tmdb_id, season, episode, last_watched_at FROM watched_history WHERE is_watched = 1 AND (mdblist_synced_at IS NULL OR mdblist_synced_at = '')")
+                  for row in cursor.fetchall():
+                       sid, sea, ep, wat = row
+                       if sid not in t_mdblist_grouped: t_mdblist_grouped[sid] = {}
+                       if sea not in t_mdblist_grouped[sid]: t_mdblist_grouped[sid][sea] = []
+                       t_mdblist_grouped[sid][sea].append({"number": ep, "watched_at": wat})
+                       t_mdblist_updates.append((sid, sea, ep))
+
     except Exception as e:
          log(f"[Sync Engine] Error collecting shows for bulk sync: {e}", level=LOGERROR)
          

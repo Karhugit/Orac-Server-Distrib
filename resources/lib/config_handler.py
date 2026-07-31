@@ -60,6 +60,37 @@ def get_tmdb_session_id(config_db_path):
     return get_config_value('tmdb_session_id', config_db_path)
 
 
+def get_authorized_watched_providers(config_db_path):
+    """
+    Returns a list of authorized provider names that support watched items tracking.
+    Supported watched-tracking providers: 'trakt', 'simkl', 'mdblist'.
+    Note: TMDB does not support watched items tracking.
+    """
+    providers = []
+    if not config_db_path:
+        return providers
+
+    # Check Trakt
+    trakt_token = get_trakt_access_token(config_db_path)
+    trakt_client = get_trakt_client_id(config_db_path)
+    if trakt_token and trakt_client and trakt_token != "empty_setting" and trakt_client != "empty_setting":
+        providers.append('trakt')
+
+    # Check Simkl
+    simkl_token = get_config_value("simkl.token", config_db_path)
+    simkl_client = get_config_value("simkl.client", config_db_path)
+    if simkl_token and simkl_client and simkl_token != "empty_setting" and simkl_client != "empty_setting":
+        providers.append('simkl')
+
+    # Check MDBList
+    mdblist_api = get_config_value("mdblist_api", config_db_path)
+    if mdblist_api and mdblist_api != "empty_setting":
+        providers.append('mdblist')
+
+    return providers
+
+
+
 
 def clear_trakt_config(config_db_path):
     """Deletes Trakt authentication records from the config database."""

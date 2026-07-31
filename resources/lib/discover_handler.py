@@ -31,7 +31,7 @@ def handle_discover_request(item_type, query_params, tmdb_handler, ext_indexes_c
 
     db_params = None
     if query_name:
-        db_params = get_discover_params_from_db(ext_indexes_cursor, query_name)
+        db_params = get_discover_params_from_db(ext_indexes_cursor, query_name, item_type)
 
     if db_params:
         processed_params.update(db_params)

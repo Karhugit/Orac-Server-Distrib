@@ -4,7 +4,9 @@ from resources.lib.log_utils import log, LOGDEBUG, LOGINFO, LOGERROR, LOGWARNING
 from resources.lib.db_utils import add_tvshow
 from datetime import datetime
 import resources.lib.recommendations_handler as recommendations
-#from resources.lib.tmdb_utils import update_show_images
+from resources.lib.database_manager import DatabaseManager
+from resources.lib.config_handler import get_authorized_watched_providers
+
 
 async def update_dynamic_tvshow_data(trakt_handler, tmdb_handler, username, tvshows_dynamic_db_path, tvshows_static_db_path, trakt_queue_path):
     static_conn = None
@@ -407,42 +409,51 @@ def update_next_episode(
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (username, episode_trakt_id, episode_tmdb_id, season, episode, now_str_ms, percent_watched, watched_status))
 
-            # Insert into watched_history for dual sync (sets trakt_synced_at so we don't double sync Trakt, resets Simkl/MDBList so they get re-synced)
+            # Insert into watched_history for multi-provider sync (resets provider synced timestamps so all authorized services get synced)
             if percent_watched >= 90:
                 dynamic_cursor.execute("""
                     INSERT INTO watched_history (show_tmdb_id, season, episode, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at)
-                    VALUES (?, ?, ?, 1, ?, ?, NULL, NULL)
+                    VALUES (?, ?, ?, 1, ?, NULL, NULL, NULL)
                     ON CONFLICT(show_tmdb_id, season, episode) DO UPDATE SET
-                        is_watched = 1, last_watched_at = ?, trakt_synced_at = ?,
+                        is_watched = 1, last_watched_at = ?, trakt_synced_at = NULL,
                         simkl_synced_at = NULL, mdblist_synced_at = NULL
-                """, (show_tmdb_id, season, episode, now_str_ms, now_str_ms, now_str_ms, now_str_ms))
+                """, (show_tmdb_id, season, episode, now_str_ms, now_str_ms))
 
             # Update show's parent status
             _update_show_watched_status(dynamic_cursor, static_cursor, username, show_tmdb_id)
 
-            # If the percent watched is less than 90, we can finish here
+            # If the percent watched is less than 90, we can finish here (resume point saved locally only)
             if percent_watched is not None and percent_watched < 90:
                 log(f"[Orac] Episode {episode_tmdb_id} of show {show_tmdb_id} marked as partially watched ({percent_watched}%) for user {username}", level=LOGINFO)
-                
                 dynamic_conn.commit()
                 trakt_queue_conn.commit()
                 return
 
-            # Put an entry in the queue to update trakt
             if percent_watched is None:
                 percent_watched = 100
-            if show_trakt_id is not None and (not isinstance(show_trakt_id, int) or show_trakt_id >= 0):
-                payload = {"update_type": "watched_episode", "season": season, "episode": episode, "tmdb_id": episode_tmdb_id, "episode_trakt_id": episode_trakt_id, "percent_watched": percent_watched}
+
+            # Queue update for each authorized watched tracking service
+            config_db_path = DatabaseManager().get_path('config')
+            authed_providers = get_authorized_watched_providers(config_db_path)
+            for provider in authed_providers:
+                payload = {
+                    "update_type": "watched_episode",
+                    "season": season,
+                    "episode": episode,
+                    "tmdb_id": episode_tmdb_id,
+                    "show_tmdb_id": show_tmdb_id,
+                    "episode_trakt_id": episode_trakt_id,
+                    "percent_watched": percent_watched,
+                    "provider": provider
+                }
                 trakt_queue_cursor.execute("""
-                    INSERT INTO update_queue (trakt_id, update_type, payload, status, media_type)
-                    VALUES (?, ?, ?, 'pending', ?)
-                """, (show_trakt_id, 'watched_episode', json.dumps(payload), 'episode'))
-                trakt_queue_conn.commit()
-            else:
-                log(f"[Orac] Skipping Trakt sync queue for show {show_tmdb_id} (no valid Trakt ID available)", level=LOGINFO)
+                    INSERT INTO update_queue (trakt_id, update_type, payload, status, media_type, provider)
+                    VALUES (?, ?, ?, 'pending', 'episode', ?)
+                """, (show_trakt_id if show_trakt_id is not None else 0, 'watched_episode', json.dumps(payload), provider))
 
-
+            trakt_queue_conn.commit()
             dynamic_conn.commit()
+
             
             # Clear recommendations cache
             recommendations.clear_user_cache(username)
@@ -666,28 +677,30 @@ def mark_movie_watched(static_db_path, dynamic_db_path, trakt_queue_path, trakt_
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (int(movie_tmdb_id), movie_trakt_id, percent_watched, None, now_str_ms, watched_status))
 
-            # Insert into watched_history for dual sync
+            # Insert into watched_history for multi-provider sync
             if percent_watched >= 90:
                 dynamic_cursor.execute("""
-                    INSERT INTO watched_history (tmdb_id, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at)
-                    VALUES (?, 1, ?, NULL, NULL)
+                    INSERT INTO watched_history (tmdb_id, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at)
+                    VALUES (?, 1, ?, NULL, NULL, NULL)
                     ON CONFLICT(tmdb_id) DO UPDATE SET
-                        is_watched = 1, last_watched_at = ?, trakt_synced_at = NULL, simkl_synced_at = NULL
+                        is_watched = 1, last_watched_at = ?, trakt_synced_at = NULL, simkl_synced_at = NULL, mdblist_synced_at = NULL
                 """, (int(movie_tmdb_id), now_str_ms, now_str_ms))
             
-                # Queue Trakt update (only if we have a valid trakt_id)
-                payload = {
-                    "update_type": "watched_movie",
-                    "tmdb_id": int(movie_tmdb_id),
-                    "percent_watched": percent_watched
-                }
-                if movie_trakt_id:
+                # Queue update for each authorized watched tracking service
+                config_db_path = DatabaseManager().get_path('config')
+                authed_providers = get_authorized_watched_providers(config_db_path)
+                for provider in authed_providers:
+                    payload = {
+                        "update_type": "watched_movie",
+                        "tmdb_id": int(movie_tmdb_id),
+                        "percent_watched": percent_watched,
+                        "provider": provider
+                    }
                     trakt_queue_cursor.execute("""
-                        INSERT INTO update_queue (trakt_id, update_type, payload, status, media_type)
-                        VALUES (?, ?, ?, 'pending', 'movie')
-                    """, (movie_trakt_id, 'watched_movie', json.dumps(payload)))
-                else:
-                    log(f"[Orac] Skipping Trakt queue entry for movie {movie_tmdb_id}: no trakt_id available.", level=LOGWARNING)
+                        INSERT INTO update_queue (trakt_id, update_type, payload, status, media_type, provider)
+                        VALUES (?, ?, ?, 'pending', 'movie', ?)
+                    """, (movie_trakt_id if movie_trakt_id is not None else 0, 'watched_movie', json.dumps(payload), provider))
+
             
             dynamic_conn.commit()
             trakt_queue_conn.commit()
@@ -783,9 +796,12 @@ def mark_tvshow_watched(static_db_path, dynamic_db_path, trakt_queue_path, trakt
             """, (show_tmdb_id,))
             episodes = static_cursor.fetchall()
 
-            # Step 3: Mark each episode as watched in dynamic DB and queue Trakt update
+            # Step 3: Mark each episode as watched in dynamic DB and queue updates for authorized services
             watched_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
             watched_status = 2 if percent_watched >= 90 else 1
+            config_db_path = DatabaseManager().get_path('config')
+            authed_providers = get_authorized_watched_providers(config_db_path)
+
             for ep_trakt_id, ep_tmdb_id, season_num, ep_num in episodes:
                 # Mark watched in dynamic DB
                 dynamic_cursor.execute("""
@@ -794,31 +810,30 @@ def mark_tvshow_watched(static_db_path, dynamic_db_path, trakt_queue_path, trakt
                 """, (username, ep_trakt_id, ep_tmdb_id, season_num, ep_num, watched_at, percent_watched, watched_status))
 
                 if percent_watched >= 90:
-                    # Insert into watched_history for dual sync (sets trakt_synced_at so we don't double sync Trakt, resets Simkl/MDBList so they get re-synced)
                     dynamic_cursor.execute("""
                         INSERT INTO watched_history (show_tmdb_id, season, episode, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at)
-                        VALUES (?, ?, ?, 1, ?, ?, NULL, NULL)
+                        VALUES (?, ?, ?, 1, ?, NULL, NULL, NULL)
                         ON CONFLICT(show_tmdb_id, season, episode) DO UPDATE SET
-                            is_watched = 1, last_watched_at = ?, trakt_synced_at = ?,
+                            is_watched = 1, last_watched_at = ?, trakt_synced_at = NULL,
                             simkl_synced_at = NULL, mdblist_synced_at = NULL
-                    """, (show_tmdb_id, season_num, ep_num, watched_at, watched_at, watched_at, watched_at))
+                    """, (show_tmdb_id, season_num, ep_num, watched_at, watched_at))
 
-                    # If percent_watched is >= 90, queue Trakt update
-                    payload = {
-                        "update_type": "watched_episode",
-                        "season": season_num,
-                        "episode": ep_num,
-                        "tmdb_id": ep_tmdb_id,
-                        "episode_trakt_id": ep_trakt_id,
-                        "percent_watched": percent_watched
-                    }
-                    if show_trakt_id is not None and (not isinstance(show_trakt_id, int) or show_trakt_id >= 0):
+                    for provider in authed_providers:
+                        payload = {
+                            "update_type": "watched_episode",
+                            "season": season_num,
+                            "episode": ep_num,
+                            "tmdb_id": ep_tmdb_id,
+                            "show_tmdb_id": show_tmdb_id,
+                            "episode_trakt_id": ep_trakt_id,
+                            "percent_watched": percent_watched,
+                            "provider": provider
+                        }
                         trakt_queue_cursor.execute("""
-                            INSERT INTO update_queue (trakt_id, update_type, payload, status, media_type)
-                            VALUES (?, ?, ?, 'pending', ?)
-                        """, (show_trakt_id, 'watched_episode', json.dumps(payload), 'episode'))
-                    else:
-                        log(f"[Orac] Skipping Trakt sync queue for show {show_tmdb_id} (no valid Trakt ID available)", level=LOGINFO)
+                            INSERT INTO update_queue (trakt_id, update_type, payload, status, media_type, provider)
+                            VALUES (?, ?, ?, 'pending', 'episode', ?)
+                        """, (show_trakt_id if show_trakt_id is not None else 0, 'watched_episode', json.dumps(payload), provider))
+
 
             # Step 4: Update show's parent status
             _update_show_watched_status(dynamic_cursor, static_cursor, username, show_tmdb_id)

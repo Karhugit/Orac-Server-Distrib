@@ -16,9 +16,22 @@ def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None
         with sqlite3.connect(tvshows_dynamic_db_path) as dynamic_conn, \
              sqlite3.connect(tvshows_static_db_path) as static_conn:
 
+            if not user or user in ("empty_setting", ""):
+                try:
+                    cursor = dynamic_conn.cursor()
+                    cursor.execute("SELECT user FROM watched_episodes WHERE user IS NOT NULL AND user != '' LIMIT 1")
+                    row = cursor.fetchone()
+                    if row and row[0]:
+                        user = row[0]
+                except Exception:
+                    pass
+                if not user:
+                    user = "local_user"
+
             # Attach the dynamic DB to the static connection for JOINs
             static_conn.execute(f"ATTACH DATABASE ? AS dynamic_db", (tvshows_dynamic_db_path,))
             cursor = static_conn.cursor()
+
 
             # This query calculates the next episode to watch on the fly.
             # It prioritizes partially watched episodes, then the next unwatched episode after the last watched one.

@@ -5,7 +5,7 @@ def get_all_lists(db_path, ext_indexes_db_path=None, exclude_empty=False):
     list_name = None  # Not used in current implementation
     item_type = 'all'
     my_lists = get_my_lists(db_path, list_name, item_type, ext_indexes_db_path, exclude_empty=exclude_empty)
-    generic_lists = get_generic_lists(db_path, list_name, item_type)
+    generic_lists = get_generic_lists(db_path, list_name, item_type, ext_indexes_db_path)
     all_lists = my_lists + generic_lists
     log(f"[Orac] Total lists found: {len(all_lists)}", level=LOGDEBUG)
     return all_lists
@@ -34,7 +34,6 @@ def get_my_lists(db_path, list_name, item_type, ext_indexes_db_path=None, exclud
     elif item_type == 'all':
         # logic for 'all' typically doesn't check counts strictly unless we want to hide empty ones entirely?
         # Existing logic: WHERE user NOT IN ... (no count check at all)
-        # If excluding empty, maybe check combined count?
         if exclude_empty:
              query = f"SELECT list_id, name, user, source, slug, add_to_library, item_count_movies + item_count_shows AS item_count FROM lists WHERE (item_count_movies + item_count_shows > 0) AND {base_condition}"
         else:
@@ -64,35 +63,69 @@ def get_my_lists(db_path, list_name, item_type, ext_indexes_db_path=None, exclud
 
     conn.close()
 
+    if ext_indexes_db_path:
+        try:
+            with sqlite3.connect(ext_indexes_db_path) as ext_conn:
+                ext_conn.row_factory = sqlite3.Row
+                ext_cursor = ext_conn.cursor()
+                if exclude_empty:
+                    ext_cursor.execute("SELECT id, media_type, parameters, add_to_library FROM external_indexes WHERE add_to_library = 1")
+                else:
+                    ext_cursor.execute("SELECT id, media_type, parameters, add_to_library FROM external_indexes")
+                ext_rows = ext_cursor.fetchall()
+                
+                existing_keys = {(l.get('user'), l['slug']) for l in formatted_lists}
+                
+                for ext_row in ext_rows:
+                    m_type = ext_row['media_type']
+                    if item_type == 'movie' and m_type != 'movie':
+                        continue
+                    if item_type == 'tvshow' and m_type not in ['show', 'tvshow', 'tv']:
+                        continue
+                        
+                    slug = ext_row['id'].lower().replace(' ', '-').replace('_', '-')
+                    add_lib = 1 if ext_row['add_to_library'] else 0
+                    
+                    if ('External Index', slug) not in existing_keys:
+                        formatted_lists.append({
+                            'name': ext_row['id'],
+                            'user': 'External Index',
+                            'owner': 'tmdb',
+                            'source': 'tmdb',
+                            'slug': slug,
+                            'item_count': 0,
+                            'add_to_library': add_lib
+                        })
+                        existing_keys.add(('External Index', slug))
+        except Exception as e:
+            log(f"[Orac] Error reading external indexes into my lists: {e}", level=LOGERROR)
 
     log(f"[Orac] Found {len(formatted_lists)} my lists", level=LOGDEBUG)
     return formatted_lists
 
-def get_generic_lists(db_path, list_name, item_type):
+def get_generic_lists(db_path, list_name, item_type, ext_indexes_db_path=None):
     formatted_lists = []
     log(f"[Orac] Fetching generic lists of type: {item_type}", level=LOGDEBUG)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
+    not_ext_index_cond = "(list_id IS NULL OR list_id NOT LIKE 'tmdb:index:%')"
+
     if item_type == 'movie':
-        cursor.execute("SELECT list_id, name, user, source, slug, add_to_library, item_count_movies AS item_count FROM lists WHERE item_count_movies > 0 AND user IN ('trakt', 'tmdb', 'flixpatrol')")
+        cursor.execute(f"SELECT list_id, name, user, source, slug, add_to_library, item_count_movies AS item_count FROM lists WHERE item_count_movies > 0 AND user IN ('trakt', 'tmdb', 'flixpatrol') AND {not_ext_index_cond}")
     elif item_type == 'tvshow':
-        cursor.execute("SELECT list_id, name, user, source, slug, add_to_library, item_count_shows AS item_count FROM lists WHERE item_count_shows > 0 AND user IN ('trakt', 'tmdb', 'flixpatrol')")
+        cursor.execute(f"SELECT list_id, name, user, source, slug, add_to_library, item_count_shows AS item_count FROM lists WHERE item_count_shows > 0 AND user IN ('trakt', 'tmdb', 'flixpatrol') AND {not_ext_index_cond}")
     elif item_type == 'all':
-        cursor.execute("SELECT list_id, name, user, source, slug, add_to_library, item_count_movies + item_count_shows AS item_count FROM lists WHERE user IN ('trakt', 'tmdb', 'flixpatrol')")
+        cursor.execute(f"SELECT list_id, name, user, source, slug, add_to_library, item_count_movies + item_count_shows AS item_count FROM lists WHERE user IN ('trakt', 'tmdb', 'flixpatrol') AND {not_ext_index_cond}")
     else:
-        cursor.execute("SELECT list_id, name, user, source, slug, add_to_library, item_count_movies + item_count_shows AS item_count FROM lists WHERE item_count_movies + item_count_shows > 0 AND user IN ('trakt', 'tmdb', 'flixpatrol')")
+        cursor.execute(f"SELECT list_id, name, user, source, slug, add_to_library, item_count_movies + item_count_shows AS item_count FROM lists WHERE item_count_movies + item_count_shows > 0 AND user IN ('trakt', 'tmdb', 'flixpatrol') AND {not_ext_index_cond}")
     rows = cursor.fetchall()
 
     for row in rows:
-        user_display = row['user']
-        if row['list_id'] and row['list_id'].startswith('tmdb:index:'):
-            user_display = 'External Index'
-            
         formatted_lists.append({
             'name': row['name'],
-            'user': user_display,
+            'user': row['user'],
             'owner': row['user'],
             'source': row['source'], 
             'slug': row['slug'],
@@ -101,6 +134,7 @@ def get_generic_lists(db_path, list_name, item_type):
         })
     
     conn.close()
+
     log(f"[Orac] Found {len(formatted_lists)} generic lists", level=LOGDEBUG)
     return formatted_lists
 
@@ -294,13 +328,24 @@ def get_remove_options(db_path, item_type, tmdb_id, movies_static_db_path, tvsho
     log(f"[Orac] Found {len(formatted_lists)} lists to remove item {trakt_id} from.", level=LOGDEBUG)
     return formatted_lists
 
-def update_list_library_status(params, db_path):
+def update_list_library_status(params, db_path, ext_indexes_db_path=None):
     user = params.get('user')
     slug = params.get('slug')
     update = params.get('update')
     if not slug or not user or update is None:
         log("[Orac] Missing parameters for update_list_library_status.", level=LOGERROR)
         return False
+    
+    add_to_library = 1 if update == 'Add' else 0
+
+    if ext_indexes_db_path:
+        try:
+            with sqlite3.connect(ext_indexes_db_path) as ext_conn:
+                ext_cursor = ext_conn.cursor()
+                ext_cursor.execute("UPDATE external_indexes SET add_to_library = ? WHERE LOWER(REPLACE(REPLACE(id, ' ', '-'), '_', '-')) = ?", (add_to_library, slug.lower()))
+                ext_conn.commit()
+        except Exception as e:
+            log(f"[Orac] Error updating add_to_library in external_indexes: {e}", level=LOGERROR)
     
     # Always resolve list_id from DB because we moved to a Source:Type:Identifier schema
     # and we can't reconstruct it reliably from just user + slug.
@@ -354,7 +399,6 @@ def update_list_library_status(params, db_path):
     else:
         log(f"[Orac] Could not resolve list '{slug}' to a local list_id. Falling back to legacy construction.", level=LOGWARNING)
         list_id = f"{user}:{slug}"
-    add_to_library = 1 if update == 'Add' else 0
 
     try:
         with sqlite3.connect(db_path) as conn:

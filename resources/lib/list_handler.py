@@ -18,10 +18,12 @@ def _get_list_movies(list_name, user, movies_static_db_path, movies_dynamic_db_p
             SELECT li.tmdb_id
             FROM list_items li
             JOIN lists l ON li.list_id = l.list_id 
-            WHERE l.slug = ? AND li.media_type = 'movie' AND l.user = ?
+            WHERE (l.slug = ? OR LOWER(REPLACE(REPLACE(l.name, ' ', '-'), '_', '-')) = LOWER(?)) 
+              AND li.media_type = 'movie' 
+              AND (l.user = ? OR l.user IN ('tmdb', 'external_index') OR l.list_id LIKE 'tmdb:index:%')
             ORDER BY li.id ASC
-        """, (list_name, user,))
-        tmdb_ids = [row[0] for row in lists_cursor.fetchall() if row[0]]
+        """, (list_name, list_name, user,))
+        tmdb_ids = [row[0] for row in lists_cursor.fetchall() if row[0] and str(row[0]).lower() not in ('none', 'null', '')]
         log(f"[Orac] _get_list_movies: Found {len(tmdb_ids)} TMDB IDs for list '{list_name}': {tmdb_ids}", level=LOGDEBUG)
 
     if not tmdb_ids:
@@ -111,10 +113,12 @@ def _get_list_shows(list_name, user, tvshows_static_db_path, tvshows_dynamic_db_
             SELECT li.tmdb_id
             FROM list_items li
             JOIN lists l ON li.list_id = l.list_id 
-            WHERE l.slug = ? AND li.media_type = 'show' AND l.user = ?
+            WHERE (l.slug = ? OR LOWER(REPLACE(REPLACE(l.name, ' ', '-'), '_', '-')) = LOWER(?)) 
+              AND li.media_type = 'show' 
+              AND (l.user = ? OR l.user IN ('tmdb', 'external_index') OR l.list_id LIKE 'tmdb:index:%')
             ORDER BY li.id ASC
-        """, (list_name, user,))
-        show_ids = [row[0] for row in lists_cursor.fetchall() if row[0]]
+        """, (list_name, list_name, user,))
+        show_ids = [row[0] for row in lists_cursor.fetchall() if row[0] and str(row[0]).lower() not in ('none', 'null', '')]
 
     if not show_ids:
         return []
@@ -189,15 +193,17 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            # Resolve list_id using slug/user pair which is safer than reconstructing the ID
-            # Priority 1: Exact slug and user match
-            cursor.execute("SELECT list_id, source, user, slug, add_to_library FROM lists WHERE slug = ? AND user = ?", (list_name, user))
+            # Priority 1: Exact slug and user/external index match
+            cursor.execute(
+                "SELECT list_id, source, user, slug, add_to_library FROM lists WHERE (slug = ? OR LOWER(REPLACE(REPLACE(name, ' ', '-'), '_', '-')) = LOWER(?)) AND (user = ? OR list_id LIKE 'tmdb:index:%')",
+                (list_name, list_name, user)
+            )
             row = cursor.fetchone()
             
             # Priority 2: Try by list_id for legacy compatibility if user passed "user:slug" as name? 
             # Or just fallback to name match if passed slug is actually a name
             if not row:
-                 cursor.execute("SELECT list_id, source, user, slug, add_to_library FROM lists WHERE name = ? AND user = ? COLLATE NOCASE", (list_name, user))
+                 cursor.execute("SELECT list_id, source, user, slug, add_to_library FROM lists WHERE name = ? AND (user = ? OR list_id LIKE 'tmdb:index:%') COLLATE NOCASE", (list_name, user))
                  row = cursor.fetchone()
 
             if row:
@@ -206,17 +212,47 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
                 source = row['source']
                 slug = row['slug']
                 list_user = row['user']
+                if (list_id and list_id.startswith('tmdb:index:')) or (user and user.lower().replace(' ', '_') == 'external_index'):
+                    list_user = 'external_index'
+                    source = 'tmdb'
             else:
                 # If not found locally, we assume it's external.
                 # Construct a temporary fallback ID if needed for logging, but we mainly need source/add_to_library
                 list_id = f"{user}:{list_name}" # Legacy fallback for logging
                 log(f"[Orac] List '{list_name}' not found in DB. Treating as external.", level=LOGDEBUG)
-                # Check if this is a known TMDB generic list even if not in DB (e.g. fresh install)
-                from resources.lib.tmdb_lists import TMDB_GENERIC_LISTS
-                _tmdb_slugs = {l['slug'] for l in TMDB_GENERIC_LISTS}
-                if list_name in _tmdb_slugs:
+
+                is_ext_index = False
+                if user and user.lower().replace(' ', '_') == 'external_index':
+                    is_ext_index = True
+
+                if ext_indexes_db_path:
+                    try:
+                        with sqlite3.connect(ext_indexes_db_path) as ext_conn:
+                            ext_conn.row_factory = sqlite3.Row
+                            ext_cursor = ext_conn.cursor()
+                            ext_cursor.execute(
+                                "SELECT id, add_to_library FROM external_indexes WHERE id = ? OR LOWER(id) = LOWER(?) OR LOWER(REPLACE(REPLACE(id, ' ', '-'), '_', '-')) = LOWER(?)",
+                                (list_name, list_name, list_name.replace('-', ' '))
+                            )
+                            ext_row = ext_cursor.fetchone()
+                            if ext_row:
+                                is_ext_index = True
+                                if ext_row['add_to_library']:
+                                    add_to_library = 1
+                    except Exception as e:
+                        log(f"[Orac] Error checking external_indexes DB: {e}", level=LOGERROR)
+
+                if is_ext_index:
                     source = 'tmdb'
-                    log(f"[Orac] List '{list_name}' recognised as TMDB generic list.", level=LOGDEBUG)
+                    list_user = 'external_index'
+                    log(f"[Orac] List '{list_name}' recognized as External Index (add_to_library={add_to_library}).", level=LOGDEBUG)
+                else:
+                    # Check if this is a known TMDB generic list even if not in DB (e.g. fresh install)
+                    from resources.lib.tmdb_lists import TMDB_GENERIC_LISTS
+                    _tmdb_slugs = {l['slug'] for l in TMDB_GENERIC_LISTS}
+                    if list_name in _tmdb_slugs:
+                        source = 'tmdb'
+                        log(f"[Orac] List '{list_name}' recognised as TMDB generic list.", level=LOGDEBUG)
 
         # Step 2: If add_to_library is 1, or source is web/mdblist/flixpatrol, fetch from local DB
         # (These sources always have items synced locally, so we serve from DB regardless of add_to_library)
@@ -251,7 +287,7 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
             results = await _fetch_trakt_list_external(trakt_handler, tmdb_handler, list_user, slug, item_type, movies_static_db_path, tvshows_static_db_path)
         elif source == 'tmdb':
             # Distinguish between External Index (Saved Query) and Static List
-            if list_user == 'external_index':
+            if list_user and list_user.lower().replace(' ', '_') == 'external_index':
                results = await _fetch_tmdb_discover_external(tmdb_handler, slug, item_type, ext_indexes_db_path)
             else:
                results = await _fetch_tmdb_list_external(tmdb_handler, slug, item_type)
@@ -528,60 +564,29 @@ async def _fetch_tmdb_discover_external(tmdb_handler, slug, item_type, ext_index
         return []
 
     try:
-        from resources.lib.db_utils import get_discover_params_from_db
-        from resources.lib.discover_handler import handle_discover_request
+        from resources.lib.db_utils import get_discover_params_and_type_from_db
+        from resources.lib.date_utils import parse_date_param
         
         with sqlite3.connect(ext_indexes_db_path) as conn:
             cursor = conn.cursor()
-            params = get_discover_params_from_db(cursor, slug)
+            params, db_media_type = get_discover_params_and_type_from_db(cursor, slug, item_type)
             
             if not params:
-                # 2. Try "unslugified" match (replace hyphens with spaces)
-                unslugified_name = slug.replace("-", " ")
-                params = get_discover_params_from_db(cursor, unslugified_name)
-                
-                if params:
-                    # Found it with unslugified name
-                    log(f"[Orac] Found external index '{unslugified_name}' for slug '{slug}'", level=LOGINFO)
-                    cursor.execute("SELECT media_type FROM external_indexes WHERE id = ?", (unslugified_name,))
-                    row = cursor.fetchone()
-                    media_type = row[0] if row else "movie"
-                else:
-                    # 3. Fuzzy/Normalized Match: Fetch all IDs and compare normalized strings
-                    cursor.execute("SELECT id, media_type FROM external_indexes")
-                    all_indexes = cursor.fetchall()
-                    
-                    found_id = None
-                    # Normalize the search slug: lowercase, remove non-alphanumeric (keep spaces/hyphens for splitting)
-                    def normalize(s):
-                        return "".join(c.lower() for c in s if c.isalnum())
+                log(f"[Orac] No discover parameters found for {slug}", level=LOGWARNING)
+                return []
 
-                    target_norm = normalize(slug)
-                    
-                    for idx_id, idx_media_type in all_indexes:
-                        if normalize(idx_id) == target_norm:
-                            found_id = idx_id
-                            media_type = idx_media_type
-                            break
-                    
-                    if found_id:
-                        log(f"[Orac] Found external index '{found_id}' via fuzzy match for slug '{slug}'", level=LOGINFO)
-                        params = get_discover_params_from_db(cursor, found_id)
-                    else:
-                        log(f"[Orac] No discover parameters found for {slug} (tried exact, unslugified, and fuzzy)", level=LOGWARNING)
-                        return []
+        effective_media_type = db_media_type or item_type
+        tmdb_media_type = 'tv' if effective_media_type in ['show', 'tvshow', 'tv'] else 'movie'
+
+        processed_params = {}
+        for k, v in params.items():
+            if ('.gte' in k or '.lte' in k) and isinstance(v, str):
+                parsed = parse_date_param(v)
+                processed_params[k] = parsed if parsed is not None else v
             else:
-                cursor.execute("SELECT media_type FROM external_indexes WHERE id = ?", (slug,))
-                row = cursor.fetchone()
-                media_type = row[0] if row else "movie"
+                processed_params[k] = v
 
-        # Reuse handle_discover_request logic but in a more direct way
-        # handle_discover_request(item_type, query_params, tmdb_handler, ext_indexes_cursor)
-        # However, handle_discover_request is designed for HTTP query params.
-        # Let's call tmdb_handler.discover_media directly.
-        
-        tmdb_media_type = 'tv' if media_type in ['show', 'tvshow'] else 'movie'
-        data = tmdb_handler.discover_media(tmdb_media_type, params)
+        data = tmdb_handler.discover_media(tmdb_media_type, processed_params)
         
         if not data or 'results' not in data:
             return []
@@ -812,10 +817,11 @@ def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_stat
                 db_item_type = item_type
             
             # Use 0 or NULL for trakt_id if missing?
-            t_id_val = str(trakt_id) if trakt_id else None
+            t_id_val = str(trakt_id) if (trakt_id is not None and str(trakt_id).lower() not in ('none', 'null', '')) else None
+            tmdb_id_val = str(tmdb_id) if (tmdb_id is not None and str(tmdb_id).lower() not in ('none', 'null', '')) else None
 
             cursor.execute("INSERT OR IGNORE INTO list_items (list_id, media_type, trakt_id, tmdb_id) VALUES (?, ?, ?, ?);",
-                           (list_id, db_item_type, t_id_val, str(tmdb_id)))
+                           (list_id, db_item_type, t_id_val, tmdb_id_val))
 
             # Only update the count if a new row was inserted
             if conn.total_changes > 0:

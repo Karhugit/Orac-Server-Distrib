@@ -522,6 +522,20 @@ def init_lists_db(db_path=None, conn=None):
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_list_items_unique ON list_items(list_id, trakt_id);
             """)
         
+        # Clean up any existing string representations of None, null or empty values to database NULL
+        cursor.execute("""
+            UPDATE list_items 
+            SET tmdb_id = NULL 
+            WHERE tmdb_id IS NOT NULL 
+              AND (LOWER(tmdb_id) = 'none' OR LOWER(tmdb_id) = 'null' OR TRIM(tmdb_id) = '')
+        """)
+        cursor.execute("""
+            UPDATE list_items 
+            SET trakt_id = NULL 
+            WHERE trakt_id IS NOT NULL 
+              AND (LOWER(trakt_id) = 'none' OR LOWER(trakt_id) = 'null' OR TRIM(trakt_id) = '')
+        """)
+        
         conn.commit()
         return True
     except Exception as e:
@@ -567,19 +581,21 @@ def init_ext_indexes_db(db_path=None, conn=None):
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS external_indexes (
-                id TEXT PRIMARY KEY,
+                id TEXT NOT NULL,
                 media_type TEXT NOT NULL,  -- 'movie' or 'show'
-                parameters TEXT NOT NULL,  -- JSON string of parameters
-                add_to_library BOOLEAN DEFAULT false
+                parameters TEXT,  -- JSON string of parameters
+                add_to_library INTEGER DEFAULT 0,
+                PRIMARY KEY (id, media_type)
             )
         """)
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS internal_indexes (
-                id TEXT PRIMARY KEY,
+                id TEXT NOT NULL,
                 media_type TEXT NOT NULL,  -- 'movie' or 'show'
-                parameters TEXT NOT NULL,  -- JSON string of parameters (e.g., genre filters)
-                add_to_library INTEGER DEFAULT 0
+                parameters TEXT,  -- JSON string of parameters (e.g., genre filters)
+                add_to_library INTEGER DEFAULT 0,
+                PRIMARY KEY (id, media_type)
             )
         """)
 

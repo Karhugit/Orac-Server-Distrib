@@ -395,22 +395,52 @@ def insert_episode_combined(cursor, trakt_episode_data, tmdb_episode_data, show_
         original_title
     ))
 
-def get_discover_params_from_db(cursor, query_name):
+def get_discover_params_from_db(cursor, query_name, media_type=None):
     """
     Retrieves discover parameters from the external_indexes table.
     """
-    log(f"DB: Fetching discover params for query: '{query_name}'", LOGINFO)
+    params, _ = get_discover_params_and_type_from_db(cursor, query_name, media_type)
+    return params
+
+def get_discover_params_and_type_from_db(cursor, query_name, media_type=None):
+    """
+    Retrieves discover parameters and media_type from the external_indexes table.
+    """
+    log(f"DB: Fetching discover params for query: '{query_name}' with media_type: {media_type}", LOGINFO)
     try:
-        cursor.execute("SELECT parameters FROM external_indexes WHERE id = ?", (query_name,))
+        unslug = query_name.replace('-', ' ')
+        query_base = "SELECT parameters, media_type FROM external_indexes WHERE (id = ? OR LOWER(id) = LOWER(?) OR LOWER(REPLACE(REPLACE(id, ' ', '-'), '_', '-')) = LOWER(?))"
+        
+        if media_type and media_type != 'all':
+            normalized_media_types = [media_type]
+            if media_type in ['tv', 'tvshow', 'show']:
+                normalized_media_types = ['tv', 'tvshow', 'show']
+            placeholders = ','.join('?' for _ in normalized_media_types)
+            sql = f"{query_base} AND media_type IN ({placeholders})"
+            cursor.execute(sql, (query_name, query_name, unslug, *normalized_media_types))
+        else:
+            cursor.execute(query_base, (query_name, query_name, unslug))
+            
         result = cursor.fetchone()
         if result:
-            return json.loads(result[0])
-        else:
-            log(f"No discover parameters found for query: {query_name}", LOGINFO)
-            return None
+            return json.loads(result[0]), result[1]
+        
+        # Fallback: try fuzzy match by normalizing alphanumeric characters
+        def normalize(s):
+            return "".join(c.lower() for c in s if c.isalnum())
+        target_norm = normalize(query_name)
+        
+        cursor.execute("SELECT id, media_type, parameters FROM external_indexes")
+        for idx_id, idx_mtype, idx_params in cursor.fetchall():
+            if normalize(idx_id) == target_norm:
+                if not media_type or media_type == 'all' or (media_type in ['tv', 'tvshow', 'show'] and idx_mtype in ['tv', 'tvshow', 'show']) or media_type == idx_mtype:
+                    return json.loads(idx_params), idx_mtype
+                    
+        log(f"No discover parameters found for query: {query_name}", LOGINFO)
+        return None, None
     except sqlite3.Error as e:
         log(f"Database error while fetching discover parameters for '{query_name}': {e}", LOGERROR)
-        return None
+        return None, None
     except json.JSONDecodeError as e:
         log(f"Failed to parse JSON parameters for discover query '{query_name}': {e}", LOGERROR)
-        return None
+        return None, None

@@ -68,19 +68,56 @@ def _schedule_vacuum(db_path, db_manager=None, interval=86400):
         timer.start()
 
 async def get_t_user(app: FastAPI):
+    # 1. Trakt Username
     if app.state.trakt_handler and app.state.trakt_handler.username:
          return app.state.trakt_handler.username
     user = get_trakt_user(config_db_path=app.state.config_db_path)
-    if user:
+    if user and user not in ("empty_setting", ""):
         if app.state.trakt_handler:
             app.state.trakt_handler.username = user
         return user
-    if app.state.trakt_handler:
-        user = await app.state.trakt_handler.fetch_username()
-        if user:
-             return user
-    log("Trakt user not found in config DB or via TraktHandler.", LOGWARNING)
-    return None
+    if app.state.trakt_handler and hasattr(app.state.trakt_handler, 'fetch_username'):
+        try:
+            user = await app.state.trakt_handler.fetch_username()
+            if user and user not in ("empty_setting", ""):
+                return user
+        except Exception:
+            pass
+
+    # 2. Simkl Username
+    simkl_user = get_config_value("simkl.user", app.state.config_db_path) or get_config_value("simkl_user", app.state.config_db_path)
+    if simkl_user and simkl_user not in ("empty_setting", ""):
+        return simkl_user
+
+    # 3. MDBList Username
+    mdblist_user = get_config_value("mdblist.user", app.state.config_db_path) or get_config_value("mdblist_user", app.state.config_db_path)
+    if mdblist_user and mdblist_user not in ("empty_setting", ""):
+        return mdblist_user
+
+    # 4. TMDB Username
+    tmdb_user = get_config_value("tmdb_user", app.state.config_db_path)
+    if tmdb_user and tmdb_user not in ("empty_setting", ""):
+        return tmdb_user
+
+    # 5. Stored user_id or existing user from watched_episodes database
+    stored_user = get_config_value("user_id", app.state.config_db_path) or get_config_value("last_user", app.state.config_db_path)
+    if stored_user and stored_user not in ("empty_setting", ""):
+        return stored_user
+
+    try:
+        if app.state.tvshows_dynamic_db_path:
+            with sqlite3.connect(app.state.tvshows_dynamic_db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT user FROM watched_episodes WHERE user IS NOT NULL AND user != '' LIMIT 1")
+                row = cursor.fetchone()
+                if row and row[0]:
+                    return row[0]
+    except Exception:
+        pass
+
+    # 6. Default local user profile fallback
+    return "local_user"
+
 
 def parse_qs_fastapi(request: Request):
     """Converts FastAPI query params to a dictionary of lists like parse_qs"""
@@ -572,7 +609,7 @@ def app_factory(
             trakt_user = await get_t_user(app)
             result = get_remove_options(app.state.lists_db_path, item_type, tmdb_id, app.state.movies_static_db_path, app.state.tvshows_static_db_path, trakt_user, app.state.tmdb_handler)
         elif list_name == 'generic_lists':
-            result = get_generic_lists(app.state.lists_db_path, list_name, item_type)
+            result = get_generic_lists(app.state.lists_db_path, list_name, item_type, app.state.ext_indexes_db_path)
         
         if result is not None:
             return JSONResponse(status_code=200, content=result)
@@ -1134,26 +1171,37 @@ def app_factory(
 
     @app.put("/update_trakt_tokens")
     async def update_t_tokens(request: Request):
-        result = update_config_values(flat_qs(request), app.state.config_db_path)
+        params = flat_qs(request)
+        trakt_token = params.get("trakt_token")
+        if not trakt_token or trakt_token in ("empty_setting", ""):
+            from .config_handler import clear_trakt_config
+            clear_trakt_config(app.state.config_db_path)
+            if app.state.trakt_handler:
+                app.state.trakt_handler.reload_credentials()
+            log("[Orac] Trakt tokens cleared / authorization revoked.", level=LOGINFO)
+            return JSONResponse(status_code=200, content={"status": "success", "message": "Trakt tokens cleared"})
+
+        result = update_config_values(params, app.state.config_db_path)
         if app.state.trakt_handler:
             app.state.trakt_handler.reload_credentials()
             await app.state.trakt_handler.fetch_username()
-        return PlainTextResponse("Trakt tokens updated", status_code=200)
+        return JSONResponse(status_code=200, content={"status": "success", "message": "Trakt tokens updated"})
+
 
     @app.put("/update_simkl_tokens")
     async def update_s_tokens(request: Request):
         result = update_config_values(flat_qs(request), app.state.config_db_path)
-        return PlainTextResponse("Simkl tokens updated.", status_code=200)
+        return JSONResponse(status_code=200, content={"status": "success", "message": "Simkl tokens updated"})
 
     @app.put("/update_mdblist_tokens")
     async def update_m_tokens(request: Request):
         success = update_config_values(flat_qs(request), app.state.config_db_path)
-        return Response(status_code=204) if success else PlainTextResponse("Error", status_code=500)
+        return JSONResponse(status_code=200 if success else 500, content={"status": "success" if success else "error"})
 
     @app.put("/update_debrid_tokens")
     async def update_deb_tokens(request: Request):
         success = update_config_values(flat_qs(request), app.state.config_db_path)
-        return Response(status_code=204) if success else PlainTextResponse("Error", status_code=500)
+        return JSONResponse(status_code=200 if success else 500, content={"status": "success" if success else "error"})
 
     @app.put("/update_aiostreams_settings")
     async def update_aio_settings(request: Request):
@@ -1188,7 +1236,7 @@ def app_factory(
             scraper_db = ScraperDB('scrapers.db')
             scraper_db.set_active_status('aiostreams', is_active)
             log(f"[AIOStreams] Scraper active status set to: {is_active}", level=LOGINFO)
-        return Response(status_code=204) if success else PlainTextResponse("Error", status_code=500)
+        return JSONResponse(status_code=200 if success else 500, content={"status": "success" if success else "error"})
 
     @app.put("/update_tmdb_tokens")
     async def update_tmdb(request: Request):
@@ -1196,7 +1244,8 @@ def app_factory(
         success = update_config_values(params, app.state.config_db_path)
         if "tmdb_api_key" in params and app.state.tmdb_handler:
             app.state.tmdb_handler.api_key = params["tmdb_api_key"]
-        return Response(status_code=204) if success else PlainTextResponse("Error", status_code=500)
+        return JSONResponse(status_code=200 if success else 500, content={"status": "success" if success else "error"})
+
 
     @app.put("/mark_undesirable")
     async def mark_und(request: Request):
@@ -1242,7 +1291,7 @@ def app_factory(
 
     @app.put("/update_list_library_status")
     async def up_list_stat(request: Request):
-        success = update_list_library_status(flat_qs(request), app.state.lists_db_path)
+        success = update_list_library_status(flat_qs(request), app.state.lists_db_path, app.state.ext_indexes_db_path)
         return JSONResponse(status_code=200 if success else 500, content={"status": "success" if success else "error"})
 
     @app.put("/unlike_trakt_list")

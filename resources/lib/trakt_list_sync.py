@@ -94,7 +94,7 @@ def get_local_list_updated_at(db_path, list_id):
         return row[0] if row else None
 
 # New version
-def update_list_in_db(db_path, list_meta, items):
+def update_list_in_db(db_path, list_meta, items, tmdb_handler=None):
     current_pairs = []
     
     # Use explicit list_id if provided (e.g. for official lists or pre-calculated IDs)
@@ -156,11 +156,43 @@ def update_list_in_db(db_path, list_meta, items):
         seen_trakt_ids = set()
         incoming_items_by_key = {}
 #        log(f"[Orac] Syncing list '{list_meta['name']}' with {len(items)} items", level=LOGINFO)
-
         for item in items:
             media_type = item['type']
-            trakt_id = str(item[media_type]['ids']['trakt'])
-            tmdb_id = str(item[media_type]['ids'].get('tmdb', ''))
+            
+            raw_trakt = item[media_type]['ids'].get('trakt')
+            if raw_trakt is None or str(raw_trakt).lower() in ('none', 'null', ''):
+                continue
+            trakt_id = str(raw_trakt)
+            
+            raw_tmdb = item[media_type]['ids'].get('tmdb')
+            if raw_tmdb is not None and str(raw_tmdb).lower() not in ('none', 'null', ''):
+                tmdb_id = str(raw_tmdb)
+            else:
+                tmdb_id = None
+
+            # Attempt to resolve missing TMDB ID using IMDb ID or TVDB ID via TMDB API
+            if tmdb_id is None and tmdb_handler:
+                raw_imdb = item[media_type]['ids'].get('imdb')
+                raw_tvdb = item[media_type]['ids'].get('tvdb')
+                resolved = None
+                
+                if raw_imdb and str(raw_imdb).lower() not in ('none', 'null', ''):
+                    try:
+                        resolved = tmdb_handler.find_by_external_id(raw_imdb, source="imdb_id")
+                    except Exception as e:
+                        log(f"[Orac] Failed to resolve TMDB ID by IMDb ID {raw_imdb}: {e}", level=LOGWARNING)
+                        
+                if not resolved and raw_tvdb and str(raw_tvdb).lower() not in ('none', 'null', ''):
+                    try:
+                        resolved = tmdb_handler.find_by_external_id(raw_tvdb, source="tvdb_id")
+                    except Exception as e:
+                        log(f"[Orac] Failed to resolve TMDB ID by TVDB ID {raw_tvdb}: {e}", level=LOGWARNING)
+                        
+                if resolved:
+                    tmdb_id = str(resolved.get("id"))
+                    item[media_type]['ids']['tmdb'] = tmdb_id
+                    log(f"[Orac] Resolved missing TMDB ID {tmdb_id} for Trakt ID {trakt_id} ({media_type})", level=LOGINFO)
+
             # Skip duplicate trakt_ids within this batch
             if trakt_id in seen_trakt_ids:
                 continue
@@ -270,7 +302,7 @@ async def run_list_sync(
         }
 
     # Step 2: Sync list to DB
-    sync_result = update_list_in_db(lists_db_path, list_meta, list_data)
+    sync_result = update_list_in_db(lists_db_path, list_meta, list_data, tmdb_handler)
 
     removed = remove_stale_list_items(lists_db_path, sync_result["current_pairs"])
 

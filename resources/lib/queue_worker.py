@@ -84,11 +84,12 @@ class UpdateQueueWorker:
                     return
             self._mark_status(row['id'], 'processing')
             try:
-                provider = row.get('provider', 'trakt')
-                update_type = row['update_type']
-                
                 if provider == 'tmdb':
                     self.process_tmdb_update(row, update_type)
+                elif provider == 'simkl':
+                    self.process_simkl_update(row, update_type)
+                elif provider == 'mdblist':
+                    self.process_mdblist_update(row, update_type)
                 else:
                     self.process_trakt_update(row, update_type)
 
@@ -190,52 +191,144 @@ class UpdateQueueWorker:
             conn.execute("UPDATE update_queue SET status = ? WHERE id = ?", (status, row_id))
 
 
+    def _update_synced_timestamp(self, provider, row, timestamp):
+        column = f"{provider}_synced_at"
+        update_type = row.get('update_type')
+        payload = row.get('payload', {})
+
+        if update_type == 'watched_movie':
+            tmdb_id = payload.get('tmdb_id')
+            if tmdb_id and self.movies_dynamic_db_path:
+                try:
+                    with self.db_manager.connection(self.movies_dynamic_db_path) as conn:
+                        conn.execute(f"UPDATE watched_history SET {column} = ? WHERE tmdb_id = ?", (timestamp, int(tmdb_id)))
+                except Exception as e:
+                    log(f"[Queue] Error updating {column} for movie {tmdb_id}: {e}", level=LOGWARNING)
+        elif update_type == 'watched_episode':
+            show_tmdb_id = payload.get('show_tmdb_id') or payload.get('tmdb_id')
+            season = payload.get('season')
+            episode = payload.get('episode')
+            if show_tmdb_id and season is not None and episode is not None and self.tvshows_dynamic_db_path:
+                try:
+                    with self.db_manager.connection(self.tvshows_dynamic_db_path) as conn:
+                        conn.execute(f"UPDATE watched_history SET {column} = ? WHERE show_tmdb_id = ? AND season = ? AND episode = ?", (timestamp, int(show_tmdb_id), int(season), int(episode)))
+                except Exception as e:
+                    log(f"[Queue] Error updating {column} for show {show_tmdb_id} S{season}E{episode}: {e}", level=LOGWARNING)
+
+    def process_simkl_update(self, row, update_type):
+        from resources.lib.sync_engine import send_batch_to_simkl
+        payload = {"movies": [], "shows": []}
+        now_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+        if update_type == 'watched_movie':
+            tmdb_id = row['payload'].get('tmdb_id')
+            if tmdb_id:
+                payload["movies"].append({"watched_at": now_str, "ids": {"tmdb": tmdb_id}})
+        elif update_type == 'watched_episode':
+            show_tmdb_id = row['payload'].get('show_tmdb_id') or row['payload'].get('tmdb_id')
+            season = row['payload'].get('season')
+            episode = row['payload'].get('episode')
+            if show_tmdb_id and season is not None and episode is not None:
+                payload["shows"].append({
+                    "ids": {"tmdb": show_tmdb_id},
+                    "seasons": [{
+                        "number": season,
+                        "episodes": [{"number": episode, "watched_at": now_str}]
+                    }]
+                })
+        else:
+            log(f"[Queue] Unsupported Simkl update type: {update_type}", level=LOGWARNING)
+            return
+
+        success = send_batch_to_simkl(self.config_db_path, payload)
+        if not success:
+            self._mark_status(row['id'], 'retry')
+            raise Exception("Simkl update failed")
+        else:
+            self._update_synced_timestamp('simkl', row, now_str)
+
+    def process_mdblist_update(self, row, update_type):
+        from resources.lib.sync_engine import send_batch_to_mdblist
+        payload = {"movies": [], "shows": []}
+        now_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+        if update_type == 'watched_movie':
+            tmdb_id = row['payload'].get('tmdb_id')
+            if tmdb_id:
+                payload["movies"].append({"watched_at": now_str, "ids": {"tmdb": tmdb_id}})
+        elif update_type == 'watched_episode':
+            show_tmdb_id = row['payload'].get('show_tmdb_id') or row['payload'].get('tmdb_id')
+            season = row['payload'].get('season')
+            episode = row['payload'].get('episode')
+            if show_tmdb_id and season is not None and episode is not None:
+                payload["shows"].append({
+                    "ids": {"tmdb": show_tmdb_id},
+                    "seasons": [{
+                        "number": season,
+                        "episodes": [{"number": episode, "watched_at": now_str}]
+                    }]
+                })
+        else:
+            log(f"[Queue] Unsupported MDBList update type: {update_type}", level=LOGWARNING)
+            return
+
+        success = send_batch_to_mdblist(self.config_db_path, payload)
+        if not success:
+            self._mark_status(row['id'], 'retry')
+            raise Exception("MDBList update failed")
+        else:
+            self._update_synced_timestamp('mdblist', row, now_str)
+
     def mark_watched_episode(self, row):
         episode_trakt_id = row['payload'].get('episode_trakt_id')
         episode_tmdb_id = row['payload'].get('tmdb_id')
-        
+        now_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
         # Build IDs block - prefer Trakt ID if available, only use TMDB ID if it's positive (not a placeholder)
         ids_block = {}
         if episode_trakt_id and episode_trakt_id > 0:
             ids_block["trakt"] = episode_trakt_id
         if episode_tmdb_id and episode_tmdb_id > 0:
             ids_block["tmdb"] = episode_tmdb_id
-        
+
         if not ids_block:
             log(f"[Queue] Cannot mark episode as watched - no valid IDs (trakt={episode_trakt_id}, tmdb={episode_tmdb_id})", level=LOGERROR)
             return
-        
+
         payload = {
             "episodes": [
                 {
-                    "watched_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                    "watched_at": now_str,
                     "ids": ids_block
                 }
             ]
         }
 
         log(f"[Queue] Marking episode as watched: {payload}")
+        if not self.trakt_auth:
+            log("[Queue] Trakt not authorized, skipping Trakt queue update.", level=LOGWARNING)
+            return
 
         response = self.trakt_auth.post(f"/sync/history", json=payload)
 
-        if response.status_code != 201:
+        if response.status_code not in [200, 201]:
             log(f"[Queue] Failed to mark episode as watched: {response.status_code}")
+            self._mark_status(row['id'], 'retry')
+            raise Exception(f"Trakt update failed with status {response.status_code}")
         else:
-            log("[Queue] Successfully marked episode as watched")
+            log("[Queue] Successfully marked episode as watched on Trakt")
+            self._update_synced_timestamp('trakt', row, now_str)
 
     def mark_watched_movie(self, row):
         percent_watched = row['payload'].get('percent_watched', 100)
-        
-        # Trakt does not support partial percent watched in history, 
-        # so we only sync if it's 100% or we send it as fully watched 
-        # because the internal Orac DB took care of the partial status locally
-        
+        now_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
         payload = {
             "movies": [
                 {
-                    "watched_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                    "watched_at": now_str,
                     "ids": {
-                        "trakt": 0,
+                        "trakt": row['payload'].get('trakt_id', 0) or 0,
                         "tmdb": row['payload'].get('tmdb_id')
                     }
                 }
@@ -243,13 +336,20 @@ class UpdateQueueWorker:
         }
 
         log(f"[Queue] Marking movie as watched: {payload}")
+        if not self.trakt_auth:
+            log("[Queue] Trakt not authorized, skipping Trakt queue update.", level=LOGWARNING)
+            return
 
         response = self.trakt_auth.post(f"/sync/history", json=payload)
 
-        if response.status_code != 201:
+        if response.status_code not in [200, 201]:
             log(f"[Queue] Failed to mark movie as watched: {response.status_code}")
+            self._mark_status(row['id'], 'retry')
+            raise Exception(f"Trakt update failed with status {response.status_code}")
         else:
-            log("[Queue] Successfully marked movie as watched")
+            log("[Queue] Successfully marked movie as watched on Trakt")
+            self._update_synced_timestamp('trakt', row, now_str)
+
 
     def drop_show(self, row):
         # The payload contains {"shows": [{"ids": {"trakt": 12345, "tmdb": 67890}}]}
