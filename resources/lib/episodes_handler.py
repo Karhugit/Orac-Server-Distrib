@@ -6,32 +6,20 @@ from time import time
 def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None):
     """
     Returns enriched next episode data (including show and episode info)
-    for a given user, excluding dropped shows.
-    This version calculates the next episode on the fly.
+    excluding dropped shows. If user is None, calculates next episodes for
+    all watched shows in the database regardless of username.
     """
-
-
     try:
         starttime = time()
         with sqlite3.connect(tvshows_dynamic_db_path) as dynamic_conn, \
              sqlite3.connect(tvshows_static_db_path) as static_conn:
 
-            if not user or user in ("empty_setting", ""):
-                try:
-                    cursor = dynamic_conn.cursor()
-                    cursor.execute("SELECT user FROM watched_episodes WHERE user IS NOT NULL AND user != '' LIMIT 1")
-                    row = cursor.fetchone()
-                    if row and row[0]:
-                        user = row[0]
-                except Exception:
-                    pass
-                if not user:
-                    user = "local_user"
+            if user in ("empty_setting", ""):
+                user = None
 
             # Attach the dynamic DB to the static connection for JOINs
             static_conn.execute(f"ATTACH DATABASE ? AS dynamic_db", (tvshows_dynamic_db_path,))
             cursor = static_conn.cursor()
-
 
             # This query calculates the next episode to watch on the fly.
             # It prioritizes partially watched episodes, then the next unwatched episode after the last watched one.
@@ -53,12 +41,13 @@ def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None
                         ae.episode_number,
                         ae.tmdb_id,
                         ae.rn,
-                        we.percent_watched,
-                        we.watched_at,
-                        we.watched_status
+                        MAX(we.percent_watched) AS percent_watched,
+                        MAX(we.watched_at) AS watched_at,
+                        MAX(we.watched_status) AS watched_status
                     FROM AllEpisodes ae
                     JOIN dynamic_db.watched_episodes we ON ae.tmdb_id = we.tmdb_id
-                    WHERE we.user = ? COLLATE NOCASE
+                    WHERE (? IS NULL OR we.user = ? COLLATE NOCASE)
+                    GROUP BY ae.show_id, ae.season, ae.episode_number, ae.tmdb_id, ae.rn
                 ),
                 PartiallyWatched AS (
                     SELECT
@@ -123,16 +112,22 @@ def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None
                 FROM NextEpisodeCandidates nec
                 JOIN episodes AS e ON nec.tmdb_id = e.tmdb_id
                 JOIN shows AS s ON nec.show_id = s.show_tmdb_id
-                LEFT JOIN dynamic_db.watched_episodes AS we ON e.tmdb_id = we.tmdb_id AND we.user = ?
+                LEFT JOIN (
+                    SELECT tmdb_id, MAX(watched_at) AS watched_at, MAX(percent_watched) AS percent_watched
+                    FROM dynamic_db.watched_episodes
+                    WHERE (? IS NULL OR user = ? COLLATE NOCASE)
+                    GROUP BY tmdb_id
+                ) AS we ON e.tmdb_id = we.tmdb_id
                 WHERE (s.dropped IS NULL OR s.dropped = 0)
                 ORDER BY last_watched_at DESC;
             """
 
-            cursor.execute(query, (user,user,))
+            cursor.execute(query, (user, user, user, user))
             rows = cursor.fetchall()
             columns = [desc[0] for desc in cursor.description]
             results = [dict(zip(columns, row)) for row in rows]
-            log(f"[Orac] Retrieved {len(results)} next episodes for user '{user}' in {time() - starttime:.2f} seconds", level=LOGDEBUG)
+            log(f"[Orac] Retrieved {len(results)} next episodes (user filter: {repr(user)}) in {time() - starttime:.2f} seconds", level=LOGDEBUG)
+
 
             # Format show and episode artwork paths using format_image_url
             from resources.lib.formatting_utils import format_image_url

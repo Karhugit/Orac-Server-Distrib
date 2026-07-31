@@ -77,12 +77,15 @@ async def get_t_user(app: FastAPI):
             app.state.trakt_handler.username = user
         return user
     if app.state.trakt_handler and hasattr(app.state.trakt_handler, 'fetch_username'):
-        try:
-            user = await app.state.trakt_handler.fetch_username()
-            if user and user not in ("empty_setting", ""):
-                return user
-        except Exception:
-            pass
+        from .config_handler import get_trakt_access_token
+        token = get_trakt_access_token(app.state.config_db_path)
+        if token and token not in ("empty_setting", ""):
+            try:
+                user = await app.state.trakt_handler.fetch_username()
+                if user and user not in ("empty_setting", ""):
+                    return user
+            except Exception:
+                pass
 
     # 2. Simkl Username
     simkl_user = get_config_value("simkl.user", app.state.config_db_path) or get_config_value("simkl_user", app.state.config_db_path)
@@ -619,8 +622,8 @@ def app_factory(
     @app.get("/next_episodes")
     async def next_episodes(request: Request):
         query = parse_qs_fastapi(request)
-        trakt_user = query.get("user", [None])[0] or await get_t_user(app)
-        result = get_next_episodes(app.state.tvshows_dynamic_db_path, app.state.tvshows_static_db_path, trakt_user)
+        user = query.get("user", [None])[0]
+        result = get_next_episodes(app.state.tvshows_dynamic_db_path, app.state.tvshows_static_db_path, user=user)
         if result is not None:
             return send_safe(200, result)
         return PlainTextResponse("Error getting next episodes", status_code=500)
