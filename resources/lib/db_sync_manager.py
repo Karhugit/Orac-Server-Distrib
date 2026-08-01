@@ -6,6 +6,8 @@ import sqlite3
 from resources.lib.watched import update_dynamic_tvshow_data, sync_dropped_shows, update_dynamic_movie_data
 from resources.lib.flixpatrol_sync import FlixPatrolSync
 from resources.lib.mdblist_list_sync import mdblist_list_sync_task
+from resources.lib.trakt_to_mdblist_sync import sync_trakt_lists_to_mdblist_task
+
 
 async def cleanup_static_databases(movies_static_db_path, movies_dynamic_db_path, tvshows_static_db_path, tvshows_dynamic_db_path, lists_db_path, tags_db_path=None):
     """
@@ -238,6 +240,18 @@ async def sync_lists_and_items(trakt_handler, tmdb_handler, movies_static_db_pat
             tmdb_handler=tmdb_handler,
         )
         log(f"[Orac] MDBList sync completed in {time() - mdblist_start_time:.2f} seconds", level=LOGINFO)
+
+        # Sync Trakt Lists & Collections to MDBList
+        log(f"[Orac] **SYNC** Starting Trakt -> MDBList list and collection sync", level=LOGINFO)
+        t_to_m_start_time = time()
+        await sync_trakt_lists_to_mdblist_task(
+            config_db_path,
+            trakt_handler,
+            lists_db_path=lists_db_path,
+            tmdb_handler=tmdb_handler
+        )
+        log(f"[Orac] Trakt -> MDBList sync completed in {time() - t_to_m_start_time:.2f} seconds", level=LOGINFO)
+
 
     # Sync recent TV show updates to static DB (Trakt Source)
     trakt_updates_start = time()

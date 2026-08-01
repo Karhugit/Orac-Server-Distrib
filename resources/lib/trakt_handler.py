@@ -26,6 +26,12 @@ class TraktAuth:
         self.username = None
         self.access_token = None
 
+    def is_authenticated(self):
+        token = get_trakt_access_token(self.config_db_path)
+        client_id = get_trakt_client_id(self.config_db_path)
+        return bool(token and token not in ("empty_setting", "") and client_id and client_id not in ("empty_setting", ""))
+
+
 
     async def fetch_username(self):
         """Fetches the Trakt username from the API and saves it to the config database."""

@@ -1196,6 +1196,17 @@ def app_factory(
         result = update_config_values(flat_qs(request), app.state.config_db_path)
         return JSONResponse(status_code=200, content={"status": "success", "message": "Simkl tokens updated"})
 
+    @app.post("/sync_trakt_to_mdblist")
+    async def trigger_trakt_to_mdblist_sync(request: Request):
+        from resources.lib.trakt_to_mdblist_sync import sync_trakt_lists_to_mdblist_task
+        asyncio.create_task(sync_trakt_lists_to_mdblist_task(
+            app.state.config_db_path,
+            app.state.trakt_handler,
+            lists_db_path=app.state.lists_db_path,
+            tmdb_handler=app.state.tmdb_handler
+        ))
+        return JSONResponse(status_code=200, content={"status": "success", "message": "Trakt to MDBList sync triggered"})
+
     @app.put("/update_mdblist_tokens")
     async def update_m_tokens(request: Request):
         success = update_config_values(flat_qs(request), app.state.config_db_path)

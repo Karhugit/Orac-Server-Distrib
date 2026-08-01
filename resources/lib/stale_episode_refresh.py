@@ -344,10 +344,16 @@ class StaleEpisodeRefreshWorker:
         if not self.trakt:
             return None
 
-        # Prefer slug (human-readable, stable); fall back to numeric ID
+        # Prefer slug (human-readable, stable); fall back to numeric ID.
+        # Skip entirely if both slug and trakt_id are absent, or the trakt_id
+        # is negative (negative IDs are synthetic placeholders, not real Trakt IDs).
+        if show_trakt_id and show_trakt_id < 0:
+            show_trakt_id = None  # treat as absent
+
         show_ref = slug or show_trakt_id
         if not show_ref:
             return None
+
 
         try:
             resp = self.trakt._get(
