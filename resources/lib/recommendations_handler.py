@@ -1,4 +1,5 @@
 import asyncio
+from resources.lib.db_utils import db_connect
 import time
 import json
 import sqlite3
@@ -18,7 +19,7 @@ class VisualDiscoveryEngine:
         self.CACHE_TTL = 86400  # 24 hours in seconds
 
     def _get_db_connection(self, db_path):
-        conn = sqlite3.connect(db_path)
+        conn = db_connect(db_path)
         conn.row_factory = sqlite3.Row
         return conn
 

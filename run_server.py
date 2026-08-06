@@ -54,6 +54,26 @@ from resources.lib.database_manager import DatabaseManager
 db_manager = DatabaseManager()
 db_manager.configure(db_paths)
 
+# Enable WAL journal mode on all databases at startup.
+from resources.lib.db_utils import db_connect as _db_connect
+_wal_enabled = []
+_wal_failed = []
+for _db_name, _db_path in db_paths.items():
+    if not _db_path:
+        continue
+    try:
+        _conn = _db_connect(_db_path)
+        _conn.close()
+        _wal_enabled.append(_db_name)
+    except Exception as _e:
+        _wal_failed.append((_db_name, str(_e)))
+if _wal_enabled:
+    log(f"[Orac] WAL mode enabled on: {', '.join(_wal_enabled)}", level=LOGINFO)
+if _wal_failed:
+    for _n, _err in _wal_failed:
+        log(f"[Orac] Warning: could not enable WAL on {_n}: {_err}", level=LOGERROR)
+
+
 # Initialize SQLite databases
 init_success = True
 

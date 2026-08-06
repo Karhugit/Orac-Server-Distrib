@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 import json
 import time
 from resources.lib.log_utils import log, LOGERROR, LOGDEBUG, LOGINFO
@@ -377,7 +378,7 @@ class UpdateQueueWorker:
         show_trakt_id = shows[0].get("ids", {}).get("trakt")
         if show_trakt_id:
             show_tmdb_id = None
-            with sqlite3.connect(self.tvshows_static_db) as conn:
+            with db_connect(self.tvshows_static_db) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT tmdb_id FROM shows WHERE show_trakt_id = ?", (show_trakt_id,))
                 row_db = cursor.fetchone()

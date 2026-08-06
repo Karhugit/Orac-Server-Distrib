@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 import requests
 import json
 import asyncio
@@ -8,7 +9,7 @@ from resources.lib.trakt_list_sync import run_list_sync
 from resources.lib.config_handler import get_config_value
 
 def get_local_list_updated_at(db_path, list_id):
-    with sqlite3.connect(db_path) as conn:
+    with db_connect(db_path) as conn:
         cur = conn.cursor()
         cur.execute("SELECT last_checked FROM lists WHERE list_id=?", (list_id,))
         row = cur.fetchone()
@@ -80,7 +81,7 @@ async def simkl_list_sync_task(config_db_path, lists_db_path, trakt_handler, tmd
         
         # Check settings
         lists_library_settings = {}
-        with sqlite3.connect(lists_db_path) as conn:
+        with db_connect(lists_db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT list_id, add_to_library FROM lists")
             for row in cursor.fetchall():
@@ -92,7 +93,7 @@ async def simkl_list_sync_task(config_db_path, lists_db_path, trakt_handler, tmd
         
         if should_sync is None:
             # Create list entry if it doesn't exist
-            with sqlite3.connect(lists_db_path) as conn:
+            with db_connect(lists_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("INSERT OR REPLACE INTO lists (list_id, source, user, owned_by_user, slug, name, description, last_checked, item_count_movies, item_count_shows, add_to_library) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                 (list_id, "simkl", username, 1, slug, "Simkl Watchlist", "Plan to Watch on Simkl", "1970-01-01T00:00:00.000Z", 0, 0, 1))

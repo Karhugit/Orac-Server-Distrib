@@ -1,4 +1,5 @@
 import requests
+from resources.lib.db_utils import db_connect
 import re
 import asyncio
 from resources.lib.log_utils import log, LOGINFO, LOGERROR, LOGDEBUG, LOGWARNING
@@ -182,7 +183,7 @@ class FlixPatrolSync:
 
     async def _process_lists(self, lists):
         # Open DB connection for lists only (Main Thread)
-        lists_conn = sqlite3.connect(self.lists_db_path)
+        lists_conn = db_connect(self.lists_db_path)
         lists_conn.row_factory = sqlite3.Row
         
         try:

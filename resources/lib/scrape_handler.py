@@ -1,4 +1,5 @@
 import asyncio
+from resources.lib.db_utils import db_connect
 import json
 import sqlite3
 import math
@@ -341,7 +342,7 @@ def _get_metadata_from_db(tmdb_id, item_type, movies_db, tvshows_db):
     """Fetches title/year/imdb from local DB."""
     try:
         if item_type == 'movie':
-            with sqlite3.connect(movies_db) as conn:
+            with db_connect(movies_db) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT title, year, imdb_id FROM movies WHERE tmdb_id = ?", (tmdb_id,))
@@ -349,7 +350,7 @@ def _get_metadata_from_db(tmdb_id, item_type, movies_db, tvshows_db):
                 if row:
                     return {"title": row["title"], "year": str(row["year"]), "imdb_id": row["imdb_id"], "aliases": []}
         elif item_type == 'episode':
-            with sqlite3.connect(tvshows_db) as conn:
+            with db_connect(tvshows_db) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 

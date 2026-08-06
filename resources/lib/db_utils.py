@@ -4,6 +4,41 @@ import json
 from datetime import datetime
 
 
+# ---------------------------------------------------------------------------
+# Central SQLite connection helper
+# ---------------------------------------------------------------------------
+
+def db_connect(path, timeout=30.0, **kwargs):
+    """
+    Drop-in replacement for sqlite3.connect() that applies best-practice
+    settings to every connection:
+
+    - timeout=30s      — wait up to 30 s before raising OperationalError
+    - WAL journal mode — allows concurrent readers while a write is in
+                         progress, which is the primary cause of the
+                         'database is locked' errors seen during sync.
+                         WAL mode is sticky at the file level, so once
+                         enabled it persists across all future connections.
+    - busy_timeout     — SQLite-level busy handler (30 000 ms) that is
+                         respected even by connections that don't set a
+                         Python-level timeout.
+    - synchronous=NORMAL — safe default; faster than FULL without the
+                           durability risk of OFF.
+
+    In-memory databases (':memory:') are left untouched because WAL is
+    not meaningful for them.
+    """
+    conn = sqlite3.connect(path, timeout=timeout, **kwargs)
+    if path != ':memory:':
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA synchronous = NORMAL")
+            conn.execute("PRAGMA busy_timeout = 30000")
+        except Exception:
+            pass  # never let pragma failures prevent normal operation
+    return conn
+
+
 
 def add_tvshow(tvshows_static_cursor, tvshows_dynamic_cursor, trakt_queue_cursor, media_id, trakt_handler, tmdb_handler=None, show=None):
 

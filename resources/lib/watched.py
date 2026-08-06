@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 import json
 from resources.lib.log_utils import log, LOGDEBUG, LOGINFO, LOGERROR, LOGWARNING
 from resources.lib.db_utils import add_tvshow
@@ -30,11 +31,11 @@ async def update_dynamic_tvshow_data(trakt_handler, tmdb_handler, username, tvsh
         watched_data = watched_resp.json()
 
         # Step 2: Open DB connections
-        static_conn = sqlite3.connect(tvshows_static_db_path)
+        static_conn = db_connect(tvshows_static_db_path)
         static_cursor = static_conn.cursor()
-        dynamic_conn = sqlite3.connect(tvshows_dynamic_db_path)
+        dynamic_conn = db_connect(tvshows_dynamic_db_path)
         dynamic_cursor = dynamic_conn.cursor()
-        trakt_queue_conn = sqlite3.connect(trakt_queue_path)
+        trakt_queue_conn = db_connect(trakt_queue_path)
         trakt_queue_cursor = trakt_queue_conn.cursor()
 
         insert_count = 0
@@ -206,7 +207,7 @@ async def sync_dropped_shows(trakt_handler, username, tvshows_static_db_path):
         }
 
         # Step 2: Open DB and fetch local dropped IDs
-        conn = sqlite3.connect(tvshows_static_db_path)
+        conn = db_connect(tvshows_static_db_path)
         cursor = conn.cursor()
 
         # If the 'dropped' column doesn't exist, attempt to add it (safe to ignore failure if already exists)
@@ -311,7 +312,7 @@ def update_next_episode(
     log(f"[Orac] Updating next episode for user {username} after watching show {show_tmdb_id}", level=LOGDEBUG)
     log(f"[Orac] Show tmdb_id: {show_tmdb_id}, season: {season}, episode: {episode}", level=LOGDEBUG)
     try:
-        with sqlite3.connect(static_db_path) as static_conn, sqlite3.connect(dynamic_db_path) as dynamic_conn, sqlite3.connect(trakt_queue_path) as trakt_queue_conn:
+        with db_connect(static_db_path) as static_conn, db_connect(dynamic_db_path) as dynamic_conn, db_connect(trakt_queue_path) as trakt_queue_conn:
             static_cursor = static_conn.cursor()
             dynamic_cursor = dynamic_conn.cursor()
             trakt_queue_cursor = trakt_queue_conn.cursor()
@@ -485,9 +486,9 @@ async def update_dynamic_movie_data(trakt_handler, tmdb_handler, username, movie
         watched_data = watched_resp.json()
 
         # Step 2: Open DB connections
-        static_conn = sqlite3.connect(movies_static_db_path)
+        static_conn = db_connect(movies_static_db_path)
         static_cursor = static_conn.cursor()
-        dynamic_conn = sqlite3.connect(movies_dynamic_db_path)
+        dynamic_conn = db_connect(movies_dynamic_db_path)
         dynamic_cursor = dynamic_conn.cursor()
 
         for movie_item in watched_data:
@@ -586,7 +587,7 @@ def mark_movie_watched(static_db_path, dynamic_db_path, trakt_queue_path, trakt_
 
     log(f"[Orac] Marking movie {movie_tmdb_id} as watched for user {username}", level=LOGDEBUG)
     try:
-        with sqlite3.connect(static_db_path) as static_conn, sqlite3.connect(dynamic_db_path) as dynamic_conn, sqlite3.connect(trakt_queue_path) as trakt_queue_conn:
+        with db_connect(static_db_path) as static_conn, db_connect(dynamic_db_path) as dynamic_conn, db_connect(trakt_queue_path) as trakt_queue_conn:
             static_cursor = static_conn.cursor()
             dynamic_cursor = dynamic_conn.cursor()
             trakt_queue_cursor = trakt_queue_conn.cursor()
@@ -720,7 +721,7 @@ def mark_tvshow_watched(static_db_path, dynamic_db_path, trakt_queue_path, trakt
 
     log(f"[Orac] Marking TV show {show_tmdb_id} as watched for user {username}", level=LOGDEBUG)
     try:
-        with sqlite3.connect(static_db_path) as static_conn, sqlite3.connect(dynamic_db_path) as dynamic_conn, sqlite3.connect(trakt_queue_path) as trakt_queue_conn:
+        with db_connect(static_db_path) as static_conn, db_connect(dynamic_db_path) as dynamic_conn, db_connect(trakt_queue_path) as trakt_queue_conn:
             static_cursor = static_conn.cursor()
             dynamic_cursor = dynamic_conn.cursor()
             trakt_queue_cursor = trakt_queue_conn.cursor()
@@ -858,8 +859,8 @@ def drop_tvshow(static_db_path, dynamic_db_path, trakt_queue_path, trakt_handler
     3. Simkl bulk sync or list sync should handle dropped status, but we will add an immediate job for Simkl or Trakt if Orac supports it.
     """
     try:
-        with sqlite3.connect(static_db_path) as static_conn, \
-             sqlite3.connect(trakt_queue_path) as trakt_queue_conn:
+        with db_connect(static_db_path) as static_conn, \
+             db_connect(trakt_queue_path) as trakt_queue_conn:
             
             static_cursor = static_conn.cursor()
             trakt_queue_cursor = trakt_queue_conn.cursor()

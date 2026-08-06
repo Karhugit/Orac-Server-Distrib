@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 from resources.lib.log_utils import log, LOGERROR, LOGDEBUG, LOGINFO, LOGWARNING
 import json
 
@@ -7,14 +8,14 @@ def get_genres(movies_static_db_path, movies_dynamic_db_path, tvshows_static_db_
     """Get all available genres for the specified item type"""
     try:
         if item_type == "tvshow":
-            with sqlite3.connect(tvshows_static_db_path) as conn:
+            with db_connect(tvshows_static_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT name FROM genres ORDER BY name")
                 genres = [row[0] for row in cursor.fetchall()]
                 return genres
         
         elif item_type == "movie":
-            with sqlite3.connect(movies_static_db_path) as conn:
+            with db_connect(movies_static_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT name FROM genres ORDER BY name")
                 genres = [row[0] for row in cursor.fetchall()]

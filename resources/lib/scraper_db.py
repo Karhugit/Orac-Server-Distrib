@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import sqlite3
+from resources.lib.db_utils import db_connect
 import os
 from resources.lib.log_utils import log, LOGERROR, LOGINFO, LOGDEBUG
 
@@ -9,7 +10,7 @@ class ScraperDB:
         self._init_db()
 
     def _get_connection(self):
-        return sqlite3.connect(self.db_path)
+        return db_connect(self.db_path)
 
     def _init_db(self):
         """Initializes the scrapers table with total_scrapes support."""

@@ -1,4 +1,5 @@
 import asyncio
+from resources.lib.db_utils import db_connect
 import json
 import sqlite3
 import threading
@@ -52,7 +53,7 @@ def _vacuum_database(db_path, db_manager=None):
             with db_manager.connection(db_path) as conn:
                 conn.execute("VACUUM")
         else:
-            with sqlite3.connect(db_path) as conn:
+            with db_connect(db_path) as conn:
                 conn.execute("VACUUM")
         log(f"[Orac] Successfully VACUUMed database: {db_path}", level=LOGINFO)
     except sqlite3.Error as e:
@@ -109,7 +110,7 @@ async def get_t_user(app: FastAPI):
 
     try:
         if app.state.tvshows_dynamic_db_path:
-            with sqlite3.connect(app.state.tvshows_dynamic_db_path) as conn:
+            with db_connect(app.state.tvshows_dynamic_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT user FROM watched_episodes WHERE user IS NOT NULL AND user != '' LIMIT 1")
                 row = cursor.fetchone()
@@ -368,7 +369,7 @@ def app_factory(
             
             movie_fanart_map = {}
             if movie_ids:
-                with sqlite3.connect(app.state.movies_static_db_path) as conn:
+                with db_connect(app.state.movies_static_db_path) as conn:
                     cursor = conn.cursor()
                     placeholders = ",".join("?" for _ in movie_ids)
                     cursor.execute(f"SELECT tmdb_id, poster_path, fanart_path, clearlogo_path FROM movies WHERE tmdb_id IN ({placeholders})", movie_ids)
@@ -381,7 +382,7 @@ def app_factory(
                         
             show_fanart_map = {}
             if show_ids:
-                with sqlite3.connect(app.state.tvshows_static_db_path) as conn:
+                with db_connect(app.state.tvshows_static_db_path) as conn:
                     cursor = conn.cursor()
                     placeholders = ",".join("?" for _ in show_ids)
                     cursor.execute(f"SELECT show_tmdb_id, poster_path, fanart_path, clearlogo_path FROM shows WHERE show_tmdb_id IN ({placeholders})", show_ids)
@@ -475,7 +476,7 @@ def app_factory(
     @app.get("/api/status")
     async def api_status():
         try:
-            with sqlite3.connect(app.state.config_db_path) as conn:
+            with db_connect(app.state.config_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT key, value FROM config 
@@ -852,7 +853,7 @@ def app_factory(
         reviews = app.state.tmdb_handler.get_reviews(tmdb_id, media_type=media_type, max_reviews=max_reviews)
         if media_type == 'movie':
             try:
-                with sqlite3.connect(app.state.movies_static_db_path) as conn:
+                with db_connect(app.state.movies_static_db_path) as conn:
                     cursor = conn.cursor()
                     cursor.execute("SELECT title, year FROM movies WHERE tmdb_id = ?", (tmdb_id,))
                     row = cursor.fetchone()
@@ -897,7 +898,7 @@ def app_factory(
     @app.get("/api/web/platforms")
     async def web_platforms_api():
         try:
-            with sqlite3.connect(app.state.config_db_path) as conn:
+            with db_connect(app.state.config_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT key, value FROM config WHERE key IN ('trakt_user', 'simkl_user', 'tmdb_user', 'mdblist.user', 'mdblist_user')")
                 rows = cursor.fetchall()
@@ -925,7 +926,7 @@ def app_factory(
     @app.get("/api/web/library_lists")
     async def web_library_lists_api():
         try:
-            with sqlite3.connect(app.state.lists_db_path) as conn:
+            with db_connect(app.state.lists_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT list_id, name, source FROM lists WHERE add_to_library = 1 OR add_to_library = 'true' OR add_to_library = 'True'")
                 rows = cursor.fetchall()
@@ -939,7 +940,7 @@ def app_factory(
     async def web_list_items_api(list_id: str):
         try:
             items = []
-            with sqlite3.connect(app.state.lists_db_path) as conn:
+            with db_connect(app.state.lists_db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -950,11 +951,11 @@ def app_factory(
                 list_rows = [dict(r) for r in cursor.fetchall()]
 
             # Fetch details from static DBs
-            movies_conn = sqlite3.connect(app.state.movies_static_db_path)
+            movies_conn = db_connect(app.state.movies_static_db_path)
             movies_conn.row_factory = sqlite3.Row
             movies_cur = movies_conn.cursor()
 
-            tvshows_conn = sqlite3.connect(app.state.tvshows_static_db_path)
+            tvshows_conn = db_connect(app.state.tvshows_static_db_path)
             tvshows_conn.row_factory = sqlite3.Row
             tvshows_cur = tvshows_conn.cursor()
 
@@ -1047,7 +1048,7 @@ def app_factory(
             if not list_id or not media_type or (not trakt_id and not tmdb_id):
                 return JSONResponse(status_code=400, content={"success": False, "error": "Missing required fields"})
 
-            with sqlite3.connect(app.state.lists_db_path) as conn:
+            with db_connect(app.state.lists_db_path) as conn:
                 cursor = conn.cursor()
                 if trakt_id and tmdb_id:
                     cursor.execute("""
@@ -1316,13 +1317,13 @@ def app_factory(
         slug = params.get("slug")
         if not list_name or not trakt_user or not slug:
              return JSONResponse(status_code=400, content={"status": "error"})
-        with sqlite3.connect(app.state.trakt_update_queue_path) as conn:
+        with db_connect(app.state.trakt_update_queue_path) as conn:
             cursor = conn.cursor()
             queue_payload = {"list_name": list_name, "item_type": 'list', "tmdb_id": None, "user": trakt_user, "slug": slug}
             cursor.execute("INSERT INTO trakt_update_queue (trakt_id, update_type, payload, status, media_type) VALUES (?, ?, ?, 'pending', ?)", (trakt_user, 'unlike_trakt_list', json.dumps(queue_payload), 'list'))
             conn.commit()
         list_id = None
-        with sqlite3.connect(app.state.lists_db_path) as conn:
+        with db_connect(app.state.lists_db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT list_id FROM lists WHERE slug = ?", (slug,))
             row = cursor.fetchone()

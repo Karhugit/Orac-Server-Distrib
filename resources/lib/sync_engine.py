@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 import requests
 from datetime import datetime
 from resources.lib.log_utils import log, LOGERROR, LOGINFO, LOGDEBUG, LOGWARNING
@@ -275,7 +276,7 @@ def reconcile_movies(db_path, trakt_data, simkl_data, mdblist_data):
         
     if to_update:
         try:
-             with sqlite3.connect(db_path) as conn:
+             with db_connect(db_path) as conn:
                  query = """
                  INSERT INTO watched_history (tmdb_id, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at)
                  VALUES (?, ?, ?, ?, ?, ?)
@@ -337,7 +338,7 @@ def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data):
             
     if to_update:
         try:
-             with sqlite3.connect(db_path) as conn:
+             with db_connect(db_path) as conn:
                  query = """
                  INSERT INTO watched_history (show_tmdb_id, season, episode, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -372,7 +373,7 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
     m_mdblist_ids = []
     
     try:
-        with sqlite3.connect(movies_dynamic_db) as conn:
+        with db_connect(movies_dynamic_db) as conn:
              cursor = conn.cursor()
              # We only send those watched where they are missing the synced timestamp
              if has_trakt:
@@ -409,7 +410,7 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
     t_mdblist_grouped = {}
     
     try:
-         with sqlite3.connect(tvshows_dynamic_db) as conn:
+         with db_connect(tvshows_dynamic_db) as conn:
              cursor = conn.cursor()
              if has_trakt:
                   cursor.execute("SELECT show_tmdb_id, season, episode, last_watched_at FROM watched_history WHERE is_watched = 1 AND (trakt_synced_at IS NULL OR trakt_synced_at = '')")
@@ -447,7 +448,7 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
          all_sids = list(set(list(t_trakt_grouped.keys()) + list(t_simkl_grouped.keys()) + list(t_mdblist_grouped.keys())))
          if all_sids:
               try:
-                   with sqlite3.connect(tvshows_static_db) as conn:
+                   with db_connect(tvshows_static_db) as conn:
                         cursor = conn.cursor()
                         placeholders = ','.join(['?'] * len(all_sids))
                         cursor.execute(f"SELECT show_tmdb_id, imdb_id FROM shows WHERE show_tmdb_id IN ({placeholders})", all_sids)
@@ -517,11 +518,11 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
          log("[Sync Engine] Updating local trakt_synced_at timestamps...", level=LOGINFO)
          try:
               if m_trakt_ids:
-                   with sqlite3.connect(movies_dynamic_db) as conn:
+                   with db_connect(movies_dynamic_db) as conn:
                         conn.executemany("UPDATE watched_history SET trakt_synced_at = ? WHERE tmdb_id = ?", [(now_str, mid) for mid in m_trakt_ids])
                         conn.commit()
               if t_trakt_updates:
-                   with sqlite3.connect(tvshows_dynamic_db) as conn:
+                   with db_connect(tvshows_dynamic_db) as conn:
                         conn.executemany("UPDATE watched_history SET trakt_synced_at = ? WHERE show_tmdb_id = ? AND season = ? AND episode = ?", [(now_str, sid, sea, ep) for sid, sea, ep in t_trakt_updates])
                         conn.commit()
          except Exception as e:
@@ -531,11 +532,11 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
          log("[Sync Engine] Updating local simkl_synced_at timestamps...", level=LOGINFO)
          try:
               if m_simkl_ids:
-                   with sqlite3.connect(movies_dynamic_db) as conn:
+                   with db_connect(movies_dynamic_db) as conn:
                         conn.executemany("UPDATE watched_history SET simkl_synced_at = ? WHERE tmdb_id = ?", [(now_str, mid) for mid in m_simkl_ids])
                         conn.commit()
               if t_simkl_updates:
-                   with sqlite3.connect(tvshows_dynamic_db) as conn:
+                   with db_connect(tvshows_dynamic_db) as conn:
                         conn.executemany("UPDATE watched_history SET simkl_synced_at = ? WHERE show_tmdb_id = ? AND season = ? AND episode = ?", [(now_str, sid, sea, ep) for sid, sea, ep in t_simkl_updates])
                         conn.commit()
          except Exception as e:
@@ -545,11 +546,11 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
          log("[Sync Engine] Updating local mdblist_synced_at timestamps...", level=LOGINFO)
          try:
               if m_mdblist_ids:
-                   with sqlite3.connect(movies_dynamic_db) as conn:
+                   with db_connect(movies_dynamic_db) as conn:
                         conn.executemany("UPDATE watched_history SET mdblist_synced_at = ? WHERE tmdb_id = ?", [(now_str, mid) for mid in m_mdblist_ids])
                         conn.commit()
               if t_mdblist_updates:
-                   with sqlite3.connect(tvshows_dynamic_db) as conn:
+                   with db_connect(tvshows_dynamic_db) as conn:
                         conn.executemany("UPDATE watched_history SET mdblist_synced_at = ? WHERE show_tmdb_id = ? AND season = ? AND episode = ?", [(now_str, sid, sea, ep) for sid, sea, ep in t_mdblist_updates])
                         conn.commit()
          except Exception as e:

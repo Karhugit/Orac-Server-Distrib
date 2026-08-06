@@ -1,6 +1,7 @@
 
 # handlers/list_handler.py
 import sqlite3
+from resources.lib.db_utils import db_connect
 import json
 import asyncio
 from resources.lib.log_utils import log, LOGERROR, LOGINFO, LOGWARNING, LOGDEBUG
@@ -12,7 +13,7 @@ from resources.lib.formatting_utils import format_movie
 
 def _get_list_movies(list_name, user, movies_static_db_path, movies_dynamic_db_path, lists_db_path, preserve_order=False):
     # Step 1: Get trakt_ids for movies in the specified list from list_items + lists DB
-    with sqlite3.connect(lists_db_path) as lists_conn:
+    with db_connect(lists_db_path) as lists_conn:
         lists_cursor = lists_conn.cursor()
         lists_cursor.execute("""
             SELECT li.tmdb_id
@@ -31,7 +32,7 @@ def _get_list_movies(list_name, user, movies_static_db_path, movies_dynamic_db_p
 
     # Step 2: Query movie details from the static DB using TMDB IDs
     placeholders = ",".join(["?"] * len(tmdb_ids))
-    with sqlite3.connect(movies_static_db_path) as static_conn:
+    with db_connect(movies_static_db_path) as static_conn:
         static_cursor = static_conn.cursor()
         static_cursor.execute(f"""attach database '{movies_dynamic_db_path}' as dynamic;""")
         static_cursor.execute(f"""
@@ -107,7 +108,7 @@ def _get_list_shows(list_name, user, tvshows_static_db_path, tvshows_dynamic_db_
         total_unaired_episodes = static_cursor.fetchone()[0]
         return total_seasons, total_episodes, total_watched_episodes, total_unaired_episodes
 
-    with sqlite3.connect(lists_db_path) as lists_conn:
+    with db_connect(lists_db_path) as lists_conn:
         lists_cursor = lists_conn.cursor()
         lists_cursor.execute("""
             SELECT li.tmdb_id
@@ -124,8 +125,8 @@ def _get_list_shows(list_name, user, tvshows_static_db_path, tvshows_dynamic_db_
         return []
 
     placeholders = ",".join(["?"] * len(show_ids))
-    with sqlite3.connect(tvshows_dynamic_db_path) as dynamic_conn, \
-         sqlite3.connect(tvshows_static_db_path) as static_conn:
+    with db_connect(tvshows_dynamic_db_path) as dynamic_conn, \
+         db_connect(tvshows_static_db_path) as static_conn:
         static_conn.execute(f"ATTACH DATABASE ? AS dynamic_db", (tvshows_dynamic_db_path,))
         static_cursor = static_conn.cursor()
         static_cursor.execute(f"""
@@ -189,7 +190,7 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
         list_user = user
         list_id = None
         
-        with sqlite3.connect(lists_db_path) as conn:
+        with db_connect(lists_db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
@@ -227,7 +228,7 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
 
                 if ext_indexes_db_path:
                     try:
-                        with sqlite3.connect(ext_indexes_db_path) as ext_conn:
+                        with db_connect(ext_indexes_db_path) as ext_conn:
                             ext_conn.row_factory = sqlite3.Row
                             ext_cursor = ext_conn.cursor()
                             ext_cursor.execute(
@@ -435,7 +436,7 @@ async def _enrich_items_with_metadata(items, tmdb_handler, movies_static_db_path
 
     try:
         # 1. Gather local metadata first
-        with sqlite3.connect(movies_static_db_path) as m_conn, sqlite3.connect(tvshows_static_db_path) as s_conn:
+        with db_connect(movies_static_db_path) as m_conn, db_connect(tvshows_static_db_path) as s_conn:
             m_conn.row_factory = sqlite3.Row
             s_conn.row_factory = sqlite3.Row
             m_cursor = m_conn.cursor()
@@ -503,7 +504,7 @@ async def _fetch_single_tmdb_poster(tmdb_handler, tmdb_id, media_type, item, mov
                 
                 # Cache in DB asynchronously
                 def _write_to_db():
-                    with sqlite3.connect(movies_static_db_path) as conn:
+                    with db_connect(movies_static_db_path) as conn:
                         cursor = conn.cursor()
                         try:
                             cursor.execute("""
@@ -533,7 +534,7 @@ async def _fetch_single_tmdb_poster(tmdb_handler, tmdb_id, media_type, item, mov
                 
                 # Cache in DB asynchronously
                 def _write_to_db():
-                    with sqlite3.connect(tvshows_static_db_path) as conn:
+                    with db_connect(tvshows_static_db_path) as conn:
                         cursor = conn.cursor()
                         try:
                             cursor.execute("""
@@ -567,7 +568,7 @@ async def _fetch_tmdb_discover_external(tmdb_handler, slug, item_type, ext_index
         from resources.lib.db_utils import get_discover_params_and_type_from_db
         from resources.lib.date_utils import parse_date_param
         
-        with sqlite3.connect(ext_indexes_db_path) as conn:
+        with db_connect(ext_indexes_db_path) as conn:
             cursor = conn.cursor()
             params, db_media_type = get_discover_params_and_type_from_db(cursor, slug, item_type)
             
@@ -720,7 +721,7 @@ def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_stat
     # Step 1: Ensure the item exists in the static DB, add it if not.
     try:
         if item_type == 'movie':
-            with sqlite3.connect(movies_static_db_path) as conn:
+            with db_connect(movies_static_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT trakt_id FROM movies WHERE tmdb_id = ?", (tmdb_id,))
                 row = cursor.fetchone()
@@ -740,7 +741,7 @@ def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_stat
                             # Ah, handle_list_request doesn't use dynamic for add_to_list anyway, wait. 
                             # add_to_list function signature (line 558) DOES NOT have dynamic DB paths.
                             # It imports add_movie which requires it.
-                            # But wait, original code (line 590) did: `with sqlite3.connect(movies_dynamic_db_path) as dynamic_conn:`
+                            # But wait, original code (line 590) did: `with db_connect(movies_dynamic_db_path) as dynamic_conn:`
                             # BUT `movies_dynamic_db_path` is NOT passed in arguments!
                             # This means original code would have crashed? Or it relies on global import?
                             # checking line 558... arguments are: payload, trakt_handler, tmdb_handler, lists_db_path, movies_static_db_path, tvshows_static_db_path, trakt_update_queue_path
@@ -760,7 +761,7 @@ def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_stat
                 else:
                     trakt_id = row[0]
         elif item_type == 'tvshow':
-            with sqlite3.connect(tvshows_static_db_path) as conn:
+            with db_connect(tvshows_static_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT show_trakt_id FROM shows WHERE show_tmdb_id = ?", (tmdb_id,))
                 row = cursor.fetchone()
@@ -775,7 +776,7 @@ def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_stat
         provider = requested_source or 'trakt'
         list_id = None
 
-        with sqlite3.connect(lists_db_path) as conn:
+        with db_connect(lists_db_path) as conn:
             cursor = conn.cursor()
             # Try to find the list by user and slug
             cursor.execute("SELECT list_id, source FROM lists WHERE slug = ? AND user = ?", (slug, user))
@@ -808,7 +809,7 @@ def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_stat
              pass
         
         # Step 2: Add item to the list_items table and update list count
-        with sqlite3.connect(lists_db_path) as conn:
+        with db_connect(lists_db_path) as conn:
             cursor = conn.cursor()
             # Add item to list
             if item_type == 'tvshow':
@@ -833,7 +834,7 @@ def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_stat
             conn.commit()
 
         # Step 3: Queue the update
-        with sqlite3.connect(trakt_update_queue_path) as conn:
+        with db_connect(trakt_update_queue_path) as conn:
             cursor = conn.cursor()
             queue_payload = {
                 "list_name": list_name,
@@ -880,7 +881,7 @@ def remove_from_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies
         provider = requested_source or 'trakt'
         list_id = None
 
-        with sqlite3.connect(lists_db_path) as conn:
+        with db_connect(lists_db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT list_id, source FROM lists WHERE slug = ? AND user = ?", (slug, user))
             row = cursor.fetchone()
@@ -902,7 +903,7 @@ def remove_from_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies
         
         # Step 2: Remove item from the list_items table and update list count
         if list_id:
-            with sqlite3.connect(lists_db_path) as conn:
+            with db_connect(lists_db_path) as conn:
                 cursor = conn.cursor()
                 if item_type == 'tvshow':
                     db_item_type = 'show'
@@ -922,7 +923,7 @@ def remove_from_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies
                 conn.commit()
 
         # Step 3: Queue the update
-        with sqlite3.connect(trakt_update_queue_path) as conn:
+        with db_connect(trakt_update_queue_path) as conn:
             cursor = conn.cursor()
             queue_payload = {
                 "list_name": list_name,
@@ -959,7 +960,7 @@ def _enrich_external_results_watched_status(results, user, movies_dynamic_db_pat
     if movie_ids:
         try:
             placeholders = ",".join(["?"] * len(movie_ids))
-            with sqlite3.connect(movies_dynamic_db_path) as conn:
+            with db_connect(movies_dynamic_db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute(f"""
@@ -990,7 +991,7 @@ def _enrich_external_results_watched_status(results, user, movies_dynamic_db_pat
             watched_map = {}
             unaired_map = {}
             
-            with sqlite3.connect(tvshows_static_db_path) as static_conn:
+            with db_connect(tvshows_static_db_path) as static_conn:
                 static_conn.execute("ATTACH DATABASE ? AS dynamic_db", (tvshows_dynamic_db_path,))
                 cursor = static_conn.cursor()
                 

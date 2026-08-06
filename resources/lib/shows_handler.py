@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 import json
 from resources.lib.log_utils import log, LOGERROR, LOGDEBUG, LOGINFO
 from time import time
@@ -88,7 +89,7 @@ def handle_show_request(show_tmdb_id, user, tvshows_static_db_path, tvshows_dyna
     """
     try:
         starttime = time()
-        with sqlite3.connect(tvshows_static_db_path) as static_conn:
+        with db_connect(tvshows_static_db_path) as static_conn:
             # Use row factory to get dict-like rows
             static_conn.row_factory = sqlite3.Row
             

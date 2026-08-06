@@ -6,6 +6,13 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.3.3] — 2026-08-07
+
+### Fixed
+- **Database Locked Errors Fix** — introduced central `db_connect()` helper with 30s timeout, busy handling, and WAL journal mode across all SQLite connection points.
+- **WAL Mode at Startup** — automatically enables WAL journal mode on all databases during server init.
+- **Stale Episode Refresh Trakt Lookup** — skipped Trakt lookups when `show_trakt_id` is negative (synthetic placeholder).
+
 ## [1.3.1] — 2026-07-04
 
 ### Added

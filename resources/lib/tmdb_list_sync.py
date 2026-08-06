@@ -1,4 +1,5 @@
 import asyncio
+from resources.lib.db_utils import db_connect
 import sqlite3
 import json
 from datetime import datetime
@@ -115,7 +116,7 @@ async def tmdb_list_sync_task(trakt_auth, tmdb_handler, tmdb_user, tmdb_session_
                 # Check library status
                 is_in_library = False
                 list_id = f"tmdb:generic:{slug}"
-                with sqlite3.connect(lists_db_path) as lists_conn:
+                with db_connect(lists_db_path) as lists_conn:
                     cursor = lists_conn.cursor()
                     cursor.execute("SELECT add_to_library FROM lists WHERE list_id = ?", (list_id,))
                     row = cursor.fetchone()
@@ -192,7 +193,7 @@ async def tmdb_list_sync_task(trakt_auth, tmdb_handler, tmdb_user, tmdb_session_
                 
                 # Try to find trakt_id
                 trakt_id = None
-                with sqlite3.connect(movie_static_db_path if media_type == 'movie' else tvshows_static_db_path) as conn:
+                with db_connect(movie_static_db_path if media_type == 'movie' else tvshows_static_db_path) as conn:
                      trakt_id = await resolve_tmdb_to_trakt(tmdb_id, media_type, trakt_auth, conn.cursor())
                 
                 if not trakt_id:
@@ -368,7 +369,7 @@ def update_lists_table_metadata(db_path, list_meta):
         item_count_shows = list_meta['item_count'].get('shows', 0)
         source = list_meta.get('source', 'tmdb')
         
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO lists (list_id, source, user, slug, name, description, last_checked, item_count_movies, item_count_shows, owned_by_user)
@@ -390,7 +391,7 @@ def update_lists_table_metadata(db_path, list_meta):
 
 def cleanup_list_items(db_path, list_id):
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
              cursor = conn.cursor()
              # Just remove the links. We rely on general GC to remove orphaned movies/shows if needed.
              cursor.execute("DELETE FROM list_items WHERE list_id = ?", (list_id,))

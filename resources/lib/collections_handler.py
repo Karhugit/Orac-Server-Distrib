@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 import json
 from resources.lib.log_utils import log, LOGERROR, LOGDEBUG, LOGINFO
 
@@ -14,7 +15,7 @@ def handle_collections_request(static_db_path, dynamic_db_path, tmdb_handler=Non
     collections = {}
     
     try:
-        with sqlite3.connect(static_db_path) as conn:
+        with db_connect(static_db_path) as conn:
             cursor = conn.cursor()
             # Select relevant fields where belongs_to_collection is populated
             cursor.execute('''

@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 import requests
 import json
 import asyncio
@@ -178,7 +179,7 @@ def _sync_items_to_list_items(list_id, normalised_items, lists_db_path, movies_s
                 log(f"[Orac] MDBList: Could not resolve TMDB ID for {item['imdb_id']}: {e}", level=LOGWARNING)
 
     # Step 2: insert/update list_items for items we have a TMDB ID for
-    with sqlite3.connect(lists_db_path) as conn:
+    with db_connect(lists_db_path) as conn:
         cursor = conn.cursor()
         # Fetch current items for this list so we can compute diff
         cursor.execute("SELECT media_type, tmdb_id FROM list_items WHERE list_id = ?", (list_id,))
@@ -224,7 +225,7 @@ def _sync_items_to_list_items(list_id, normalised_items, lists_db_path, movies_s
     if new_movies and movies_static_db_path:
         tmdb_ids = [t for _, t in new_movies]
         placeholders = ",".join(["?"] * len(tmdb_ids))
-        with sqlite3.connect(movies_static_db_path) as conn:
+        with db_connect(movies_static_db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(f"SELECT tmdb_id FROM movies WHERE tmdb_id IN ({placeholders})", tmdb_ids)
             already_present = {row[0] for row in cursor.fetchall()}
@@ -235,7 +236,7 @@ def _sync_items_to_list_items(list_id, normalised_items, lists_db_path, movies_s
     if new_shows and tvshows_static_db_path:
         tmdb_ids = [t for _, t in new_shows]
         placeholders = ",".join(["?"] * len(tmdb_ids))
-        with sqlite3.connect(tvshows_static_db_path) as conn:
+        with db_connect(tvshows_static_db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(f"SELECT show_tmdb_id FROM shows WHERE show_tmdb_id IN ({placeholders})", tmdb_ids)
             already_present = {row[0] for row in cursor.fetchall()}
@@ -327,7 +328,7 @@ async def mdblist_list_sync_task(config_db_path, lists_db_path,
         mdblist_watchlist_data = fetch_mdblist_watchlist(config_db_path, api_key)
         mdblist_external_data = fetch_mdblist_external_lists(config_db_path)
         
-        with sqlite3.connect(lists_db_path) as conn:
+        with db_connect(lists_db_path) as conn:
             cursor = conn.cursor()
             
             # Fetch existing library settings to preserve them

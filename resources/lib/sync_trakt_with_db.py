@@ -1,4 +1,5 @@
 import asyncio
+from resources.lib.db_utils import db_connect
 import time
 import sqlite3
 import json
@@ -14,7 +15,7 @@ from resources.lib.date_utils import parse_date_param
 
 
 def get_local_list_updated_at(db_path, list_id):
-    with sqlite3.connect(db_path) as conn:
+    with db_connect(db_path) as conn:
         cur = conn.cursor()
         cur.execute("SELECT last_checked FROM lists WHERE list_id=?", (list_id,))
         row = cur.fetchone()
@@ -33,7 +34,7 @@ async def trakt_list_sync_task(trakt_auth, tmdb_handler, lists_db_path, movie_st
 
         # Get the add_to_library settings for each list
         lists_library_settings = {}
-        with sqlite3.connect(lists_db_path) as conn:
+        with db_connect(lists_db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT list_id, add_to_library FROM lists")
             for row in cursor.fetchall():
@@ -58,12 +59,12 @@ async def trakt_list_sync_task(trakt_auth, tmdb_handler, lists_db_path, movie_st
         # This identifies cases where the user wiped the cache.
         force_all_sync = False
         try:
-            with sqlite3.connect(movie_static_db_path) as m_conn, sqlite3.connect(tvshows_static_db_path) as s_conn:
+            with db_connect(movie_static_db_path) as m_conn, db_connect(tvshows_static_db_path) as s_conn:
                 m_count = m_conn.execute("SELECT COUNT(*) FROM movies").fetchone()[0]
                 s_count = s_conn.execute("SELECT COUNT(*) FROM shows").fetchone()[0]
                 
                 # Check if we have items in list_items that should be in library
-                with sqlite3.connect(lists_db_path) as l_conn:
+                with db_connect(lists_db_path) as l_conn:
                     library_items_count = l_conn.execute("""
                         SELECT COUNT(*) FROM list_items li 
                         JOIN lists l ON li.list_id = l.list_id 
@@ -89,7 +90,7 @@ async def trakt_list_sync_task(trakt_auth, tmdb_handler, lists_db_path, movie_st
         
         # If not in settings yet, check if it exists in DB (it might have just been created)
         if should_sync is None:
-            with sqlite3.connect(lists_db_path) as conn:
+            with db_connect(lists_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT add_to_library FROM lists WHERE list_id=?", (list_id,))
                 row = cursor.fetchone()
@@ -121,7 +122,7 @@ async def trakt_list_sync_task(trakt_auth, tmdb_handler, lists_db_path, movie_st
             
             # If not in settings yet, check if it exists in DB (it might have just been created)
             if should_sync is None:
-                with sqlite3.connect(lists_db_path) as conn:
+                with db_connect(lists_db_path) as conn:
                     cursor = conn.cursor()
                     cursor.execute("SELECT add_to_library FROM lists WHERE list_id=?", (list_id,))
                     row = cursor.fetchone()
@@ -154,7 +155,7 @@ async def trakt_list_sync_task(trakt_auth, tmdb_handler, lists_db_path, movie_st
         
         # If not in settings yet, check if it exists in DB (it might have just been created)
         if should_sync is None:
-            with sqlite3.connect(lists_db_path) as conn:
+            with db_connect(lists_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT add_to_library FROM lists WHERE list_id=?", (list_id,))
                 row = cursor.fetchone()
@@ -162,7 +163,7 @@ async def trakt_list_sync_task(trakt_auth, tmdb_handler, lists_db_path, movie_st
                     should_sync = row[0]
             # If not in settings yet, check if it exists in DB (it might have just been created)
             if should_sync is None:
-                with sqlite3.connect(lists_db_path) as conn:
+                with db_connect(lists_db_path) as conn:
                     cursor = conn.cursor()
                     cursor.execute("SELECT add_to_library FROM lists WHERE list_id=?", (list_id,))
                     row = cursor.fetchone()
@@ -194,7 +195,7 @@ async def trakt_list_sync_task(trakt_auth, tmdb_handler, lists_db_path, movie_st
             
             # If not in settings yet, check if it exists in DB (it might have just been created)
             if should_sync is None:
-                 with sqlite3.connect(lists_db_path) as conn:
+                 with db_connect(lists_db_path) as conn:
                     cursor = conn.cursor()
                     cursor.execute("SELECT add_to_library FROM lists WHERE list_id=?", (list_id,))
                     row = cursor.fetchone()
@@ -619,7 +620,7 @@ async def get_trakt_generic_lists(trakt_handler, lists_db_path, lists_library_se
 #            if lists_library_settings and lists_library_settings.get(slug, 1) == 0:
                 log(f"[Orac] Skipping generic list '{slug}' sync as per user settings", level=LOGINFO)
                 # We still need to add the list to the lists table if not present
-                with sqlite3.connect(lists_db_path) as conn:
+                with db_connect(lists_db_path) as conn:
                     cursor = conn.cursor()
                     cursor.execute("SELECT 1 FROM lists WHERE list_id=?", (list_id,))
                     if not cursor.fetchone():
@@ -697,7 +698,7 @@ async def get_my_trakt_lists(trakt_handler, lists_db_path, lists_library_setting
             
             # If not in settings yet, check if it exists in DB (it might have just been created)
             if should_sync is None:
-                with sqlite3.connect(lists_db_path) as conn:
+                with db_connect(lists_db_path) as conn:
                     cursor = conn.cursor()
                     cursor.execute("SELECT add_to_library FROM lists WHERE list_id=?", (list_id,))
                     row = cursor.fetchone()
@@ -792,7 +793,7 @@ async def get_liked_trakt_lists(trakt_handler, lists_db_path, lists_library_sett
             if lists_library_settings.get(list_id, 0) == 0: # 0 means skip this list
                 log(f"[Orac] Skipping liked list '{slug}' sync as per user settings", level=LOGINFO)
                 # We still need to add the list to the lists table if not present
-                with sqlite3.connect(lists_db_path) as conn:
+                with db_connect(lists_db_path) as conn:
                     cursor = conn.cursor()
                     cursor.execute("SELECT 1 FROM lists WHERE list_id=?", (list_id,))
                     if not cursor.fetchone():
@@ -841,7 +842,7 @@ async def get_external_index_lists(trakt_handler, tmdb_handler, external_indexes
         if not (lists_library_settings and lists_library_settings.get(f"tmdb:index:{list_id}") == 1):
             log(f"[Orac] Skipping external index '{list_id}' as it's not enabled for library sync.", level=LOGINFO)
             # We still need to add the list to the lists table if not present
-            with sqlite3.connect(lists_db_path) as conn:
+            with db_connect(lists_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT 1 FROM lists WHERE list_id=?", (f"tmdb:index:{list_id}",))
                 if not cursor.fetchone():
@@ -928,7 +929,7 @@ async def fetch_external_movies_index(trakt_handler, tmdb_handler, index, movie_
         unique_items = {item['id']: item for item in all_tmdb_items}
         
         resolved_items = []
-        with sqlite3.connect(movie_static_db_path) as conn:
+        with db_connect(movie_static_db_path) as conn:
             cursor = conn.cursor()
             
             for tmdb_id, item in unique_items.items():
@@ -995,7 +996,7 @@ async def fetch_external_shows_index(trakt_handler, tmdb_handler, index, tvshows
         unique_items = {item['id']: item for item in all_tmdb_items}
         
         resolved_items = []
-        with sqlite3.connect(tvshows_static_db_path) as conn:
+        with db_connect(tvshows_static_db_path) as conn:
             cursor = conn.cursor()
             
             for tmdb_id, item in unique_items.items():
@@ -1043,7 +1044,7 @@ async def fetch_external_shows_index(trakt_handler, tmdb_handler, index, tvshows
 
 async def sync_trakt_list_metadata(dynamic_db_path):
     try:
-        conn = sqlite3.connect(dynamic_db_path)
+        conn = db_connect(dynamic_db_path)
         conn.execute("PRAGMA foreign_keys = ON")
         cursor = conn.cursor()
 
@@ -1237,7 +1238,7 @@ async def sync_recent_tvshow_updates(trakt_handler, tmdb_handler, tvshows_static
         log(f"[Orac] Found {len(updated_shows)} shows updated on Trakt since {trakt_date}", level=LOGINFO)
         
         # Step 3: Open DB connections
-        static_conn = sqlite3.connect(tvshows_static_db_path)
+        static_conn = db_connect(tvshows_static_db_path)
         static_cursor = static_conn.cursor()
         
         updated_count = 0
@@ -1279,7 +1280,7 @@ async def sync_recent_tvshow_updates(trakt_handler, tmdb_handler, tvshows_static
                         updated_count += 1
 
         # Step 6: Update sync timestamp
-        with sqlite3.connect(tvshows_static_db_path) as conn:
+        with db_connect(tvshows_static_db_path) as conn:
             cursor = conn.cursor()
             current_time = datetime.utcnow().isoformat() + 'Z'
             cursor.execute("""
@@ -1342,7 +1343,7 @@ async def sync_recent_tmdb_tv_changes(trakt_handler, tmdb_handler, tvshows_stati
         log(f"[Orac] Found {len(all_changed_ids)} TV show changes on TMDB", level=LOGINFO)
 
         # Step 3: Filter changes to only update shows we already have in our DB
-        static_conn = sqlite3.connect(tvshows_static_db_path)
+        static_conn = db_connect(tvshows_static_db_path)
         cursor = static_conn.cursor()
         
         # Build lookup for existing shows

@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 import json
 from resources.lib.log_utils import log, LOGERROR, LOGDEBUG, LOGINFO
 from time import time
@@ -18,7 +19,7 @@ def handle_movie_request(movie_tmdb_id, movies_dynamic_db_path, movies_static_db
 
     try:
         starttime = time()
-        with sqlite3.connect(movies_static_db_path) as static_conn:
+        with db_connect(movies_static_db_path) as static_conn:
             static_cursor = static_conn.cursor()
 
             static_cursor.execute(f"""attach database '{movies_dynamic_db_path}' as dynamic;""")
@@ -143,7 +144,7 @@ def handle_movie_request(movie_tmdb_id, movies_dynamic_db_path, movies_static_db
                 from resources.lib.fanart_client import sync_fanart_for_item
                 sync_fanart_for_item(movie_tmdb_id, "movie", tmdb_handler, config_db_path=None, force=True)
                 # Re-query the updated artwork columns
-                with sqlite3.connect(movies_static_db_path) as conn2:
+                with db_connect(movies_static_db_path) as conn2:
                     cursor2 = conn2.cursor()
                     cursor2.execute("""
                         SELECT poster_path, fanart_path, clearlogo_path, thumbnail_path, landscape_path, fanart_last_updated

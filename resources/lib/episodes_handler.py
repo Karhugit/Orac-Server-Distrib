@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 import json
 from resources.lib.log_utils import log, LOGERROR, LOGDEBUG, LOGINFO
 from time import time
@@ -11,8 +12,8 @@ def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None
     """
     try:
         starttime = time()
-        with sqlite3.connect(tvshows_dynamic_db_path) as dynamic_conn, \
-             sqlite3.connect(tvshows_static_db_path) as static_conn:
+        with db_connect(tvshows_dynamic_db_path) as dynamic_conn, \
+             db_connect(tvshows_static_db_path) as static_conn:
 
             if user in ("empty_setting", ""):
                 user = None

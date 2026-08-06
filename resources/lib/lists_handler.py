@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 from resources.lib.log_utils import log, LOGDEBUG, LOGERROR, LOGINFO
 
 def get_all_lists(db_path, ext_indexes_db_path=None, exclude_empty=False):
@@ -13,7 +14,7 @@ def get_all_lists(db_path, ext_indexes_db_path=None, exclude_empty=False):
 def get_my_lists(db_path, list_name, item_type, ext_indexes_db_path=None, exclude_empty=False):
     formatted_lists = []
 
-    conn = sqlite3.connect(db_path)
+    conn = db_connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
@@ -65,7 +66,7 @@ def get_my_lists(db_path, list_name, item_type, ext_indexes_db_path=None, exclud
 
     if ext_indexes_db_path:
         try:
-            with sqlite3.connect(ext_indexes_db_path) as ext_conn:
+            with db_connect(ext_indexes_db_path) as ext_conn:
                 ext_conn.row_factory = sqlite3.Row
                 ext_cursor = ext_conn.cursor()
                 if exclude_empty:
@@ -106,7 +107,7 @@ def get_my_lists(db_path, list_name, item_type, ext_indexes_db_path=None, exclud
 def get_generic_lists(db_path, list_name, item_type, ext_indexes_db_path=None):
     formatted_lists = []
     log(f"[Orac] Fetching generic lists of type: {item_type}", level=LOGDEBUG)
-    conn = sqlite3.connect(db_path)
+    conn = db_connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
@@ -155,14 +156,14 @@ def get_add_options(db_path, item_type, tmdb_id, movies_static_db_path, tvshows_
     # Step 1: Get the trakt_id from the tmdb_id
     try:
         if item_type == 'movie':
-            with sqlite3.connect(movies_static_db_path) as conn:
+            with db_connect(movies_static_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT trakt_id FROM movies WHERE tmdb_id = ?", (tmdb_id,))
                 row = cursor.fetchone()
                 if row:
                     trakt_id = row[0]
         elif item_type == 'tvshow':
-            with sqlite3.connect(tvshows_static_db_path) as conn:
+            with db_connect(tvshows_static_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT show_trakt_id FROM shows WHERE show_tmdb_id = ?", (tmdb_id,))
                 row = cursor.fetchone()
@@ -229,7 +230,7 @@ def get_add_options(db_path, item_type, tmdb_id, movies_static_db_path, tvshows_
     # Step 2: Get all personal lists that do NOT contain this trakt_id
     formatted_lists = []
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
@@ -281,14 +282,14 @@ def get_remove_options(db_path, item_type, tmdb_id, movies_static_db_path, tvsho
     # Step 1: Get the trakt_id from the tmdb_id
     try:
         if item_type == 'movie':
-            with sqlite3.connect(movies_static_db_path) as conn:
+            with db_connect(movies_static_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT trakt_id FROM movies WHERE tmdb_id = ?", (tmdb_id,))
                 row = cursor.fetchone()
                 if row:
                     trakt_id = row[0]
         elif item_type == 'tvshow':
-            with sqlite3.connect(tvshows_static_db_path) as conn:
+            with db_connect(tvshows_static_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT show_trakt_id FROM shows WHERE show_tmdb_id = ?", (tmdb_id,))
                 row = cursor.fetchone()
@@ -307,7 +308,7 @@ def get_remove_options(db_path, item_type, tmdb_id, movies_static_db_path, tvsho
     # Step 2: Get all personal lists that contain this trakt_id
     formatted_lists = []
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
@@ -340,7 +341,7 @@ def update_list_library_status(params, db_path, ext_indexes_db_path=None):
 
     if ext_indexes_db_path:
         try:
-            with sqlite3.connect(ext_indexes_db_path) as ext_conn:
+            with db_connect(ext_indexes_db_path) as ext_conn:
                 ext_cursor = ext_conn.cursor()
                 ext_cursor.execute("UPDATE external_indexes SET add_to_library = ? WHERE LOWER(REPLACE(REPLACE(id, ' ', '-'), '_', '-')) = ?", (add_to_library, slug.lower()))
                 ext_conn.commit()
@@ -353,7 +354,7 @@ def update_list_library_status(params, db_path, ext_indexes_db_path=None):
     list_name = params.get('list_name')
     
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             cursor = conn.cursor()
             
             # 1. Try exact slug match
@@ -401,7 +402,7 @@ def update_list_library_status(params, db_path, ext_indexes_db_path=None):
         list_id = f"{user}:{slug}"
 
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             cursor = conn.cursor()
             
             # Check if this is a personal list (owned_by_user = true)
@@ -424,7 +425,7 @@ def update_list_library_status(params, db_path, ext_indexes_db_path=None):
 def delete_list_locally(list_id, db_path):
     """Removes a list and all its items from the local database."""
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM list_items WHERE list_id = ?", (list_id,))
             cursor.execute("DELETE FROM lists WHERE list_id = ?", (list_id,))

@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 from resources.lib.log_utils import log, LOGERROR, LOGINFO, LOGWARNING, LOGDEBUG
 
 def _init_config_db(conn):
@@ -21,7 +22,7 @@ def _init_config_db(conn):
 def get_config_value(key, config_db_path, default=None):
     """Fetches a single value from the config database by key."""
     try:
-        with sqlite3.connect(config_db_path) as conn:
+        with db_connect(config_db_path) as conn:
             # Ensure the table exists before trying to read from it
             _init_config_db(conn)
             cursor = conn.cursor()
@@ -106,7 +107,7 @@ def clear_trakt_config(config_db_path):
         'created_at'
     ]
     try:
-        with sqlite3.connect(config_db_path) as conn:
+        with db_connect(config_db_path) as conn:
             cursor = conn.cursor()
             placeholders = ','.join('?' for _ in keys_to_delete)
             cursor.execute(f"DELETE FROM config WHERE key IN ({placeholders})", keys_to_delete)
@@ -117,7 +118,7 @@ def clear_trakt_config(config_db_path):
 
 def update_config_values(params, config_db_path):
     try:
-        with sqlite3.connect(config_db_path) as conn:
+        with db_connect(config_db_path) as conn:
             # Ensure the table exists before trying to write to it
             _init_config_db(conn)
             cursor = conn.cursor()

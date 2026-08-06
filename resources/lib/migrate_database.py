@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 from resources.lib.log_utils import log, LOGINFO, LOGERROR
 from resources.lib.watched import _update_show_watched_status
 
@@ -7,7 +8,7 @@ def migration_1_recalculate_specials(static_db_path, dynamic_db_path):
     Migration v1: Recalculates the watched_status for all shows in user_show_sync,
     excluding Specials (Season 0).
     """
-    with sqlite3.connect(dynamic_db_path) as dynamic_conn:
+    with db_connect(dynamic_db_path) as dynamic_conn:
         cursor = dynamic_conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_show_sync'")
         if not cursor.fetchone():
@@ -15,8 +16,8 @@ def migration_1_recalculate_specials(static_db_path, dynamic_db_path):
             return
 
     log("[Orac] Running migration v1: Recalculating TV show watched status (excluding Specials)...", level=LOGINFO)
-    with sqlite3.connect(dynamic_db_path) as dynamic_conn, \
-         sqlite3.connect(static_db_path) as static_conn:
+    with db_connect(dynamic_db_path) as dynamic_conn, \
+         db_connect(static_db_path) as static_conn:
         dynamic_cursor = dynamic_conn.cursor()
         static_cursor = static_conn.cursor()
         
@@ -39,7 +40,7 @@ def migration_2_refactor_fanart_columns(static_db_path, dynamic_db_path):
     
     # 1. Determine media type and table name
     table = None
-    with sqlite3.connect(static_db_path) as static_conn:
+    with db_connect(static_db_path) as static_conn:
         cursor = static_conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='movies'")
         if cursor.fetchone():
@@ -58,7 +59,7 @@ def migration_2_refactor_fanart_columns(static_db_path, dynamic_db_path):
     config = get_fanart_config()
     fanart_enabled = config.get("fanart_enabled", False)
 
-    with sqlite3.connect(static_db_path) as static_conn:
+    with db_connect(static_db_path) as static_conn:
         cursor = static_conn.cursor()
         
         # 3. If fanart_enabled is True, migrate the values
@@ -109,7 +110,7 @@ def migrate_database(static_db_path, dynamic_db_path):
     """
     try:
         current_version = 0
-        with sqlite3.connect(dynamic_db_path) as dynamic_conn:
+        with db_connect(dynamic_db_path) as dynamic_conn:
             cursor = dynamic_conn.cursor()
             cursor.execute("CREATE TABLE IF NOT EXISTS sync_metadata (key TEXT PRIMARY KEY, value TEXT)")
             cursor.execute("SELECT value FROM sync_metadata WHERE key = 'db_version'")
@@ -131,7 +132,7 @@ def migrate_database(static_db_path, dynamic_db_path):
                 migration_func(static_db_path, dynamic_db_path)
                 
                 # Update version in sync_metadata after successful migration step
-                with sqlite3.connect(dynamic_db_path) as dynamic_conn:
+                with db_connect(dynamic_db_path) as dynamic_conn:
                     cursor = dynamic_conn.cursor()
                     cursor.execute("INSERT OR REPLACE INTO sync_metadata (key, value) VALUES ('db_version', ?)", (str(version),))
                     dynamic_conn.commit()

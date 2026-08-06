@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from resources.lib.trakt_utils import get_trakt_watchlist
@@ -87,7 +88,7 @@ def _add_show_in_thread(show_item, tvshows_static_db_path, trakt_queue_path, tra
 
 # Get last known update timestamp
 def get_local_list_updated_at(db_path, list_id):
-    with lock, sqlite3.connect(db_path) as conn:
+    with lock, db_connect(db_path) as conn:
         cur = conn.cursor()
         cur.execute("SELECT last_checked FROM lists WHERE list_id=?", (list_id,))
         row = cur.fetchone()
@@ -105,7 +106,7 @@ def update_list_in_db(db_path, list_meta, items, tmdb_handler=None):
         slug = list_meta['ids']['slug']
         list_id = f"trakt:personal:{slug}"
 
-    with lock, sqlite3.connect(db_path) as conn:
+    with lock, db_connect(db_path) as conn:
         list_cur = conn.cursor()
 
         # 1. Upsert list metadata.
@@ -243,7 +244,7 @@ def update_list_in_db(db_path, list_meta, items, tmdb_handler=None):
 def remove_stale_list_items(db_path, valid_pairs):
     valid_list_ids = set(list_id for list_id, _ in valid_pairs)
 
-    with lock, sqlite3.connect(db_path) as conn:
+    with lock, db_connect(db_path) as conn:
         cur = conn.cursor()
         cur.execute("SELECT list_id, trakt_id FROM list_items")
         all_current = set(
@@ -315,7 +316,7 @@ async def run_list_sync(
     if movies_to_check:
         movie_ids = [m["ids"]["trakt"] for m in movies_to_check]
         placeholders = ",".join(["?"] * len(movie_ids))
-        with sqlite3.connect(movies_static_db_path) as conn:
+        with db_connect(movies_static_db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(f"SELECT trakt_id FROM movies WHERE trakt_id IN ({placeholders})", movie_ids)
             existing_movie_ids = {str(row[0]) for row in cursor.fetchall()}
@@ -325,7 +326,7 @@ async def run_list_sync(
     if shows_to_check:
         show_ids = [s["ids"]["trakt"] for s in shows_to_check]
         placeholders = ",".join(["?"] * len(show_ids))
-        with sqlite3.connect(tvshows_static_db_path) as conn:
+        with db_connect(tvshows_static_db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(f"SELECT show_trakt_id FROM shows WHERE show_trakt_id IN ({placeholders})", show_ids)
             existing_show_ids = {str(row[0]) for row in cursor.fetchall()}

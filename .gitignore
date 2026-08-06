@@ -25,3 +25,6 @@ Scrape results.txt
 # Installer artifacts
 Output/
 *.iss
+
+# Runtime-downloaded assets (fanart, posters, etc.)
+resources/assets/

@@ -1,4 +1,5 @@
 from resources.lib.sync_trakt_with_db import trakt_list_sync_task, sync_recent_tvshow_updates, sync_recent_tmdb_tv_changes
+from resources.lib.db_utils import db_connect
 from time import time
 from resources.lib.log_utils import log, LOGDEBUG, LOGINFO, LOGERROR, LOGWARNING
 from datetime import datetime
@@ -24,7 +25,7 @@ async def cleanup_static_databases(movies_static_db_path, movies_dynamic_db_path
         # --- Step 1: Aggregate all active media IDs ---
 
         # 1. Collect all referenced Trakt IDs from Lists DB
-        with sqlite3.connect(lists_db_path) as conn:
+        with db_connect(lists_db_path) as conn:
             cursor = conn.cursor()
             
             # Movies - Handle None/Null/Empty strings
@@ -56,7 +57,7 @@ async def cleanup_static_databases(movies_static_db_path, movies_dynamic_db_path
                      pass
 
         # From movie watch history
-        with sqlite3.connect(movies_dynamic_db_path) as conn:
+        with db_connect(movies_dynamic_db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT trakt_id FROM movie_status WHERE watched > 0")
             for row in cursor.fetchall():
@@ -64,7 +65,7 @@ async def cleanup_static_databases(movies_static_db_path, movies_dynamic_db_path
                     active_movie_ids.add(str(row[0]))
 
         # From TV show watch history
-        with sqlite3.connect(tvshows_dynamic_db_path) as conn:
+        with db_connect(tvshows_dynamic_db_path) as conn:
             cursor = conn.cursor()
             # We need to join with the static DB to get the show_trakt_id
             conn.execute(f"ATTACH DATABASE '{tvshows_static_db_path}' AS static_db")
@@ -77,7 +78,7 @@ async def cleanup_static_databases(movies_static_db_path, movies_dynamic_db_path
 
         # From tags database - tagged items should not be garbage collected
         try:
-            with sqlite3.connect(tags_db_path) as conn:
+            with db_connect(tags_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT trakt_id FROM tag_items WHERE media_type = 'movie' AND trakt_id IS NOT NULL")
                 for row in cursor.fetchall():
@@ -92,12 +93,12 @@ async def cleanup_static_databases(movies_static_db_path, movies_dynamic_db_path
             log(f"[Orac] **GC** Warning: Could not load tagged items from tags DB: {e}", level=LOGWARNING)
 
         # --- Step 2: Get all IDs from static databases ---
-        with sqlite3.connect(movies_static_db_path) as conn:
+        with db_connect(movies_static_db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT trakt_id FROM movies")
             static_movie_ids = {str(row[0]) for row in cursor.fetchall() if row[0]}
 
-        with sqlite3.connect(tvshows_static_db_path) as conn:
+        with db_connect(tvshows_static_db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT show_trakt_id FROM shows")
             static_show_ids = {str(row[0]) for row in cursor.fetchall() if row[0]}
@@ -109,7 +110,7 @@ async def cleanup_static_databases(movies_static_db_path, movies_dynamic_db_path
         # --- Step 4: Execute deletions and VACUUM ---
         if orphaned_movie_ids:
             log(f"[Orac] **GC** Removing {len(orphaned_movie_ids)} orphaned movies.", level=LOGINFO)
-            with sqlite3.connect(movies_static_db_path) as conn:
+            with db_connect(movies_static_db_path) as conn:
                 # Filter out any non-integer strings if present, though IDs should be ints
                 safe_ids = []
                 for mid in orphaned_movie_ids:
@@ -123,18 +124,18 @@ async def cleanup_static_databases(movies_static_db_path, movies_dynamic_db_path
             
             # Clean up dynamic DB (movie_status)
             log(f"[Orac] **GC** Removing {len(safe_ids)} orphaned entries from movie_status (dynamic DB).", level=LOGINFO)
-            with sqlite3.connect(movies_dynamic_db_path) as conn:
+            with db_connect(movies_dynamic_db_path) as conn:
                 conn.executemany("DELETE FROM movie_status WHERE trakt_id = ?", safe_ids)
                 conn.commit()
                 conn.execute("VACUUM")
             
             # VACUUM must be run outside of a transaction
-            with sqlite3.connect(movies_static_db_path) as conn:
+            with db_connect(movies_static_db_path) as conn:
                 conn.execute("VACUUM")
 
         if orphaned_show_ids:
             log(f"[Orac] **GC** Removing {len(orphaned_show_ids)} orphaned shows.", level=LOGINFO)
-            with sqlite3.connect(tvshows_static_db_path) as conn:
+            with db_connect(tvshows_static_db_path) as conn:
                 safe_ids = []
                 for sid in orphaned_show_ids:
                      try:
@@ -144,7 +145,7 @@ async def cleanup_static_databases(movies_static_db_path, movies_dynamic_db_path
                 if safe_ids:
                     conn.executemany("DELETE FROM shows WHERE show_trakt_id = ?", safe_ids)
             # VACUUM must be run outside of a transaction
-            with sqlite3.connect(tvshows_static_db_path) as conn:
+            with db_connect(tvshows_static_db_path) as conn:
                 conn.execute("VACUUM")
 
         log(f"[Orac] **GC** Garbage collection finished in {time() - gc_start_time:.2f} seconds.", level=LOGINFO)
@@ -318,7 +319,7 @@ async def sync_lists_and_items(trakt_handler, tmdb_handler, movies_static_db_pat
         # Check if we need to run FlixPatrol sync (Daily check)
         should_run_flixpatrol = True
         try:
-            with sqlite3.connect(lists_db_path) as conn:
+            with db_connect(lists_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT last_checked FROM lists WHERE slug = ?", ('flixpatrol-netflix-movie',))
                 row = cursor.fetchone()

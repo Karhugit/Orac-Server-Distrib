@@ -1,4 +1,5 @@
 import os
+from resources.lib.db_utils import db_connect
 import time
 import requests
 import sqlite3
@@ -120,7 +121,7 @@ def sync_fanart_for_item(item_id, media_type, tmdb_handler, config_db_path, forc
         return False
         
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             cursor = conn.cursor()
             
             # Check if already updated recently (unless forced)
@@ -316,7 +317,7 @@ def run_fanart_latest_sync(config_db_path, tmdb_handler):
         movies_static_path = DatabaseManager().get_path("movies_static")
         movies_to_update = []
         if changed_movie_ids and movies_static_path:
-            with sqlite3.connect(movies_static_path) as conn:
+            with db_connect(movies_static_path) as conn:
                 cursor = conn.cursor()
                 placeholders = ",".join("?" for _ in changed_movie_ids)
                 # Check match on tmdb_id or imdb_id
@@ -330,7 +331,7 @@ def run_fanart_latest_sync(config_db_path, tmdb_handler):
         tvshows_static_path = DatabaseManager().get_path("tvshows_static")
         shows_to_update = []
         if changed_tv_ids and tvshows_static_path:
-            with sqlite3.connect(tvshows_static_path) as conn:
+            with db_connect(tvshows_static_path) as conn:
                 cursor = conn.cursor()
                 placeholders = ",".join("?" for _ in changed_tv_ids)
                 # Check match on show_tmdb_id, imdb_id, or tvdb_id

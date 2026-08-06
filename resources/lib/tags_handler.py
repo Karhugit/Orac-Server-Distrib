@@ -1,4 +1,5 @@
 import sqlite3
+from resources.lib.db_utils import db_connect
 from resources.lib.log_utils import log, LOGDEBUG, LOGERROR, LOGINFO
 
 
@@ -28,7 +29,7 @@ def get_all_tags(db_path):
         List of tag names (strings)
     """
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT tag_name FROM tags ORDER BY tag_name")
             rows = cursor.fetchall()
@@ -49,7 +50,7 @@ def get_all_tags_with_counts(db_path):
         List of dicts: {'tag_name': str, 'total_count': int, 'movie_count': int, 'show_count': int}
     """
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
@@ -84,7 +85,7 @@ def get_tags_for_item(db_path, media_type, tmdb_id):
         List of tag names associated with the item
     """
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT tag_name FROM tag_items 
@@ -130,7 +131,7 @@ def add_tag_to_item(db_path, media_type, tmdb_id, tag_name, trakt_id=None,
             # Proceed with None/NULL for trakt_id
     
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             cursor = conn.cursor()
             
             # Create tag if it doesn't exist
@@ -170,7 +171,7 @@ def remove_tag_from_item(db_path, media_type, tmdb_id, tag_name):
         return False
     
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             cursor = conn.cursor()
             
             # Remove tag-item association
@@ -210,7 +211,7 @@ def get_items_with_tag(db_path, tag_name):
         return []
     
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("""
@@ -241,13 +242,13 @@ def _get_trakt_id(media_type, tmdb_id, movies_static_db_path, tvshows_static_db_
     """
     try:
         if media_type == 'movie' and movies_static_db_path:
-            with sqlite3.connect(movies_static_db_path) as conn:
+            with db_connect(movies_static_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT trakt_id FROM movies WHERE tmdb_id = ?", (tmdb_id,))
                 row = cursor.fetchone()
                 return row[0] if row else None
         elif media_type == 'show' and tvshows_static_db_path:
-            with sqlite3.connect(tvshows_static_db_path) as conn:
+            with db_connect(tvshows_static_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT show_trakt_id FROM shows WHERE show_tmdb_id = ?", (tmdb_id,))
                 row = cursor.fetchone()
