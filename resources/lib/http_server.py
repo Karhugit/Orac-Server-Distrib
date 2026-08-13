@@ -726,7 +726,7 @@ def app_factory(
             if media_type == 'movie':
                 static_db = app.state.movies_static_db_path
                 dynamic_db = app.state.movies_dynamic_db_path
-            elif media_type == 'tvshow':
+            elif media_type in ('tvshow', 'episode'):
                 static_db = app.state.tvshows_static_db_path
                 dynamic_db = app.state.tvshows_dynamic_db_path
             user = query.get("user", [None])[0] or await get_t_user(app) or ""

@@ -257,16 +257,20 @@ def _update_show_watched_status(dynamic_cursor, static_cursor, user, show_tmdb_i
         # Count episodes in watched_episodes for this show and user
         placeholders = ','.join(['?' for _ in tmdb_ids])
         dynamic_cursor.execute(f"""
-            SELECT COUNT(*), MIN(percent_watched)
+            SELECT 
+                COUNT(CASE WHEN watched_status = 2 OR percent_watched >= 90 THEN 1 END),
+                COUNT(*)
             FROM watched_episodes
             WHERE user = ? AND tmdb_id IN ({placeholders})
         """, (user, *tmdb_ids))
         
-        watched_count, min_percent = dynamic_cursor.fetchone()
+        res = dynamic_cursor.fetchone()
+        completed_count = res[0] or 0
+        total_tracked_count = res[1] or 0
         
-        if watched_count == 0:
+        if total_tracked_count == 0:
             status = 0
-        elif watched_count == total_count and min_percent == 100:
+        elif completed_count == total_count:
             status = 2
         else:
             status = 1
@@ -284,7 +288,7 @@ def _update_show_watched_status(dynamic_cursor, static_cursor, user, show_tmdb_i
             VALUES (?, ?, ?, ?)
         """, (user, show_tmdb_id, datetime.utcnow().isoformat(), status))
         
-    log(f"[Orac] TV Show {show_tmdb_id} status calc: watched_count={watched_count}, total_count={total_count}, min_percent={min_percent} -> status={status}", level=LOGDEBUG)
+    log(f"[Orac] TV Show {show_tmdb_id} status calc: completed={completed_count}/{total_count}, total_tracked={total_tracked_count} -> status={status}", level=LOGDEBUG)
     return status
 
 def update_next_episode(
@@ -309,7 +313,7 @@ def update_next_episode(
         log(f"[Orac] Skipping next episode update for show {show_tmdb_id}: No username provided", level=LOGWARNING)
         return
 
-    log(f"[Orac] Updating next episode for user {username} after watching show {show_tmdb_id}", level=LOGDEBUG)
+    log(f"[Orac] Updating episode watch progress for user {username} (show {show_tmdb_id}, S{season:02d}E{episode:02d})", level=LOGDEBUG)
     log(f"[Orac] Show tmdb_id: {show_tmdb_id}, season: {season}, episode: {episode}", level=LOGDEBUG)
     try:
         with db_connect(static_db_path) as static_conn, db_connect(dynamic_db_path) as dynamic_conn, db_connect(trakt_queue_path) as trakt_queue_conn:
@@ -396,7 +400,7 @@ def update_next_episode(
             """, (show_tmdb_id, season, episode))
 
             row = static_cursor.fetchone()
-            log(f"[Orac] Found row for watched episode: {row}", level=LOGDEBUG)
+            log(f"[Orac] Found DB episode row: {row}", level=LOGDEBUG)
             if not row:
                 log(f"[Orac] Watched episode show_id {show_tmdb_id} season {season} number {episode} not found in static DB", level=LOGERROR)
                 return

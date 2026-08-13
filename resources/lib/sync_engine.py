@@ -525,6 +525,20 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
                    with db_connect(tvshows_dynamic_db) as conn:
                         conn.executemany("UPDATE watched_history SET trakt_synced_at = ? WHERE show_tmdb_id = ? AND season = ? AND episode = ?", [(now_str, sid, sea, ep) for sid, sea, ep in t_trakt_updates])
                         conn.commit()
+              try:
+                   from resources.lib.db_manager import DatabaseManager
+                   queue_db = DatabaseManager().get_path('trakt_update_queue')
+                   with db_connect(queue_db) as qconn:
+                        qcursor = qconn.cursor()
+                        if m_trakt_ids:
+                             for mid in m_trakt_ids:
+                                  qcursor.execute("UPDATE update_queue SET status = 'done' WHERE update_type = 'watched_movie' AND (status = 'pending' OR status = 'retry') AND payload LIKE ?", (f'%"tmdb_id": {mid}%',))
+                        if t_trakt_updates:
+                             for sid, sea, ep in t_trakt_updates:
+                                  qcursor.execute("UPDATE update_queue SET status = 'done' WHERE update_type = 'watched_episode' AND (status = 'pending' OR status = 'retry') AND payload LIKE ? AND payload LIKE ? AND payload LIKE ?", (f'%"show_tmdb_id": {sid}%', f'%"season": {sea}%', f'%"episode": {ep}%'))
+                        qconn.commit()
+              except Exception as q_err:
+                   log(f"[Sync Engine] Error updating queue status: {q_err}", level=LOGWARNING)
          except Exception as e:
              log(f"[Sync Engine] Error bulk updating trakt timestamps: {e}", level=LOGERROR)
              

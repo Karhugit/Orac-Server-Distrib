@@ -467,16 +467,17 @@ def get_internal_index_contents(db_path, index_id, media_type, static_db, dynami
                         e.air_date, e.tmdb_id, e.imdb_id, e.tvdb_id, e.rating, e.first_aired, e.votes, e.runtime,
                         e.episode_type, e.original_title, e.episode_poster_path, e.episode_fanart_path, 
                         e.episode_thumbnail_path, e.episode_clearlogo_path, e.episode_landscape_path,
-                        s.title as show_title, s.show_tmdb_id, s.poster_path as show_poster_path, 
+                        s.title as show_title, s.show_tmdb_id, s.show_trakt_id, s.poster_path as show_poster_path, 
                         s.fanart_path as show_fanart_path, s.clearlogo_path as show_clearlogo_path, 
                         s.landscape_path as show_landscape_path, s.overview as show_overview,
                         tg_all.genre as item_genre,
                         we.watched_status,
                         we.percent_watched as watched
                     FROM episodes e
-                    JOIN shows s ON e.show_id = s.show_trakt_id
+                    JOIN shows s ON e.show_id = s.show_tmdb_id
                     LEFT JOIN tvshows_genres tg_all ON s.show_tmdb_id = tg_all.tmdb_id
                     LEFT JOIN dynamic.watched_episodes we ON e.tmdb_id = we.tmdb_id AND we.user = ?
+                    LEFT JOIN dynamic.user_show_sync uss ON s.show_tmdb_id = uss.show_tmdb_id AND uss.user = ?
                 """
 
                 if with_genre_names:
@@ -508,32 +509,43 @@ def get_internal_index_contents(db_path, index_id, media_type, static_db, dynami
                         conditions.append("0=1")
 
                 # Episode specific filters
-                air_date_gte = params.get('air_date_gte')
-                air_date_lte = params.get('air_date_lte')
-                first_air_date_gte = params.get('first_air_date_gte')
-                first_air_date_lte = params.get('first_air_date_lte')
+                air_date_gte = parse_date_offset(params.get('air_date_gte'))
+                air_date_lte = parse_date_offset(params.get('air_date_lte'))
+                first_air_date_gte = parse_date_offset(params.get('first_air_date_gte'))
+                first_air_date_lte = parse_date_offset(params.get('first_air_date_lte'))
                 min_rating = params.get('min_rating') or params.get('episode_rating_gte')
                 max_rating = params.get('max_rating') or params.get('episode_rating_lte')
                 min_votes = params.get('min_votes') or params.get('episode_votes_gte')
 
-                if air_date_gte: conditions.append("e.air_date >= ?"); params_list.append(air_date_gte)
-                if air_date_lte: conditions.append("e.air_date <= ?"); params_list.append(air_date_lte)
-                if first_air_date_gte: conditions.append("s.first_aired >= ?"); params_list.append(first_air_date_gte)
-                if first_air_date_lte: conditions.append("s.first_aired <= ?"); params_list.append(first_air_date_lte)
+                if air_date_gte: conditions.append("DATE(e.air_date) >= DATE(?)"); params_list.append(air_date_gte)
+                if air_date_lte: conditions.append("DATE(e.air_date) <= DATE(?)"); params_list.append(air_date_lte)
+                if first_air_date_gte: conditions.append("DATE(s.first_aired) >= DATE(?)"); params_list.append(first_air_date_gte)
+                if first_air_date_lte: conditions.append("DATE(s.first_aired) <= DATE(?)"); params_list.append(first_air_date_lte)
                 if min_rating: conditions.append("e.rating >= ?"); params_list.append(float(min_rating))
                 if max_rating: conditions.append("e.rating <= ?"); params_list.append(float(max_rating))
                 if min_votes: conditions.append("e.votes >= ?"); params_list.append(int(min_votes))
                 if watched_status != '' and watched_status is not None:
-                    conditions.append("COALESCE(we.watched_status, 0) = ?"); params_list.append(int(watched_status))
+                    conditions.append("COALESCE(uss.watched_status, 0) = ?"); params_list.append(int(watched_status))
 
                 if conditions: query += " WHERE " + " AND ".join(conditions)
-                query += " ORDER BY e.air_date DESC, e.show_id, e.season, e.episode_number"
+
+                # Dynamic Sorting for Episodes
+                order_clause = "e.air_date DESC, e.show_id ASC, e.season ASC, e.episode_number ASC"
+                if sort_by:
+                    if sort_by == 'air_date.desc': order_clause = "e.air_date DESC, e.show_id ASC, e.season ASC, e.episode_number ASC"
+                    elif sort_by == 'air_date.asc': order_clause = "e.air_date ASC, e.show_id ASC, e.season ASC, e.episode_number ASC"
+                    elif sort_by == 'title.desc': order_clause = "e.episode_title DESC, e.show_id ASC, e.season ASC, e.episode_number ASC"
+                    elif sort_by == 'title.asc': order_clause = "e.episode_title ASC, e.show_id ASC, e.season ASC, e.episode_number ASC"
+                    elif sort_by == 'random': order_clause = "RANDOM()"
+
+                query += f" ORDER BY {order_clause}"
             else:
                 return []
 
             if media_type == 'tvshow':
                 params_list.insert(0, user)
             elif media_type == 'episode':
+                params_list.insert(0, user)
                 params_list.insert(0, user)
             
             log(f"[InternalIndexing] Executing query: {query} with params: {params_list}", level=LOGINFO)
@@ -584,9 +596,10 @@ def get_internal_index_contents(db_path, index_id, media_type, static_db, dynami
                     else: # episode
                         results_dict[item_key].update({
                             "episode_trakt_id": row['episode_trakt_id'],
-                            "show_trakt_id": row['show_id'],
+                            "show_trakt_id": row['show_trakt_id'],
                             "season": row['season'],
                             "episode": row['episode_number'],
+                            "episode_number": row['episode_number'],
                             "episode_title": row['episode_title'],
                             "episode_overview": row['episode_overview'],
                             "air_date": row['air_date'],
@@ -648,10 +661,17 @@ def get_internal_index_contents(db_path, index_id, media_type, static_db, dynami
                     final_results.append(item)
             
             if media_type == 'episode':
-                # Episodes are already sorted by air_date DESC in query
-                # But dict iteration might lose it, so we sort again if needed
-                # However, since we want to preserve air_date DESC:
-                final_results.sort(key=lambda x: (x.get('air_date') or '', x.get('show_trakt_id') or 0, x.get('season') or 0, x.get('episode') or 0), reverse=True)
+                if sort_by == 'random':
+                    import random
+                    random.shuffle(final_results)
+                elif sort_by == 'air_date.asc':
+                    final_results.sort(key=lambda x: (x.get('air_date') or '', x.get('show_trakt_id') or 0, x.get('season') or 0, x.get('episode') or 0))
+                elif sort_by == 'title.asc':
+                    final_results.sort(key=lambda x: ((x.get('episode_title') or x.get('title') or '').lower(), x.get('show_trakt_id') or 0, x.get('season') or 0, x.get('episode') or 0))
+                elif sort_by == 'title.desc':
+                    final_results.sort(key=lambda x: ((x.get('episode_title') or x.get('title') or '').lower(), -(x.get('season') or 0), -(x.get('episode') or 0)), reverse=True)
+                else: # air_date.desc or default
+                    final_results.sort(key=lambda x: (x.get('air_date') or '', -(x.get('season') or 0), -(x.get('episode') or 0)), reverse=True)
             log(f"[InternalIndexing] Found {len(final_results)} {media_type}s for index '{index_id}'", level=LOGINFO)
             return final_results
             

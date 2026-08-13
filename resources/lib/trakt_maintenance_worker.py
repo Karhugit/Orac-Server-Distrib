@@ -394,11 +394,39 @@ class TraktMaintenanceWorker:
             watched_at=watched_at,
         )
 
+        self._mark_watched_history_trakt_synced(media_kind, local_tmdb_id, payload_data, watched_at)
+
         self._set_queue_status(row_id, "done")
         log(
             f"[TraktMW] Row {row_id} synced to Trakt (history_id={trakt_history_id}).",
             level=LOGINFO,
         )
+
+    def _mark_watched_history_trakt_synced(self, media_kind: str, local_tmdb_id: int | None, payload_data: dict, watched_at: str):
+        try:
+            if media_kind == "movie" and local_tmdb_id:
+                with self.db_manager.connection(self.movies_dynamic_db) as conn:
+                    conn.execute(
+                        "UPDATE watched_history SET trakt_synced_at = ? WHERE tmdb_id = ?",
+                        (watched_at, local_tmdb_id)
+                    )
+            elif media_kind == "episode":
+                show_tmdb_id = payload_data.get("show_tmdb_id")
+                season = payload_data.get("season")
+                episode = payload_data.get("episode")
+                with self.db_manager.connection(self.tvshows_dynamic_db) as conn:
+                    if show_tmdb_id and season is not None and episode is not None:
+                        conn.execute(
+                            "UPDATE watched_history SET trakt_synced_at = ? WHERE show_tmdb_id = ? AND season = ? AND episode = ?",
+                            (watched_at, int(show_tmdb_id), int(season), int(episode))
+                        )
+                    elif local_tmdb_id:
+                        conn.execute(
+                            "UPDATE watched_history SET trakt_synced_at = ? WHERE tmdb_id = ?",
+                            (watched_at, int(local_tmdb_id))
+                        )
+        except Exception as exc:
+            log(f"[TraktMW] Failed to update watched_history trakt_synced_at: {exc}", level=LOGWARNING)
 
     def _extract_history_id(self, response: requests.Response, update_type: str) -> int | None:
         """
