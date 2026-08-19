@@ -418,7 +418,7 @@ def add_movie(movies_static_cursor, movies_dynamic_cursor, movie, media_id, tmdb
         # Insert movie into static database
         # Uses tmdb_id as Primary Key.
         # ON CONFLICT: backfill trakt_id/imdb_id if the row was previously inserted without them
-        # (e.g. by FlixPatrol which only has a TMDB ID).
+        # (e.g. by an external index which only has a TMDB ID).
         movies_static_cursor.execute("""
             INSERT INTO movies (tmdb_id, trakt_id, title, year, imdb_id, tagline, overview, released, runtime, country,
             rating, language, certification, original_title)

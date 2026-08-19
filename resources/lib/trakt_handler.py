@@ -106,11 +106,10 @@ class TraktAuth:
             TraktAuth.last_refresh_check = time.time()
 
     def get_show_seasons_with_episodes(self, show_trakt_id):
-        """Fetches all seasons and their episodes for a show from Trakt, with extended data including all IDs."""
-        # Ensure your _get method handles rate limiting, error checking, etc.
-        url = f"/shows/{show_trakt_id}/seasons?extended=episodes"
-        response = self._get(url) # Assuming _get returns the JSON directly or handles errors
-        response.raise_for_status() # Raise an exception for bad status codes
+        """Fetches all seasons and their episodes for a show from Trakt, with extended data including all IDs, overviews, ratings, and air dates."""
+        url = f"/shows/{show_trakt_id}/seasons?extended=episodes,full"
+        response = self._get(url)
+        response.raise_for_status()
         return response.json()
 
     def refresh_token(self):

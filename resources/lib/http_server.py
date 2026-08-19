@@ -1,4 +1,6 @@
 import asyncio
+import time
+import requests
 from resources.lib.db_utils import db_connect
 import json
 import sqlite3
@@ -10,7 +12,7 @@ from urllib.parse import urlparse, unquote
 
 import xbmc
 from fastapi import FastAPI, Request, Response, HTTPException, Path, Query
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -469,6 +471,10 @@ def app_factory(
             return Response(content=body.encode("utf-8"), status_code=status, media_type=content_type)
         return Response(content=str(body), status_code=status, media_type=content_type)
 
+    @app.get("/")
+    async def root_redirect():
+        return RedirectResponse(url="/web/")
+
     @app.get("/ping")
     async def ping():
         return PlainTextResponse("Yes, what do you want?")
@@ -691,13 +697,19 @@ def app_factory(
             with app.state.db_manager.connection(app.state.ext_indexes_db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM external_indexes where media_type = ?", (media_type,))
+                if media_type:
+                    cursor.execute("SELECT * FROM external_indexes WHERE media_type = ? ORDER BY id", (media_type,))
+                else:
+                    cursor.execute("SELECT * FROM external_indexes ORDER BY id")
                 rows = cursor.fetchall()
                 indexes = []
                 for row in rows:
                     index_item = dict(row)
                     if 'parameters' in index_item and isinstance(index_item['parameters'], str):
-                        index_item['parameters'] = json.loads(index_item['parameters'])
+                        try:
+                            index_item['parameters'] = json.loads(index_item['parameters'])
+                        except json.JSONDecodeError:
+                            index_item['parameters'] = {}
                     indexes.append(index_item)
                 return JSONResponse(status_code=200, content={"success": True, "indexes": indexes})
         except Exception as e:
@@ -707,8 +719,6 @@ def app_factory(
     async def get_int_indexes(request: Request):
         query = parse_qs_fastapi(request)
         media_type = query.get("item_type", [None])[0]
-        if not media_type:
-            return JSONResponse(status_code=400, content={"success": False, "error": "Missing item_type"})
         try:
             indexes = get_internal_indexes(app.state.ext_indexes_db_path, media_type)
             return JSONResponse(status_code=200, content={"success": True, "indexes": indexes})
@@ -1092,6 +1102,258 @@ def app_factory(
             # Return only the last 200 matching lines
             return JSONResponse(status_code=200, content={"success": True, "logs": filtered_logs[-200:]})
         except Exception as e:
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.get("/api/web/genres")
+    async def web_genres_api():
+        """Returns standard TMDb genres for Movies and TV Shows."""
+        movie_genres = [
+            {"id": 28, "name": "Action"}, {"id": 12, "name": "Adventure"}, {"id": 16, "name": "Animation"},
+            {"id": 35, "name": "Comedy"}, {"id": 80, "name": "Crime"}, {"id": 99, "name": "Documentary"},
+            {"id": 18, "name": "Drama"}, {"id": 10751, "name": "Family"}, {"id": 14, "name": "Fantasy"},
+            {"id": 36, "name": "History"}, {"id": 27, "name": "Horror"}, {"id": 10402, "name": "Music"},
+            {"id": 9648, "name": "Mystery"}, {"id": 10749, "name": "Romance"}, {"id": 878, "name": "Science Fiction"},
+            {"id": 10770, "name": "TV Movie"}, {"id": 53, "name": "Thriller"}, {"id": 10752, "name": "War"},
+            {"id": 37, "name": "Western"}
+        ]
+        tv_genres = [
+            {"id": 10759, "name": "Action & Adventure"}, {"id": 16, "name": "Animation"}, {"id": 35, "name": "Comedy"},
+            {"id": 80, "name": "Crime"}, {"id": 99, "name": "Documentary"}, {"id": 18, "name": "Drama"},
+            {"id": 10751, "name": "Family"}, {"id": 10762, "name": "Kids"}, {"id": 9648, "name": "Mystery"},
+            {"id": 10763, "name": "News"}, {"id": 10764, "name": "Reality"}, {"id": 10765, "name": "Sci-Fi & Fantasy"},
+            {"id": 10766, "name": "Soap"}, {"id": 10767, "name": "Talk"}, {"id": 10768, "name": "War & Politics"},
+            {"id": 37, "name": "Western"}
+        ]
+        return JSONResponse(status_code=200, content={"success": True, "movie_genres": movie_genres, "tv_genres": tv_genres})
+
+    @app.get("/api/web/diagnostics")
+    async def web_diagnostics_api():
+        """Returns deep system diagnostics, database health, token status, and external connectivity."""
+        try:
+            diag = {
+                "timestamp": time.time(),
+                "connectivity": {},
+                "databases": {},
+                "platforms": {},
+                "debrid": {},
+                "summary": {}
+            }
+
+            def check_remote():
+                conn_results = {}
+                # TMDb API
+                try:
+                    t0 = time.perf_counter()
+                    api_key = getattr(app.state.tmdb_handler, 'api_key', None) if hasattr(app.state, 'tmdb_handler') else None
+                    url = f"https://api.themoviedb.org/3/configuration?api_key={api_key}" if api_key else "https://api.themoviedb.org/3/configuration"
+                    r = requests.get(url, timeout=4)
+                    lat = round((time.perf_counter() - t0) * 1000)
+                    conn_results["tmdb"] = {"status": "ok" if r.status_code == 200 else "error", "code": r.status_code, "latency_ms": lat}
+                except Exception as e:
+                    conn_results["tmdb"] = {"status": "unreachable", "error": str(e), "latency_ms": None}
+
+                # Trakt API
+                try:
+                    t0 = time.perf_counter()
+                    r = requests.get("https://api.trakt.tv", timeout=4)
+                    lat = round((time.perf_counter() - t0) * 1000)
+                    conn_results["trakt"] = {"status": "ok" if r.status_code < 500 else "error", "code": r.status_code, "latency_ms": lat}
+                except Exception as e:
+                    conn_results["trakt"] = {"status": "unreachable", "error": str(e), "latency_ms": None}
+
+                # Fanart.tv API
+                try:
+                    t0 = time.perf_counter()
+                    r = requests.get("https://webservice.fanart.tv/v3/status", timeout=4)
+                    lat = round((time.perf_counter() - t0) * 1000)
+                    conn_results["fanart"] = {"status": "ok" if r.status_code < 500 else "error", "code": r.status_code, "latency_ms": lat}
+                except Exception as e:
+                    conn_results["fanart"] = {"status": "unreachable", "error": str(e), "latency_ms": None}
+
+                return conn_results
+
+            diag["connectivity"] = await asyncio.to_thread(check_remote)
+
+            # Database sizes & health
+            db_paths = {
+                "movies_static": getattr(app.state, 'movies_static_db_path', None),
+                "movies_dynamic": getattr(app.state, 'movies_dynamic_db_path', None),
+                "tvshows_static": getattr(app.state, 'tvshows_static_db_path', None),
+                "tvshows_dynamic": getattr(app.state, 'tvshows_dynamic_db_path', None),
+                "lists": getattr(app.state, 'lists_db_path', None),
+                "ext_indexes": getattr(app.state, 'ext_indexes_db_path', None),
+                "tags": getattr(app.state, 'tags_db_path', None),
+                "config": getattr(app.state, 'config_db_path', None)
+            }
+
+            total_size_bytes = 0
+            for name, path in db_paths.items():
+                if not path:
+                    continue
+                db_info = {"exists": os.path.exists(path), "size_kb": 0, "wal_size_kb": 0, "integrity": "unknown", "row_count": 0}
+                if os.path.exists(path):
+                    size = os.path.getsize(path)
+                    total_size_bytes += size
+                    db_info["size_kb"] = round(size / 1024, 1)
+                    wal_path = f"{path}-wal"
+                    if os.path.exists(wal_path):
+                        wal_size = os.path.getsize(wal_path)
+                        total_size_bytes += wal_size
+                        db_info["wal_size_kb"] = round(wal_size / 1024, 1)
+
+                    try:
+                        with db_connect(path) as conn:
+                            cur = conn.cursor()
+                            cur.execute("PRAGMA quick_check")
+                            res = cur.fetchone()
+                            db_info["integrity"] = res[0] if res else "ok"
+
+                            if name == "movies_static":
+                                cur.execute("SELECT COUNT(*) FROM movies")
+                                db_info["row_count"] = cur.fetchone()[0]
+                            elif name == "tvshows_static":
+                                cur.execute("SELECT COUNT(*) FROM shows")
+                                db_info["row_count"] = cur.fetchone()[0]
+                            elif name == "lists":
+                                cur.execute("SELECT COUNT(*) FROM lists")
+                                db_info["row_count"] = cur.fetchone()[0]
+                            elif name == "ext_indexes":
+                                cur.execute("SELECT COUNT(*) FROM external_indexes")
+                                ext_c = cur.fetchone()[0]
+                                try:
+                                    cur.execute("SELECT COUNT(*) FROM internal_indexes")
+                                    int_c = cur.fetchone()[0]
+                                except:
+                                    int_c = 0
+                                db_info["row_count"] = ext_c + int_c
+                            elif name == "tags":
+                                cur.execute("SELECT COUNT(*) FROM tags")
+                                db_info["row_count"] = cur.fetchone()[0]
+                    except Exception as err:
+                        db_info["integrity"] = f"error: {err}"
+
+                diag["databases"][name] = db_info
+
+            diag["summary"]["total_db_size_mb"] = round(total_size_bytes / (1024 * 1024), 2)
+
+            # Platform & Token status
+            with db_connect(app.state.config_db_path) as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT key, value FROM config")
+                cfg = {r[0]: r[1] for r in cur.fetchall()}
+
+            # Trakt status
+            trakt_u = cfg.get("trakt_user")
+            trakt_t = cfg.get("trakt_token")
+            trakt_exp = cfg.get("trakt_expires")
+            diag["platforms"]["trakt"] = {
+                "authorized": bool(trakt_u and trakt_t and trakt_t != "empty_setting"),
+                "username": trakt_u or "Not configured",
+                "expires": trakt_exp if trakt_exp and trakt_exp != "empty_setting" else None
+            }
+
+            # Simkl status
+            simkl_u = cfg.get("simkl.user") or cfg.get("simkl_user")
+            simkl_t = cfg.get("simkl.token")
+            diag["platforms"]["simkl"] = {
+                "authorized": bool(simkl_u and simkl_t and simkl_t != "empty_setting"),
+                "username": simkl_u or "Not configured"
+            }
+
+            # TMDb status
+            tmdb_u = cfg.get("tmdb_user") or cfg.get("tmdb.user")
+            diag["platforms"]["tmdb"] = {
+                "authorized": bool(tmdb_u and tmdb_u != "empty_setting"),
+                "username": tmdb_u or "API Active"
+            }
+
+            # MDBList status
+            mdb_api = cfg.get("mdblist_api")
+            diag["platforms"]["mdblist"] = {
+                "authorized": bool(mdb_api and mdb_api != "empty_setting"),
+                "has_api_key": bool(mdb_api and mdb_api != "empty_setting")
+            }
+
+            # Debrid status
+            debrid_svcs = [
+                ("Real-Debrid", "rd.token", "rd.enabled"),
+                ("Premiumize", "pm.token", "pm.enabled"),
+                ("TorBox", "tb.token", "tb.enabled"),
+                ("OffCloud", "oc.token", "oc.enabled"),
+                ("EasyDebrid", "ed.token", "ed.enabled"),
+                ("EasyNews", "easynews_user", "provider.easynews")
+            ]
+            for d_name, token_key, enabled_key in debrid_svcs:
+                tok = cfg.get(token_key)
+                en = cfg.get(enabled_key, "false").lower() in ("true", "1")
+                has_tok = bool(tok and tok != "empty_setting")
+                diag["debrid"][d_name] = {
+                    "configured": has_tok,
+                    "enabled": en and has_tok
+                }
+
+            # Scraper DB Metrics
+            try:
+                scraper_db = ScraperDB('scrapers.db')
+                metrics = scraper_db.get_all_scrapers()
+                diag["scrapers"] = {
+                    "total": len(metrics),
+                    "active": len([m for m in metrics if m.get("active", True)]),
+                    "total_scrapes": sum(m.get("scrapes", 0) for m in metrics)
+                }
+            except Exception:
+                diag["scrapers"] = {"total": 0, "active": 0, "total_scrapes": 0}
+
+            return JSONResponse(status_code=200, content={"success": True, "diagnostics": diag})
+        except Exception as e:
+            log(f"Error generating system diagnostics: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/vacuum")
+    async def web_vacuum_api():
+        """Performs database maintenance and VACUUM on all Orac SQLite databases."""
+        try:
+            db_paths = [
+                getattr(app.state, 'movies_static_db_path', None),
+                getattr(app.state, 'movies_dynamic_db_path', None),
+                getattr(app.state, 'tvshows_static_db_path', None),
+                getattr(app.state, 'tvshows_dynamic_db_path', None),
+                getattr(app.state, 'lists_db_path', None),
+                getattr(app.state, 'ext_indexes_db_path', None),
+                getattr(app.state, 'tags_db_path', None),
+                getattr(app.state, 'config_db_path', None)
+            ]
+            if os.path.exists('scrapers.db'):
+                db_paths.append('scrapers.db')
+
+            def run_vacuums():
+                results = []
+                for p in db_paths:
+                    if not p or not os.path.exists(p):
+                        continue
+                    initial_size = os.path.getsize(p)
+                    try:
+                        with db_connect(p) as conn:
+                            conn.execute("VACUUM")
+                            conn.execute("PRAGMA optimize")
+                        new_size = os.path.getsize(p)
+                        results.append({
+                            "database": os.path.basename(p),
+                            "status": "success",
+                            "freed_kb": round((initial_size - new_size) / 1024, 1)
+                        })
+                    except Exception as err:
+                        results.append({
+                            "database": os.path.basename(p),
+                            "status": "error",
+                            "error": str(err)
+                        })
+                return results
+
+            results = await asyncio.to_thread(run_vacuums)
+            return JSONResponse(status_code=200, content={"success": True, "results": results})
+        except Exception as e:
+            log(f"Error during manual database vacuum: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
     # --- VERSION / UPDATE CHECK ROUTES ---

@@ -59,18 +59,25 @@ def del_internal_index(params, db_path):
         return False
 
 
-def get_internal_indexes(db_path, media_type):
-    """Get all internal indexes for a specific media type."""
+def get_internal_indexes(db_path, media_type=None):
+    """Get all internal indexes for a specific media type, or all if media_type is None."""
     try:
         with sqlite3.connect(db_path, timeout=10.0) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT id, media_type, parameters, add_to_library
-                FROM internal_indexes
-                WHERE media_type = ?
-                ORDER BY id
-            """, (media_type,))
+            if media_type:
+                cursor.execute("""
+                    SELECT id, media_type, parameters, add_to_library
+                    FROM internal_indexes
+                    WHERE media_type = ?
+                    ORDER BY id
+                """, (media_type,))
+            else:
+                cursor.execute("""
+                    SELECT id, media_type, parameters, add_to_library
+                    FROM internal_indexes
+                    ORDER BY id
+                """)
             rows = cursor.fetchall()
             
             indexes = []

@@ -270,13 +270,8 @@ class TMDbAPI:
                 "votes": data.get("vote_count", 0), # Not in DB but good to have in return
                 "runtime": data.get("runtime", 0),
                 "country": data.get("origin_country", [""])[0] if data.get("origin_country") else "",
-                "released": release_date.replace("-", "") if release_date else 0, # Storing as integer YYYYMMDD usually? Or is DB integer just year?
-                # DB schema says 'released INTEGER'. Usually standard is YYYYMMDD or unix timestamp.
-                # Let's check db_init: "released INTEGER". 
-                # In flixpatrol_sync it uses `released = movie.get("released", "")` (string) then insert `released`.
-                # If DB column is INTEGER, string "" becomes 0.
-                # Let's use string format YYYYMMDD converted to int if possible or just 0.
-                # For safety let's assume it wants YYYYMMDD integer.
+                # DB schema specifies released as INTEGER (YYYYMMDD)
+                # Ensure release_date string is converted to YYYYMMDD integer if possible or 0
                 "original_title": data.get("original_title", ""),
                 "certification": certification,
                 "title": data.get("title", ""),

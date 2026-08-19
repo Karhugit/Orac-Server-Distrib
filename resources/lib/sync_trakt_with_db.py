@@ -1211,63 +1211,57 @@ async def sync_recent_tvshow_updates(trakt_handler, tmdb_handler, tvshows_static
             from resources.lib.config_handler import update_config_values
             update_config_values({'last_tvshow_sync': now_str}, config_db_path)
         
-        # Step 2: Get recently updated shows from Trakt
-        # Using the /shows/updates/{start_date} endpoint
-        # Trakt expects start_date in YYYY-MM-DD format for this endpoint
+        # Step 2: Get recently updated shows from Trakt with pagination
         trakt_date = start_date_str[:10]
-        params = {
-            'extended': 'full',  # Get full show data
-            'limit': 100  # Limit to 100 results per page
-        }
         
-        endpoint = f"/shows/updates/{trakt_date}"
-        updates_resp = await trakt_handler.get(endpoint, params=params)
-        if updates_resp is None:
-            log(f"[Orac] No response received when fetching recent show updates", level=LOGERROR)
-            return
-        if updates_resp.status_code != 200:
-            log(f"[Orac] Failed to fetch recent show updates from Trakt (404 likely due to invalid date/endpoint): {updates_resp.status_code}", level=LOGERROR)
-            return
-        
-        updated_shows = updates_resp.json()
-        
-        if not updated_shows:
-            log(f"[Orac] No shows updated on Trakt since {trakt_date}", level=LOGINFO)
-            return
-            
-        log(f"[Orac] Found {len(updated_shows)} shows updated on Trakt since {trakt_date}", level=LOGINFO)
-        
-        # Step 3: Open DB connections
+        # Load local show IDs for instant O(1) matching
         static_conn = db_connect(tvshows_static_db_path)
         static_cursor = static_conn.cursor()
-        
-        updated_count = 0
-        shows_to_update = []
-
-        # Step 4: Filter shows that need updating (this part is fast and can be done sequentially)
-        for show_data in updated_shows:
-            updated_at = show_data.get("updated_at")
-            show_info = show_data["show"]
-            show_trakt_id = show_info["ids"]["trakt"]
-            show_title = show_info["title"]
-
-            static_cursor.execute("SELECT last_updated FROM shows WHERE show_trakt_id = ?", (show_trakt_id,))
-            existing_show = static_cursor.fetchone()
-
-            if not existing_show:
-                log(f"[Orac] Skipping new show not in DB: {show_title}", level=LOGDEBUG)
-                continue
-
-            existing_last_updated = existing_show[0]
-            if existing_last_updated and updated_at <= existing_last_updated:
-                log(f"[Orac] Show {show_title} already up to date in static DB", level=LOGDEBUG)
-                continue
-
-            log(f"[Orac] Queuing update for existing show: {show_title}", level=LOGINFO)
-            shows_to_update.append(show_info)
-
-        # Close the main connections before starting threads
+        static_cursor.execute("SELECT show_trakt_id, last_updated FROM shows WHERE show_trakt_id IS NOT NULL AND show_trakt_id > 0")
+        db_shows = {row[0]: row[1] for row in static_cursor.fetchall()}
         static_conn.close()
+
+        shows_to_update = []
+        page = 1
+        max_pages = 50  # Scan up to 12,500 recently updated shows on Trakt
+        
+        while page <= max_pages:
+            params = {
+                'page': page,
+                'limit': 250
+            }
+            endpoint = f"/shows/updates/{trakt_date}"
+            updates_resp = await trakt_handler.get(endpoint, params=params)
+            if updates_resp is None or updates_resp.status_code != 200:
+                if page == 1:
+                    log(f"[Orac] Failed to fetch recent show updates from Trakt (HTTP {getattr(updates_resp, 'status_code', 'None')})", level=LOGERROR)
+                break
+            
+            updated_shows = updates_resp.json()
+            if not updated_shows:
+                break
+                
+            for show_data in updated_shows:
+                show_info = show_data.get("show") or {}
+                show_trakt_id = show_info.get("ids", {}).get("trakt")
+                updated_at = show_data.get("updated_at")
+                
+                if show_trakt_id and show_trakt_id in db_shows:
+                    existing_last_updated = db_shows[show_trakt_id]
+                    if existing_last_updated and updated_at and updated_at <= existing_last_updated:
+                        continue
+                    show_title = show_info.get("title", f"Trakt ID {show_trakt_id}")
+                    log(f"[Orac] Queuing update for existing show: {show_title}", level=LOGINFO)
+                    shows_to_update.append(show_info)
+            
+            total_pages = int(updates_resp.headers.get("X-Pagination-Page-Count", 1))
+            if page >= total_pages:
+                break
+            page += 1
+        
+        log(f"[Orac] Trakt show updates scan complete: {len(shows_to_update)} show(s) in local library need update.", level=LOGINFO)
+
+        updated_count = 0
 
         # Step 5: Process the filtered shows in parallel
         if shows_to_update:

@@ -18,8 +18,8 @@ def get_my_lists(db_path, list_name, item_type, ext_indexes_db_path=None, exclud
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    # Base condition: user NOT IN ('trakt', 'tmdb', 'flixpatrol') OR it's an external index added to library
-    base_condition = "(user NOT IN ('trakt', 'tmdb', 'flixpatrol') OR (list_id LIKE 'tmdb:index:%' AND add_to_library = 1))"
+    # Base condition: user NOT IN ('trakt', 'tmdb') OR it's an external index added to library
+    base_condition = "(user NOT IN ('trakt', 'tmdb') OR (list_id LIKE 'tmdb:index:%' AND add_to_library = 1))"
     
     # If exclude_empty is True, we only require item_count > 0.
     # If exclude_empty is False (default), we include lists owned by user even if empty.
@@ -114,13 +114,13 @@ def get_generic_lists(db_path, list_name, item_type, ext_indexes_db_path=None):
     not_ext_index_cond = "(list_id IS NULL OR list_id NOT LIKE 'tmdb:index:%')"
 
     if item_type == 'movie':
-        cursor.execute(f"SELECT list_id, name, user, source, slug, add_to_library, item_count_movies AS item_count FROM lists WHERE item_count_movies > 0 AND user IN ('trakt', 'tmdb', 'flixpatrol') AND {not_ext_index_cond}")
+        cursor.execute(f"SELECT list_id, name, user, source, slug, add_to_library, item_count_movies AS item_count FROM lists WHERE item_count_movies > 0 AND user IN ('trakt', 'tmdb') AND {not_ext_index_cond}")
     elif item_type == 'tvshow':
-        cursor.execute(f"SELECT list_id, name, user, source, slug, add_to_library, item_count_shows AS item_count FROM lists WHERE item_count_shows > 0 AND user IN ('trakt', 'tmdb', 'flixpatrol') AND {not_ext_index_cond}")
+        cursor.execute(f"SELECT list_id, name, user, source, slug, add_to_library, item_count_shows AS item_count FROM lists WHERE item_count_shows > 0 AND user IN ('trakt', 'tmdb') AND {not_ext_index_cond}")
     elif item_type == 'all':
-        cursor.execute(f"SELECT list_id, name, user, source, slug, add_to_library, item_count_movies + item_count_shows AS item_count FROM lists WHERE user IN ('trakt', 'tmdb', 'flixpatrol') AND {not_ext_index_cond}")
+        cursor.execute(f"SELECT list_id, name, user, source, slug, add_to_library, item_count_movies + item_count_shows AS item_count FROM lists WHERE user IN ('trakt', 'tmdb') AND {not_ext_index_cond}")
     else:
-        cursor.execute(f"SELECT list_id, name, user, source, slug, add_to_library, item_count_movies + item_count_shows AS item_count FROM lists WHERE item_count_movies + item_count_shows > 0 AND user IN ('trakt', 'tmdb', 'flixpatrol') AND {not_ext_index_cond}")
+        cursor.execute(f"SELECT list_id, name, user, source, slug, add_to_library, item_count_movies + item_count_shows AS item_count FROM lists WHERE item_count_movies + item_count_shows > 0 AND user IN ('trakt', 'tmdb') AND {not_ext_index_cond}")
     rows = cursor.fetchall()
 
     for row in rows:

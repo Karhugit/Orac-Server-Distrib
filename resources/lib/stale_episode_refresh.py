@@ -283,9 +283,10 @@ class StaleEpisodeRefreshWorker:
                         e.air_date
                     FROM episodes e
                     JOIN shows s ON e.show_id = s.show_tmdb_id
-                    WHERE DATE(e.air_date) <= DATE('now')
+                    WHERE (DATE(e.air_date) <= DATE('now') OR e.air_date IS NULL OR e.air_date = '')
                       AND (
-                            e.runtime               IS NULL OR e.runtime  = 0
+                            e.air_date              IS NULL OR e.air_date = ''
+                         OR e.runtime               IS NULL OR e.runtime  = 0
                          OR e.rating                IS NULL OR e.rating   = 0.0
                          OR e.votes                 IS NULL OR e.votes    = 0
                          OR e.episode_overview      IS NULL OR e.episode_overview = ''
@@ -428,6 +429,10 @@ class StaleEpisodeRefreshWorker:
         new_imdb_id   = _pick(tmdb_ext_ids.get("imdb_id"), trakt_ids.get("imdb"), old.get("imdb_id"), lambda v: not v)
         new_tvdb_id   = _pick(tmdb_ext_ids.get("tvdb_id"), trakt_ids.get("tvdb"), old.get("tvdb_id"), lambda v: not v)
 
+        # Air date: TMDB first, Trakt fallback
+        raw_air_date = _pick(tmdb_data.get("air_date"), trakt_data.get("first_aired") or trakt_data.get("effective_release_date"), old.get("air_date"), lambda v: not v)
+        new_air_date = raw_air_date[:10] if raw_air_date and len(raw_air_date) >= 10 else (raw_air_date or "")
+
         # Episode still image (thumbnail) — TMDB only
         still_path   = tmdb_data.get("still_path")
         new_thumb    = (
@@ -446,6 +451,7 @@ class StaleEpisodeRefreshWorker:
             and new_title    == (old.get("episode_title")    or "")
             and new_imdb_id  == old.get("imdb_id")
             and new_tvdb_id  == old.get("tvdb_id")
+            and new_air_date == (old.get("air_date") or "")
             and new_thumb    == old.get("episode_thumbnail_path")
         )
         if unchanged:
@@ -479,6 +485,8 @@ class StaleEpisodeRefreshWorker:
                         original_title         = ?,
                         imdb_id                = ?,
                         tvdb_id                = ?,
+                        air_date               = ?,
+                        first_aired            = ?,
                         episode_thumbnail_path = ?,
                         metadata_refreshed_at  = unixepoch()
                     WHERE tmdb_id = ?
@@ -492,6 +500,8 @@ class StaleEpisodeRefreshWorker:
                         new_title,      # original_title mirrors title for episodes
                         new_imdb_id,
                         new_tvdb_id,
+                        new_air_date,
+                        new_air_date,
                         new_thumb,
                         ep_tmdb_id,
                     ),

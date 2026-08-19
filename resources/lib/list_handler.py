@@ -255,15 +255,15 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
                         source = 'tmdb'
                         log(f"[Orac] List '{list_name}' recognised as TMDB generic list.", level=LOGDEBUG)
 
-        # Step 2: If add_to_library is 1, or source is web/mdblist/flixpatrol, fetch from local DB
+        # Step 2: If add_to_library is 1, or source is web/mdblist, fetch from local DB
         # (These sources always have items synced locally, so we serve from DB regardless of add_to_library)
-        if add_to_library == 1 or source in ('web', 'mdblist', 'flixpatrol'):
+        if add_to_library == 1 or source in ('web', 'mdblist'):
             results = []
             if source == 'web':
                  log(f"[Orac] List {list_name} is web-sourced. Serving from local database.", level=LOGDEBUG)
             
-            # If list source is in ('flixpatrol', 'web', 'mdblist'), we want to preserve insertion/rank order
-            preserve = source in ('flixpatrol', 'web', 'mdblist')
+            # If list source is in ('web', 'mdblist'), we want to preserve insertion/rank order
+            preserve = source in ('web', 'mdblist')
             
             if item_type in ["movie", "all"]:
                 results.extend(_get_list_movies(list_name, user, movies_static_db_path, movies_dynamic_db_path, lists_db_path, preserve_order=preserve))

@@ -4,32 +4,44 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Orac Server Command Center</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-color: #0b0f19;
             --surface-color: rgba(30, 41, 59, 0.4);
             --surface-hover: rgba(30, 41, 59, 0.7);
+            --surface-active: rgba(49, 65, 92, 0.85);
             --primary-gradient: linear-gradient(135deg, #6366f1, #a855f7);
+            --secondary-gradient: linear-gradient(135deg, #3b82f6, #06b6d4);
             --active-gradient: linear-gradient(135deg, #10b981, #059669);
             --inactive-gradient: linear-gradient(135deg, #f43f5e, #e11d48);
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
+            --text-dim: #64748b;
             --border-glass: rgba(255, 255, 255, 0.08);
-            --animation-timing: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --border-highlight: rgba(99, 102, 241, 0.4);
+            --animation-timing: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
             
-            /* Log Colors */
+            /* Log & Status Colors */
             --log-info: #94a3b8;
             --log-warn: #fbbf24;
             --log-error: #f87171;
             --log-time: #818cf8;
+            --status-ok: #34d399;
+            --status-warn: #fbbf24;
+            --status-err: #f87171;
+        }
+
+        * {
+            box-sizing: border-box;
         }
 
         body {
             font-family: 'Inter', sans-serif;
             background: var(--bg-color);
-            background-image: radial-gradient(circle at 10% 50%, rgba(99, 102, 241, 0.12), transparent 20%),
-                              radial-gradient(circle at 90% 30%, rgba(168, 85, 247, 0.12), transparent 20%);
+            background-image: radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.12), transparent 25%),
+                              radial-gradient(circle at 90% 40%, rgba(168, 85, 247, 0.12), transparent 25%),
+                              radial-gradient(circle at 50% 80%, rgba(6, 182, 212, 0.08), transparent 30%);
             color: var(--text-main);
             margin: 0;
             padding: 0;
@@ -39,333 +51,92 @@
             overflow-x: hidden;
         }
 
+        /* Top Sticky Header */
         .header {
-            padding: 1.5rem 2.5%;
+            padding: 0.9rem 2.5%;
             display: flex;
             justify-content: space-between;
             align-items: center;
             border-bottom: 1px solid var(--border-glass);
-            background: rgba(11, 15, 25, 0.85);
-            backdrop-filter: blur(16px);
+            background: rgba(11, 15, 25, 0.88);
+            backdrop-filter: blur(20px);
             position: sticky;
             top: 0;
-            z-index: 100;
+            z-index: 200;
+            gap: 1rem;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
         }
 
         .logo {
             font-size: 1.4rem;
-            font-weight: 700;
+            font-weight: 800;
             letter-spacing: -0.5px;
             background: var(--primary-gradient);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-        }
-
-        .container {
-            max-width: 95vw;
-            margin: 2rem auto;
-            padding: 0 1rem;
-            width: 100%;
-            box-sizing: border-box;
-            flex-grow: 1;
-        }
-
-        .dashboard-header {
-            margin-bottom: 2rem;
-        }
-        
-        .dashboard-header h1 {
-            font-size: 2.2rem;
-            font-weight: 600;
-            margin: 0 0 0.5rem 0;
-            letter-spacing: -1px;
-        }
-
-        .dashboard-header p {
-            color: var(--text-muted);
-            margin: 0;
-            font-size: 1.05rem;
-        }
-
-        /* 3 Column Layout */
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: 1.6fr 1.3fr 1.1fr;
-            gap: 1.5rem;
-            align-items: start;
-        }
-
-        .column-stack {
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-            height: 75vh;
-        }
-
-        @media (max-width: 1400px) {
-            .dashboard-grid {
-                grid-template-columns: 1fr 1fr;
-            }
-            .log-panel-container {
-                grid-column: 1 / -1; /* Logs take full width on medium screens */
-            }
-        }
-
-        @media (max-width: 1024px) {
-            .dashboard-grid {
-                grid-template-columns: 1fr;
-            }
-            .column-stack {
-                height: auto;
-                max-height: 75vh;
-            }
-        }
-
-        /* Glass Panels */
-        .glass-panel {
-            background: var(--surface-color);
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--border-glass);
-            border-radius: 1.25rem;
-            padding: 1.5rem;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.25);
-            transition: transform var(--animation-timing), box-shadow var(--animation-timing);
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
-        }
-
-        .log-panel-container {
-            height: 75vh;
-        }
-
-        .panel-title {
-            font-size: 1.15rem;
-            font-weight: 600;
-            margin-bottom: 1.25rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        /* Tables */
-        .table-header, .table-header-sm {
-            display: grid;
-            padding: 0 0.75rem 0.75rem 0.75rem;
-            color: var(--text-muted);
-            font-weight: 500;
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            border-bottom: 1px solid var(--border-glass);
-        }
-
-        .table-header { grid-template-columns: 2fr 1fr 1fr 1fr; }
-        .table-header-sm { grid-template-columns: 1.5fr 2fr; }
-
-        .list-container-scroll {
-            overflow-y: auto;
-            flex-grow: 1;
-            padding-right: 0.5rem;
-        }
-
-        .list-container-scroll::-webkit-scrollbar, .terminal-window::-webkit-scrollbar {
-            width: 8px;
-        }
-        .list-container-scroll::-webkit-scrollbar-thumb, .terminal-window::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.1);
-            border-radius: 4px;
-        }
-
-        .scraper-row, .platform-row {
-            display: grid;
-            padding: 1rem 0.75rem;
-            border-bottom: 1px solid var(--border-glass);
-            align-items: center;
-            transition: background var(--animation-timing), transform var(--animation-timing);
-            border-radius: 0.4rem;
-            margin-top: 0.25rem;
-        }
-
-        .scraper-row { grid-template-columns: 2fr 1fr 1fr 1fr; }
-        .platform-row { grid-template-columns: 1.5fr 2fr; }
-
-        .scraper-row:last-child, .platform-row:last-child {
-            border-bottom: none;
-        }
-
-        .scraper-row:hover, .platform-row:hover {
-            background: var(--surface-hover);
-        }
-
-        .item-name {
-            font-weight: 600;
-            font-size: 1rem;
-            color: var(--text-main);
-        }
-
-        .badge {
-            padding: 0.2rem 0.6rem;
-            border-radius: 2rem;
-            font-size: 0.7rem;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-            display: inline-block;
-        }
-
-        .badge.active { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
-        .badge.inactive { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
-        .badge.platform { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
-        .badge.source { background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3); }
-
-        .score-val {
-            font-family: 'Fira Code', monospace;
-            font-size: 1rem;
-            color: #cbd5e1;
-        }
-
-        .score-high { color: #a855f7; font-weight: 700; }
-        .score-med { color: #6366f1; }
-        .score-low { color: var(--text-muted); }
-
-        /* Terminal Window */
-        .terminal-window {
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid var(--border-glass);
-            border-radius: 0.75rem;
-            padding: 1rem;
-            flex-grow: 1;
-            overflow-y: auto;
-            font-family: 'Fira Code', monospace;
-            font-size: 0.85rem;
-            line-height: 1.5;
-            box-shadow: inset 0 2px 10px rgba(0,0,0,0.2);
-        }
-
-        .log-line {
-            padding: 0.2rem 0;
-            word-wrap: break-word;
-            border-bottom: 1px solid rgba(255,255,255,0.02);
-            margin-bottom: 0.1rem;
-        }
-        
-        .log-line:hover {
-            background: rgba(255,255,255,0.03);
-        }
-
-        .log-time { color: var(--log-time); margin-right: 0.5rem; }
-        .log-lvl-info { color: #34d399; font-weight: 600; margin-right: 0.5rem; }
-        .log-lvl-warn { color: var(--log-warn); font-weight: 700; margin-right: 0.5rem; }
-        .log-lvl-err { color: var(--log-error); font-weight: 700; margin-right: 0.5rem; }
-        .log-msg { color: var(--log-info); }
-        .log-msg-warn { color: rgba(251, 191, 36, 0.9); }
-        .log-msg-err { color: rgba(248, 113, 113, 0.9); }
-
-        .loading-shimmer {
-            height: 1.5rem;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
-            background-size: 200% 100%;
-            animation: shimmer 1.5s infinite;
-            border-radius: 0.5rem;
-        }
-
-        @keyframes shimmer {
-            0% { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
-        }
-
-        /* Episode Carousel */
-        .episodes-carousel {
-            display: flex;
-            gap: 1.25rem;
-            overflow-x: auto;
-            padding: 0.5rem 0.5rem 0.75rem 0.5rem;
-            scroll-behavior: smooth;
-        }
-
-        .episodes-carousel::-webkit-scrollbar {
-            height: 8px;
-        }
-        .episodes-carousel::-webkit-scrollbar-track {
-            background: rgba(0,0,0,0.1);
-            border-radius: 4px;
-        }
-        .episodes-carousel::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.15);
-            border-radius: 4px;
-        }
-        .episodes-carousel::-webkit-scrollbar-thumb:hover {
-            background: rgba(255,255,255,0.25);
-        }
-
-        .episode-card {
-            flex: 0 0 140px;
-            width: 140px; /* Enforce strict width */
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-            transition: transform var(--animation-timing);
             cursor: pointer;
-        }
-
-        .episode-card:hover {
-            transform: translateY(-4px);
-        }
-
-        .episode-poster-container {
-            width: 140px;
-            height: 210px;
-            border-radius: 0.6rem;
-            overflow: hidden;
-            background: rgba(0,0,0,0.3);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.25);
-            position: relative;
-            flex-shrink: 0;
-        }
-
-        .episode-poster {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transition: transform var(--animation-timing);
-            display: block;
-        }
-
-        .episode-card:hover .episode-poster {
-            transform: scale(1.05);
-        }
-
-        .episode-info {
             display: flex;
-            flex-direction: column;
-            padding: 0 0.25rem;
-            overflow: hidden; /* Prevent text overflow from stretching container */
-            width: 100%;
+            align-items: center;
+            gap: 0.5rem;
         }
 
-        .episode-show-title {
+        /* Top Nav Tabs */
+        .nav-tabs {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            background: rgba(15, 23, 42, 0.6);
+            padding: 0.3rem;
+            border-radius: 0.85rem;
+            border: 1px solid var(--border-glass);
+        }
+
+        .nav-tab {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 0.65rem;
             font-size: 0.85rem;
             font-weight: 600;
-            color: var(--text-main);
+            color: var(--text-muted);
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            transition: all var(--animation-timing);
             white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            letter-spacing: 0.3px;
         }
 
-        .episode-season-ep {
-            font-size: 0.75rem;
+        .nav-tab:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-tab.active {
+            color: #ffffff;
+            background: var(--primary-gradient);
+            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .version-label {
             color: var(--text-muted);
-            margin-top: 0.15rem;
-            line-height: 1.3;
-            /* Allow wrapping up to 2 lines */
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: normal;
+            font-size: 0.8rem;
+            font-family: 'Fira Code', monospace;
+            background: rgba(255, 255, 255, 0.04);
+            padding: 0.25rem 0.6rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--border-glass);
         }
 
         /* Update Banner */
@@ -408,26 +179,775 @@
             50% { opacity: 0.5; transform: scale(0.75); }
         }
 
-        .header-right {
+        /* Main Container */
+        .container {
+            max-width: 96vw;
+            margin: 1.5rem auto;
+            padding: 0 1rem;
+            width: 100%;
+            flex-grow: 1;
+        }
+
+        .tab-pane {
+            display: none;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .tab-pane.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Glass Panels */
+        .glass-panel {
+            background: var(--surface-color);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-glass);
+            border-radius: 1.25rem;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.25);
+            transition: transform var(--animation-timing), box-shadow var(--animation-timing);
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .panel-title {
+            font-size: 1.15rem;
+            font-weight: 600;
+            margin-bottom: 1.25rem;
             display: flex;
             align-items: center;
-            gap: 1rem;
+            gap: 0.6rem;
         }
 
-        .version-label {
-            color: var(--text-muted);
-            font-size: 0.8rem;
+        /* 3 Column Layout for Dashboard */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1.6fr 1.3fr 1.1fr;
+            gap: 1.5rem;
+            align-items: start;
+        }
+
+        .column-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            height: 75vh;
+        }
+
+        .log-panel-container {
+            height: 75vh;
+        }
+
+        @media (max-width: 1400px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            .log-panel-container {
+                grid-column: 1 / -1;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .header-left {
+                justify-content: space-between;
+            }
+            .nav-tabs {
+                overflow-x: auto;
+            }
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+            .column-stack {
+                height: auto;
+                max-height: 75vh;
+            }
+        }
+
+        /* Terminal Window */
+        .terminal-window {
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid var(--border-glass);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            flex-grow: 1;
+            overflow-y: auto;
             font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.2);
         }
 
-        /* Modal Overlay */
+        .log-line {
+            padding: 0.2rem 0;
+            word-wrap: break-word;
+            border-bottom: 1px solid rgba(255,255,255,0.02);
+            margin-bottom: 0.1rem;
+        }
+        
+        .log-line:hover {
+            background: rgba(255,255,255,0.03);
+        }
+
+        .log-time { color: var(--log-time); margin-right: 0.5rem; }
+        .log-lvl-info { color: #34d399; font-weight: 600; margin-right: 0.5rem; }
+        .log-lvl-warn { color: var(--log-warn); font-weight: 700; margin-right: 0.5rem; }
+        .log-lvl-err { color: var(--log-error); font-weight: 700; margin-right: 0.5rem; }
+        .log-msg { color: var(--log-info); }
+        .log-msg-warn { color: rgba(251, 191, 36, 0.9); }
+        .log-msg-err { color: rgba(248, 113, 113, 0.9); }
+
+        /* Tables & List Items */
+        .table-header, .table-header-sm {
+            display: grid;
+            padding: 0 0.75rem 0.75rem 0.75rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--border-glass);
+        }
+
+        .table-header { grid-template-columns: 2fr 1fr 1fr 1fr; }
+        .table-header-sm { grid-template-columns: 1.5fr 2fr; }
+
+        .list-container-scroll {
+            overflow-y: auto;
+            flex-grow: 1;
+            padding-right: 0.5rem;
+        }
+
+        .list-container-scroll::-webkit-scrollbar, .terminal-window::-webkit-scrollbar, ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .list-container-scroll::-webkit-scrollbar-thumb, .terminal-window::-webkit-scrollbar-thumb, ::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.12);
+            border-radius: 4px;
+        }
+
+        .scraper-row, .platform-row {
+            display: grid;
+            padding: 1rem 0.75rem;
+            border-bottom: 1px solid var(--border-glass);
+            align-items: center;
+            transition: background var(--animation-timing);
+            border-radius: 0.4rem;
+            margin-top: 0.25rem;
+        }
+
+        .scraper-row { grid-template-columns: 2fr 1fr 1fr 1fr; }
+        .platform-row { grid-template-columns: 1.5fr 2fr; }
+
+        .scraper-row:last-child, .platform-row:last-child {
+            border-bottom: none;
+        }
+
+        .scraper-row:hover, .platform-row:hover {
+            background: var(--surface-hover);
+        }
+
+        .item-name {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--text-main);
+        }
+
+        .badge {
+            padding: 0.2rem 0.6rem;
+            border-radius: 2rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            display: inline-block;
+        }
+
+        .badge.active { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .badge.inactive { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
+        .badge.platform { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
+        .badge.source { background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3); }
+        .badge.neutral { background: rgba(255, 255, 255, 0.08); color: var(--text-muted); border: 1px solid var(--border-glass); }
+
+        .score-val {
+            font-family: 'Fira Code', monospace;
+            font-size: 1rem;
+            color: #cbd5e1;
+        }
+
+        .score-high { color: #a855f7; font-weight: 700; }
+        .score-med { color: #6366f1; }
+        .score-low { color: var(--text-muted); }
+
+        .loading-shimmer {
+            height: 1.5rem;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 0.5rem;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        /* Episode Carousel */
+        .episodes-carousel {
+            display: flex;
+            gap: 1.25rem;
+            overflow-x: auto;
+            padding: 0.5rem 0.5rem 0.75rem 0.5rem;
+            scroll-behavior: smooth;
+        }
+
+        .episode-card {
+            flex: 0 0 140px;
+            width: 140px;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            transition: transform var(--animation-timing);
+            cursor: pointer;
+        }
+
+        .episode-card:hover {
+            transform: translateY(-4px);
+        }
+
+        .episode-poster-container {
+            width: 140px;
+            height: 210px;
+            border-radius: 0.6rem;
+            overflow: hidden;
+            background: rgba(0,0,0,0.3);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.25);
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .episode-poster {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform var(--animation-timing);
+            display: block;
+        }
+
+        .episode-card:hover .episode-poster {
+            transform: scale(1.05);
+        }
+
+        .episode-info {
+            display: flex;
+            flex-direction: column;
+            padding: 0 0.25rem;
+            overflow: hidden;
+            width: 100%;
+        }
+
+        .episode-show-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-main);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            letter-spacing: 0.3px;
+        }
+
+        .episode-season-ep {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.15rem;
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: normal;
+        }
+
+        /* -------------------------------------------------------------
+           DISCOVER STUDIO STYLES
+        ------------------------------------------------------------- */
+        .filter-section {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+
+        .filter-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+        }
+
+        .btn-toggle-group {
+            display: flex;
+            background: rgba(15, 23, 42, 0.6);
+            padding: 0.25rem;
+            border-radius: 0.65rem;
+            border: 1px solid var(--border-glass);
+        }
+
+        .btn-toggle {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 0.45rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--animation-timing);
+        }
+
+        .btn-toggle.active {
+            background: var(--primary-gradient);
+            color: #ffffff;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+        }
+
+        .form-select, .form-input {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--border-glass);
+            border-radius: 0.65rem;
+            color: var(--text-main);
+            padding: 0.55rem 0.85rem;
+            font-size: 0.85rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color var(--animation-timing);
+        }
+
+        .form-select:focus, .form-input:focus {
+            border-color: #818cf8;
+        }
+
+        .chip-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+            max-height: 110px;
+            overflow-y: auto;
+            padding: 0.35rem 0.25rem;
+        }
+
+        .filter-chip {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-glass);
+            color: var(--text-muted);
+            padding: 0.3rem 0.75rem;
+            border-radius: 2rem;
+            font-size: 0.78rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--animation-timing);
+            user-select: none;
+        }
+
+        .filter-chip:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .filter-chip.active {
+            background: rgba(99, 102, 241, 0.25);
+            border-color: #818cf8;
+            color: #c7d2fe;
+            font-weight: 600;
+        }
+
+        .provider-chip.active {
+            background: rgba(168, 85, 247, 0.25);
+            border-color: #c084fc;
+            color: #f3e8ff;
+        }
+
+        .btn-primary, .btn-secondary, .btn-success, .btn-danger {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1.25rem;
+            border-radius: 0.65rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all var(--animation-timing);
+        }
+
+        .btn-primary {
+            background: var(--primary-gradient);
+            color: #fff;
+            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+        }
+        .btn-primary:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-main);
+            border: 1px solid var(--border-glass);
+        }
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.14);
+        }
+
+        .btn-success {
+            background: var(--active-gradient);
+            color: #fff;
+        }
+        .btn-danger {
+            background: var(--inactive-gradient);
+            color: #fff;
+        }
+
+        /* Media Cards Grid */
+        .items-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            grid-auto-rows: minmax(370px, max-content);
+            gap: 1.5rem;
+            padding: 0.75rem 0.25rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .media-card {
+            background: rgba(15, 23, 42, 0.75);
+            border: 1px solid var(--border-glass);
+            border-radius: 0.95rem;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            min-height: 370px;
+            height: auto;
+            flex-shrink: 0;
+            transition: transform var(--animation-timing), box-shadow var(--animation-timing), border-color var(--animation-timing);
+            position: relative;
+            cursor: pointer;
+            user-select: none;
+            box-sizing: border-box;
+        }
+
+        .media-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.55), 0 0 15px rgba(99, 102, 241, 0.25);
+            border-color: rgba(99, 102, 241, 0.5);
+        }
+
+        .media-poster-container {
+            width: 100%;
+            height: 280px;
+            position: relative;
+            background: #080c16;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .media-poster {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            transition: transform var(--animation-timing);
+        }
+
+        .media-card:hover .media-poster {
+            transform: scale(1.05);
+        }
+
+        .media-card-actions {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(11, 15, 25, 0.95), rgba(11, 15, 25, 0.7) 65%, transparent);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 1.5rem 0.5rem 0.65rem 0.5rem;
+            opacity: 0;
+            transform: translateY(8px);
+            transition: all var(--animation-timing);
+            z-index: 10;
+        }
+
+        .media-card:hover .media-card-actions {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .action-btn {
+            border: none;
+            padding: 0.45rem 0.75rem;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--animation-timing);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.3rem;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+        }
+
+        .action-btn.details { background: rgba(99, 102, 241, 0.9); color: white; }
+        .action-btn.scrape { background: rgba(16, 185, 129, 0.9); color: white; }
+        .action-btn.index { background: rgba(168, 85, 247, 0.9); color: white; }
+        .action-btn.remove { background: rgba(244, 63, 94, 0.9); color: white; }
+
+        .action-btn:hover {
+            filter: brightness(1.2);
+            transform: scale(1.06);
+        }
+
+        .media-info {
+            padding: 0.75rem 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            flex: 1 0 auto;
+            min-height: 80px;
+            justify-content: space-between;
+            background: rgba(15, 23, 42, 0.5);
+            box-sizing: border-box;
+        }
+
+        .media-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            min-height: 2.5em;
+            color: var(--text-main);
+            word-break: break-word;
+        }
+
+        .media-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: auto;
+        }
+
+        /* -------------------------------------------------------------
+           INDEX MANAGER STYLES
+        ------------------------------------------------------------- */
+        .index-list-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .index-card {
+            background: rgba(15, 23, 42, 0.55);
+            border: 1px solid var(--border-glass);
+            border-radius: 0.9rem;
+            padding: 1.1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            transition: all var(--animation-timing);
+        }
+
+        .index-card:hover {
+            border-color: rgba(99, 102, 241, 0.35);
+            background: rgba(15, 23, 42, 0.75);
+            transform: translateY(-2px);
+        }
+
+        .index-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+
+        .index-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--text-main);
+            word-break: break-word;
+        }
+
+        .index-params {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .param-pill {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0.2rem 0.5rem;
+            border-radius: 0.4rem;
+            border: 1px solid var(--border-glass);
+            font-family: 'Fira Code', monospace;
+            font-size: 0.7rem;
+        }
+
+        .index-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.5rem;
+            border-top: 1px solid var(--border-glass);
+            padding-top: 0.75rem;
+            margin-top: auto;
+        }
+
+        /* -------------------------------------------------------------
+           HELP & DIAGNOSTICS STYLES
+        ------------------------------------------------------------- */
+        .diag-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .status-card {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-glass);
+            border-radius: 1rem;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .status-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .status-card-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-indicator.ok { background: var(--status-ok); box-shadow: 0 0 10px var(--status-ok); }
+        .status-indicator.warn { background: var(--status-warn); box-shadow: 0 0 10px var(--status-warn); }
+        .status-indicator.err { background: var(--status-err); box-shadow: 0 0 10px var(--status-err); }
+
+        .diag-stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            padding: 0.25rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        .diag-stat-row:last-child {
+            border-bottom: none;
+        }
+
+        .diag-stat-val {
+            font-family: 'Fira Code', monospace;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .guide-card {
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid var(--border-glass);
+            border-radius: 0.9rem;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+        }
+
+        .guide-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            color: #818cf8;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .guide-body {
+            font-size: 0.88rem;
+            line-height: 1.6;
+            color: var(--text-muted);
+        }
+
+        .code-block {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border-glass);
+            border-radius: 0.5rem;
+            padding: 0.75rem 1rem;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.8rem;
+            color: #c7d2fe;
+            margin: 0.5rem 0;
+            overflow-x: auto;
+        }
+
+        /* -------------------------------------------------------------
+           MODALS
+        ------------------------------------------------------------- */
         .modal-overlay {
             position: fixed;
             top: 0;
             left: 0;
             width: 100vw;
             height: 100vh;
-            background: rgba(11, 15, 25, 0.7);
+            background: rgba(11, 15, 25, 0.75);
             backdrop-filter: blur(20px);
             z-index: 1000;
             display: flex;
@@ -445,255 +965,170 @@
 
         .modal-container {
             width: 94%;
-            max-width: 1400px;
-            height: 90%;
+            max-width: 1350px;
+            height: 88vh;
+            max-height: 88vh;
             display: flex;
             flex-direction: column;
-            background: var(--surface-color);
+            background: rgba(20, 28, 48, 0.95);
             border: 1px solid var(--border-glass);
-            border-radius: 1.5rem;
-            padding: 1.75rem;
-            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
-            transform: scale(0.95);
-            transition: transform var(--animation-timing);
+            border-radius: 1.25rem;
+            padding: 1.75rem 2rem;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(24px);
+            overflow: hidden;
+            box-sizing: border-box;
         }
 
-        .modal-overlay.visible .modal-container {
-            transform: scale(1);
+        .modal-scroll-area {
+            flex: 1 1 0;
+            min-height: 0;
+            overflow-y: scroll !important;
+            overflow-x: hidden;
+            padding-right: 0.85rem;
+            padding-bottom: 2.5rem;
+            box-sizing: border-box;
+            width: 100%;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(99, 102, 241, 0.7) rgba(15, 23, 42, 0.6);
+        }
+
+        .modal-scroll-area::-webkit-scrollbar {
+            width: 8px;
+        }
+        .modal-scroll-area::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 6px;
+        }
+        .modal-scroll-area::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.7);
+            border-radius: 6px;
+        }
+        .modal-scroll-area::-webkit-scrollbar-thumb:hover {
+            background: rgba(99, 102, 241, 1);
         }
 
         .modal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 1.25rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
             border-bottom: 1px solid var(--border-glass);
-            padding-bottom: 0.75rem;
         }
 
         .modal-header h2 {
-            font-size: 1.5rem;
-            font-weight: 700;
             margin: 0;
+            font-size: 1.6rem;
+            font-weight: 700;
             background: var(--primary-gradient);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
         .modal-close-btn {
-            background: none;
-            border: none;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-glass);
+            border-radius: 50%;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
             color: var(--text-muted);
             cursor: pointer;
-            padding: 0.5rem;
-            transition: color var(--animation-timing);
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            transition: all var(--animation-timing);
         }
 
         .modal-close-btn:hover {
-            color: var(--text-main);
-        }
-
-        .items-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-            gap: 1.25rem;
-            overflow-y: auto;
-            flex-grow: 1;
-            padding-right: 0.5rem;
-        }
-
-        .items-grid::-webkit-scrollbar {
-            width: 8px;
-        }
-        .items-grid::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 4px;
-        }
-
-        /* Detail Card actions overlays */
-        .media-card {
-            display: flex;
-            flex-direction: column;
-            gap: 0.4rem;
-            position: relative;
-        }
-
-        .media-poster-container {
-            position: relative;
-            width: 100%;
-            aspect-ratio: 2/3;
-            border-radius: 0.6rem;
-            overflow: hidden;
-            background: rgba(0,0,0,0.3);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        }
-
-        .media-poster {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transition: transform var(--animation-timing);
-        }
-
-        .media-card:hover .media-poster {
-            transform: scale(1.05);
-        }
-
-        .media-card-actions {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(11, 15, 25, 0.75);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            gap: 0.75rem;
-            opacity: 0;
-            transition: opacity var(--animation-timing);
-            border-radius: 0.6rem;
-        }
-
-        .media-card:hover .media-card-actions {
-            opacity: 1;
-        }
-
-        .action-btn {
-            padding: 0.35rem 0.75rem;
-            border-radius: 2rem;
-            font-size: 0.7rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            cursor: pointer;
-            border: none;
-            transition: transform var(--animation-timing), background var(--animation-timing);
-            width: 80px;
-            text-align: center;
-        }
-
-        .action-btn:hover {
-            transform: scale(1.05);
-        }
-
-        .action-btn.scrape {
-            background: var(--primary-gradient);
-            color: var(--text-main);
-        }
-
-        .action-btn.details {
-            background: rgba(255, 255, 255, 0.12);
-            color: var(--text-main);
-            border: 1px solid var(--border-glass);
-        }
-        .action-btn.details:hover {
-            background: rgba(255, 255, 255, 0.25);
-        }
-
-        .action-btn.remove {
-            background: rgba(244, 63, 94, 0.2);
-            color: #fb7185;
-            border: 1px solid rgba(244, 63, 94, 0.4);
-        }
-        .action-btn.remove:hover {
-            background: rgba(244, 63, 94, 0.4);
-        }
-
-        .media-info {
-            display: flex;
-            flex-direction: column;
-            padding: 0 0.15rem;
-        }
-
-        .media-title {
-            font-size: 0.8rem;
-            font-weight: 600;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            color: var(--text-main);
-        }
-
-        .media-meta {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 0.7rem;
-            color: var(--text-muted);
-            margin-top: 0.15rem;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            color: #fff;
+            background: rgba(255, 255, 255, 0.15);
+            transform: rotate(90deg);
         }
 
         .scrape-spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid var(--border-glass);
-            border-top: 3px solid #a855f7;
+            width: 32px;
+            height: 32px;
+            border: 3px solid rgba(99, 102, 241, 0.2);
+            border-top-color: #818cf8;
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            margin: 1rem auto;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
 
         .scrape-results-list {
-            max-height: 250px;
-            overflow-y: auto;
-            margin-top: 1rem;
-            padding-right: 0.25rem;
             display: flex;
             flex-direction: column;
             gap: 0.5rem;
+            max-height: 50vh;
+            overflow-y: auto;
             width: 100%;
-        }
-
-        .scrape-results-list::-webkit-scrollbar {
-            width: 6px;
-        }
-        .scrape-results-list::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 3px;
+            padding-right: 0.25rem;
         }
 
         .scrape-result-item {
-            background: rgba(255, 255, 255, 0.03);
+            background: rgba(15, 23, 42, 0.6);
             border: 1px solid var(--border-glass);
-            border-radius: 0.5rem;
-            padding: 0.5rem 0.75rem;
+            border-radius: 0.6rem;
+            padding: 0.6rem 0.85rem;
             display: flex;
             flex-direction: column;
             gap: 0.25rem;
-            font-size: 0.75rem;
         }
 
         .scrape-result-title {
-            font-weight: 500;
+            font-weight: 600;
+            font-size: 0.8rem;
             color: var(--text-main);
-            word-break: break-all;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .scrape-result-details {
             display: flex;
             justify-content: space-between;
             color: var(--text-muted);
-            font-size: 0.7rem;
+            font-size: 0.72rem;
         }
-
     </style>
 </head>
 <body>
 
+    <!-- Sticky Navigation Header -->
     <header class="header">
-        <div class="logo">Orac Server</div>
+        <div class="header-left">
+            <div class="logo" onclick="switchTab('tab-dashboard')">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="12 8 8 12 12 16 16 12 12 8"></polygon></svg>
+                Orac Server
+            </div>
+
+            <!-- Tab Navigation Buttons -->
+            <nav class="nav-tabs" role="tablist">
+                <button class="nav-tab active" id="nav-dashboard" onclick="switchTab('tab-dashboard')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    Dashboard
+                </button>
+                <button class="nav-tab" id="nav-discover" onclick="switchTab('tab-discover')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+                    Discover Studio
+                </button>
+                <button class="nav-tab" id="nav-indexes" onclick="switchTab('tab-indexes')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                    Index Manager
+                </button>
+                <button class="nav-tab" id="nav-help" onclick="switchTab('tab-help')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    Help & Diagnostics
+                </button>
+            </nav>
+        </div>
+
         <div class="header-right">
-            <span class="version-label" id="version-label">Command Center</span>
+            <span class="version-label" id="version-label">v1.0.0</span>
             <a id="update-banner" class="update-banner" href="#" target="_blank" rel="noopener">
                 <span class="update-dot"></span>
                 <span id="update-banner-text">Update available</span>
@@ -702,117 +1137,458 @@
     </header>
 
     <main class="container">
-        <div class="dashboard-grid">
-            
-            <!-- Left Column: Logs Terminal -->
-            <div class="glass-panel log-panel-container">
-                <div class="panel-title">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
-                    Live Server Logs
-                </div>
-                <div class="terminal-window" id="terminal-window">
-                    <div style="color: var(--text-muted); font-style: italic;">Connecting to log stream...</div>
-                </div>
-            </div>
 
-            <!-- Center Column: Scrapers Box -->
-            <div class="glass-panel" style="height: 75vh;">
-                <div class="panel-title">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                    Scraper Metrics
-                </div>
-                <div class="table-header">
-                    <div>Module Name</div>
-                    <div>Status</div>
-                    <div>Score</div>
-                    <div>Scrapes</div>
-                </div>
-                
-                <div class="list-container-scroll" id="scrapers-container">
-                    <div class="scraper-row">
-                        <div class="loading-shimmer" style="width: 60%;"></div>
-                        <div class="loading-shimmer" style="width: 40%;"></div>
-                        <div class="loading-shimmer" style="width: 30%;"></div>
-                        <div class="loading-shimmer" style="width: 30%;"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right Column Stack -->
-            <div class="column-stack">
-                <!-- Platforms Box -->
-                <div class="glass-panel" style="flex: 1;">
+        <!-- =====================================================================
+             TAB 1: DASHBOARD
+        ===================================================================== -->
+        <section id="tab-dashboard" class="tab-pane active">
+            <div class="dashboard-grid">
+                <!-- Left Column: Logs Terminal -->
+                <div class="glass-panel log-panel-container">
                     <div class="panel-title">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                        Authorised Platforms
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                        Live Server Logs
                     </div>
-                    <div class="table-header-sm">
-                        <div>Service</div>
-                        <div>Username</div>
-                    </div>
-                    
-                    <div class="list-container-scroll" id="platforms-container">
-                        <div class="platform-row">
-                            <div class="loading-shimmer" style="width: 50%;"></div>
-                            <div class="loading-shimmer" style="width: 70%;"></div>
-                        </div>
+                    <div class="terminal-window" id="terminal-window">
+                        <div style="color: var(--text-muted); font-style: italic;">Connecting to log stream...</div>
                     </div>
                 </div>
 
-                <!-- Library Lists Box -->
-                <div class="glass-panel" style="flex: 1;">
+                <!-- Center Column: Scrapers Box -->
+                <div class="glass-panel" style="height: 75vh;">
                     <div class="panel-title">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-                        Library Lists
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                        Scraper Metrics
                     </div>
-                    <div class="table-header-sm">
-                        <div>Source</div>
-                        <div>List Name</div>
+                    <div class="table-header">
+                        <div>Module Name</div>
+                        <div>Status</div>
+                        <div>Score</div>
+                        <div>Scrapes</div>
                     </div>
-                    
-                    <div class="list-container-scroll" id="lists-container">
-                        <div class="platform-row">
-                            <div class="loading-shimmer" style="width: 30%;"></div>
+                    <div class="list-container-scroll" id="scrapers-container">
+                        <div class="scraper-row">
                             <div class="loading-shimmer" style="width: 60%;"></div>
+                            <div class="loading-shimmer" style="width: 40%;"></div>
+                            <div class="loading-shimmer" style="width: 30%;"></div>
+                            <div class="loading-shimmer" style="width: 30%;"></div>
                         </div>
                     </div>
                 </div>
-            </div><!-- /Right Column Stack -->
 
-        </div>
+                <!-- Right Column Stack -->
+                <div class="column-stack">
+                    <!-- Platforms Box -->
+                    <div class="glass-panel" style="flex: 1;">
+                        <div class="panel-title">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                            Authorised Platforms
+                        </div>
+                        <div class="table-header-sm">
+                            <div>Service</div>
+                            <div>Username</div>
+                        </div>
+                        <div class="list-container-scroll" id="platforms-container">
+                            <div class="platform-row">
+                                <div class="loading-shimmer" style="width: 50%;"></div>
+                                <div class="loading-shimmer" style="width: 70%;"></div>
+                            </div>
+                        </div>
+                    </div>
 
-        <!-- Bottom Row: Up Next Carousel -->
-        <div class="glass-panel" style="margin-top: 1.5rem; padding-bottom: 0.75rem;">
-            <div class="panel-title">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                Up Next to Watch
+                    <!-- Library Lists Box -->
+                    <div class="glass-panel" style="flex: 1;">
+                        <div class="panel-title">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                            Library Lists
+                        </div>
+                        <div class="table-header-sm">
+                            <div>Source</div>
+                            <div>List Name</div>
+                        </div>
+                        <div class="list-container-scroll" id="lists-container">
+                            <div class="platform-row">
+                                <div class="loading-shimmer" style="width: 30%;"></div>
+                                <div class="loading-shimmer" style="width: 60%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Row: Up Next Carousel -->
+            <div class="glass-panel" style="margin-top: 1.5rem; padding-bottom: 0.75rem;">
+                <div class="panel-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    Up Next to Watch
+                </div>
+                <div class="episodes-carousel" id="next-episodes-container">
+                    <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                    <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                    <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                    <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- =====================================================================
+             TAB 2: DISCOVER STUDIO
+        ===================================================================== -->
+        <section id="tab-discover" class="tab-pane">
+            <div class="glass-panel" style="margin-bottom: 1.5rem;">
+                <div class="panel-title" style="justify-content: space-between; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 0.6rem;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+                        <span>TMDb Discover Studio</span>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <button class="btn-secondary" onclick="resetDiscoverFilters()" style="padding: 0.45rem 0.9rem; font-size: 0.8rem;">↺ Reset</button>
+                        <button class="btn-secondary" onclick="openSaveIndexModal()" style="padding: 0.45rem 0.9rem; font-size: 0.8rem;">📑 Save as Index</button>
+                        <button class="btn-primary" onclick="runDiscoverQuery()" style="padding: 0.45rem 1.1rem; font-size: 0.85rem;">🔍 Discover</button>
+                    </div>
+                </div>
+
+                <!-- Discover Controls -->
+                <div class="filter-section">
+                    <!-- Row 1: Media Type & Presets -->
+                    <div class="filter-row" style="justify-content: space-between;">
+                        <div class="filter-group">
+                            <label class="filter-label">Media Type</label>
+                            <div class="btn-toggle-group">
+                                <button class="btn-toggle active" id="type-movie-btn" onclick="setDiscoverMediaType('movie')">Movies</button>
+                                <button class="btn-toggle" id="type-tv-btn" onclick="setDiscoverMediaType('tv')">TV Shows</button>
+                            </div>
+                        </div>
+
+                        <div class="filter-group" style="flex-grow: 1;">
+                            <label class="filter-label">Quick Presets</label>
+                            <div style="display: flex; flex-wrap: wrap; gap: 0.4rem;">
+                                <button class="filter-chip" onclick="applyPreset('trending')">🔥 Trending Hits</button>
+                                <button class="filter-chip" onclick="applyPreset('top_rated')">⭐ Top Rated (8.0+)</button>
+                                <button class="filter-chip" onclick="applyPreset('recent')">🆕 Recent Releases</button>
+                                <button class="filter-chip" onclick="applyPreset('netflix')">🍿 Netflix Top</button>
+                                <button class="filter-chip" onclick="applyPreset('apple')">🍏 Apple TV+</button>
+                                <button class="filter-chip" onclick="applyPreset('prime')">📦 Prime Video</button>
+                                <button class="filter-chip" onclick="applyPreset('disney')">✨ Disney+</button>
+                                <button class="filter-chip" onclick="applyPreset('nineties')">📼 90s Classics</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Row 2: Genres Multi-Select -->
+                    <div class="filter-group">
+                        <label class="filter-label">Genres (Click to toggle)</label>
+                        <div class="chip-container" id="discover-genres-container">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- Row 3: Watch Providers / Streaming Networks -->
+                    <div class="filter-group">
+                        <label class="filter-label">Watch Providers (Streaming Services)</label>
+                        <div class="chip-container" id="discover-providers-container">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- Row 4: Parameters & Sort -->
+                    <div class="filter-row">
+                        <div class="filter-group">
+                            <label class="filter-label">Release Year From</label>
+                            <input type="number" id="filter-year-gte" class="form-input" placeholder="e.g. 1990" min="1900" max="2099" style="width: 110px;">
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Release Year To</label>
+                            <input type="number" id="filter-year-lte" class="form-input" placeholder="e.g. 2026" min="1900" max="2099" style="width: 110px;">
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Min Rating (0 - 10)</label>
+                            <input type="number" id="filter-vote-gte" class="form-input" placeholder="e.g. 7.0" min="0" max="10" step="0.5" style="width: 110px;">
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Min Votes</label>
+                            <input type="number" id="filter-votes-gte" class="form-input" placeholder="e.g. 100" min="0" step="50" style="width: 110px;">
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Language</label>
+                            <select id="filter-language" class="form-select">
+                                <option value="">Any Language</option>
+                                <option value="en" selected>English (en)</option>
+                                <option value="ja">Japanese (ja)</option>
+                                <option value="ko">Korean (ko)</option>
+                                <option value="fr">French (fr)</option>
+                                <option value="es">Spanish (es)</option>
+                                <option value="de">German (de)</option>
+                                <option value="it">Italian (it)</option>
+                            </select>
+                        </div>
+                        <div class="filter-group" style="flex-grow: 1;">
+                            <label class="filter-label">Sort Order</label>
+                            <select id="filter-sort-by" class="form-select" style="width: 100%;">
+                                <option value="popularity.desc" selected>Popularity Descending</option>
+                                <option value="vote_average.desc">Rating Descending</option>
+                                <option value="primary_release_date.desc">Release Date (Newest)</option>
+                                <option value="primary_release_date.asc">Release Date (Oldest)</option>
+                                <option value="vote_count.desc">Most Voted</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Discover Results Grid -->
+            <div class="glass-panel">
+                <div class="panel-title" style="justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span id="discover-results-heading">Results</span>
+                        <span id="discover-results-badge" class="badge neutral">0 items</span>
+                    </div>
+                    <div id="discover-loading-spinner" class="scrape-spinner" style="display: none; width: 22px; height: 22px;"></div>
+                </div>
+
+                <div class="items-grid" id="discover-results-container">
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted);">
+                        Select your filters above and click <strong>Discover</strong> to query TMDb.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- =====================================================================
+             TAB 3: INDEX MANAGER
+        ===================================================================== -->
+        <section id="tab-indexes" class="tab-pane">
+            <div class="glass-panel" style="margin-bottom: 1.5rem;">
+                <div class="panel-title" style="justify-content: space-between; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 0.6rem;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                        <span>Indexes Management</span>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn-secondary" onclick="fetchIndexesList()" style="padding: 0.45rem 0.9rem; font-size: 0.8rem;">🔄 Refresh</button>
+                        <button class="btn-primary" onclick="openSaveIndexModal()" style="padding: 0.45rem 1rem; font-size: 0.85rem;">+ Create New Index</button>
+                    </div>
+                </div>
+
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0 0 1rem 0;">
+                    <strong>External Indexes</strong> are saved TMDb Discover filters that sync straight into Liberator's External Indexer. <strong>Internal Indexes</strong> are filtered views of media already synced to your Orac local database.
+                </p>
+
+                <!-- Sub-Tabs: External vs Internal -->
+                <div class="btn-toggle-group" style="display: inline-flex; margin-bottom: 1rem;">
+                    <button class="btn-toggle active" id="idx-tab-ext" onclick="switchIndexTypeTab('external')">External Indexes (TMDb)</button>
+                    <button class="btn-toggle" id="idx-tab-int" onclick="switchIndexTypeTab('internal')">Internal Library Indexes</button>
+                </div>
+
+                <!-- Index Card List -->
+                <div id="indexes-cards-container" class="index-list-grid">
+                    <div class="loading-shimmer" style="height: 120px;"></div>
+                    <div class="loading-shimmer" style="height: 120px;"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- =====================================================================
+             TAB 4: HELP & DIAGNOSTICS CENTER
+        ===================================================================== -->
+        <section id="tab-help" class="tab-pane">
+            <!-- Diagnostics Status Cards -->
+            <div class="glass-panel" style="margin-bottom: 1.5rem;">
+                <div class="panel-title" style="justify-content: space-between; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 0.6rem;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+                        <span>System Health & Diagnostics</span>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn-secondary" onclick="runDatabaseVacuum()" style="padding: 0.45rem 0.9rem; font-size: 0.8rem;" id="vacuum-btn">🧹 Vacuum Databases</button>
+                        <button class="btn-primary" onclick="fetchDiagnostics()" style="padding: 0.45rem 1rem; font-size: 0.85rem;" id="diag-refresh-btn">🔄 Run Health Check</button>
+                    </div>
+                </div>
+
+                <!-- Health Grid -->
+                <div class="diag-grid" id="diag-cards-container">
+                    <div class="loading-shimmer" style="height: 150px;"></div>
+                    <div class="loading-shimmer" style="height: 150px;"></div>
+                    <div class="loading-shimmer" style="height: 150px;"></div>
+                    <div class="loading-shimmer" style="height: 150px;"></div>
+                </div>
+
+                <!-- Database Metrics Table -->
+                <div style="margin-top: 1rem;">
+                    <h4 style="font-size: 0.95rem; margin: 0 0 0.75rem 0; color: var(--text-main);">Database Integrity & Storage</h4>
+                    <div class="table-header" style="grid-template-columns: 2fr 1fr 1fr 1fr 1fr;">
+                        <div>Database</div>
+                        <div>Size (KB)</div>
+                        <div>WAL (KB)</div>
+                        <div>Rows</div>
+                        <div>Integrity</div>
+                    </div>
+                    <div id="diag-db-table" class="list-container-scroll" style="max-height: 220px;">
+                        <!-- Dynamic rows -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Setup Guides & Documentation -->
+            <div class="glass-panel" style="margin-bottom: 1.5rem;">
+                <div class="panel-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+                    Liberator & Orac Architecture Guide
+                </div>
+
+                <div class="guide-card">
+                    <div class="guide-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        1. Connecting Liberator to Orac Server
+                    </div>
+                    <div class="guide-body">
+                        Orac operates as a headless backend service. Liberator can communicate with Orac via <strong>HTTP API</strong> (for remote servers/docker) or <strong>Local IPC socket</strong> (when running on the same host).
+                        <div class="code-block">Liberator Settings → General → Orac Server IP: &lt;YOUR_ORAC_IP&gt; | Port: 8000</div>
+                    </div>
+                </div>
+
+                <div class="guide-card">
+                    <div class="guide-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        2. External Indexing vs. Internal Indexing
+                    </div>
+                    <div class="guide-body">
+                        <ul>
+                            <li><strong>External Indexes:</strong> Query TMDb directly based on release year, score, provider (e.g. Netflix, Disney+), and genres. Saving an external index in Discover Studio makes it instantly appear in Liberator's Discover menus!</li>
+                            <li><strong>Internal Indexes:</strong> Filter and browse movies and TV shows that are already indexed in your local SQLite databases.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="guide-card">
+                    <div class="guide-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        3. Multi-Debrid Scraping & Cloud Resolving
+                    </div>
+                    <div class="guide-body">
+                        Orac aggregates real-time stream links from multiple scrapers across Real-Debrid, Premiumize, TorBox, OffCloud, and EasyDebrid. Scrapers are benchmarked with live success scoring and prioritized automatically.
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Explorer -->
+            <div class="glass-panel">
+                <div class="panel-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                    REST API Reference
+                </div>
+                <div class="table-header" style="grid-template-columns: 1fr 2fr 3fr;">
+                    <div>Method</div>
+                    <div>Endpoint</div>
+                    <div>Description</div>
+                </div>
+                <div class="list-container-scroll" style="max-height: 250px;">
+                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
+                        <div><span class="badge active">GET</span></div>
+                        <div class="item-name" style="font-family: monospace;">/discover/{item_type}</div>
+                        <div style="color: var(--text-muted); font-size: 0.8rem;">Query TMDb discover with filters or stored index name</div>
+                    </div>
+                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
+                        <div><span class="badge active">GET</span></div>
+                        <div class="item-name" style="font-family: monospace;">/get_external_indexes</div>
+                        <div style="color: var(--text-muted); font-size: 0.8rem;">Fetch stored external discover indexes</div>
+                    </div>
+                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
+                        <div><span class="badge active">GET</span></div>
+                        <div class="item-name" style="font-family: monospace;">/next_episodes</div>
+                        <div style="color: var(--text-muted); font-size: 0.8rem;">Get unwatched next episodes list with artwork</div>
+                    </div>
+                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
+                        <div><span class="badge active">GET</span></div>
+                        <div class="item-name" style="font-family: monospace;">/api/web/diagnostics</div>
+                        <div style="color: var(--text-muted); font-size: 0.8rem;">Live system connectivity, token status, and DB sizes</div>
+                    </div>
+                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
+                        <div><span class="badge platform">PUT</span></div>
+                        <div class="item-name" style="font-family: monospace;">/add_ext_index</div>
+                        <div style="color: var(--text-muted); font-size: 0.8rem;">Save or update an external discover index query</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- =====================================================================
+         MODALS
+    ===================================================================== -->
+
+    <!-- Save / Edit Index Modal -->
+    <div id="save-index-modal" class="modal-overlay" onclick="closeSaveIndexModal(event)" style="z-index: 1200;">
+        <div class="modal-container" style="max-width: 580px; height: auto; min-height: 380px; max-height: 90vh; padding: 1.75rem;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2 id="save-index-modal-title">Save as External Index</h2>
+                <button class="modal-close-btn" onclick="toggleSaveIndexModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
             </div>
             
-            <div class="episodes-carousel" id="next-episodes-container">
-                <!-- Shimmer placeholders -->
-                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
-                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
-                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
-                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
-                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
-                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
-                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
-                <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
-            </div>
+            <form id="save-index-form" onsubmit="handleSaveIndexSubmit(event)" style="display: flex; flex-direction: column; gap: 1.25rem;">
+                <input type="hidden" id="modal-idx-orig-label" value="">
+                
+                <div class="filter-group">
+                    <label class="filter-label">Index Name / Label</label>
+                    <input type="text" id="modal-idx-label" class="form-input" required placeholder="e.g. 90s Sci-Fi Thrillers" style="width: 100%;">
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Index Type</label>
+                    <div class="btn-toggle-group">
+                        <button type="button" class="btn-toggle active" id="modal-type-ext" onclick="setModalIndexType('external')">External (TMDb)</button>
+                        <button type="button" class="btn-toggle" id="modal-type-int" onclick="setModalIndexType('internal')">Internal Library</button>
+                    </div>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Media Type</label>
+                    <select id="modal-idx-media-type" class="form-select">
+                        <option value="movie">Movies</option>
+                        <option value="tv">TV Shows</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Parameters (JSON)</label>
+                    <textarea id="modal-idx-params-json" class="form-input" style="height: 100px; font-family: monospace; font-size: 0.8rem;" placeholder="{ &quot;with_genres&quot;: &quot;878&quot; }"></textarea>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 0.6rem;">
+                    <input type="checkbox" id="modal-idx-library" style="width: 18px; height: 18px; accent-color: #6366f1; cursor: pointer;">
+                    <label for="modal-idx-library" style="font-size: 0.85rem; cursor: pointer; color: var(--text-main);">Add to Kodi Library builder</label>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+                    <button type="button" class="btn-secondary" onclick="toggleSaveIndexModal(false)">Cancel</button>
+                    <button type="submit" class="btn-primary">Save Index</button>
+                </div>
+            </form>
         </div>
-    </main>
+    </div>
 
     <!-- List Items Modal Overlay -->
     <div id="list-items-modal" class="modal-overlay" onclick="closeListItemsModal(event)">
         <div class="modal-container" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <h2 id="modal-list-title">List Items</h2>
-                <button class="modal-close-btn" onclick="toggleListItemsModal(false)">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
+                <div style="display: flex; align-items: center; gap: 1rem; min-width: 0; flex: 1;">
+                    <h2 id="modal-list-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 0.5rem;">List Items</h2>
+                    <span id="modal-list-count" class="badge active" style="font-size: 0.75rem; padding: 0.2rem 0.6rem; flex-shrink: 0;">0 items</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <input type="text" id="modal-items-search" placeholder="Filter items in list..." oninput="filterModalItems(this.value)" class="glass-input" style="max-width: 250px; padding: 0.45rem 0.85rem; font-size: 0.85rem; border-radius: 0.5rem; background: rgba(15,23,42,0.6); color: var(--text-main); border: 1px solid var(--border-glass);">
+                    <button class="modal-close-btn" onclick="toggleListItemsModal(false)">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                </div>
             </div>
-            <div class="items-grid" id="modal-items-container">
-                <!-- Dynamic cards -->
+            <div class="modal-scroll-area">
+                <div class="items-grid" id="modal-items-container">
+                    <!-- Dynamic cards -->
+                </div>
             </div>
         </div>
     </div>
@@ -847,6 +1623,10 @@
                 <!-- Left: Poster and Quick Info -->
                 <div style="flex-shrink: 0; width: 180px; display: flex; flex-direction: column; gap: 1rem;">
                     <img id="details-poster" src="" alt="Poster" style="width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 0.8rem; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border: 1px solid var(--border-glass);" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';">
+                    <button id="details-scrape-btn" class="action-btn scrape" style="width: 100%; padding: 0.6rem; font-size: 0.85rem;" onclick="handleDetailsModalScrape()">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+                        Scrape Streams
+                    </button>
                     <div style="display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.8rem;">
                         <div><span style="color: var(--text-muted);">Year:</span> <strong id="details-year" style="color: var(--text-main);"></strong></div>
                         <div><span style="color: var(--text-muted);">Rating:</span> <strong id="details-rating" style="color: var(--text-main);"></strong></div>
@@ -866,7 +1646,7 @@
                     <div style="flex-grow: 1; display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--border-glass); padding-top: 1rem;">
                         <h4 style="margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: 600; color: var(--text-main);">User Reviews</h4>
                         <div id="details-reviews-container" style="flex-grow: 1; overflow-y: auto; padding-right: 0.25rem; display: flex; flex-direction: column; gap: 0.75rem;">
-                            <!-- Dynamic reviews or spinner -->
+                            <!-- Dynamic reviews -->
                         </div>
                     </div>
                 </div>
@@ -874,7 +1654,22 @@
         </div>
     </div>
 
+    <!-- =====================================================================
+         JAVASCRIPT APPLICATION LOGIC
+    ===================================================================== -->
     <script>
+        // State variables
+        let currentTab = 'tab-dashboard';
+        let discoverMediaType = 'movie';
+        let activeGenres = new Set();
+        let activeProviders = new Set();
+        let movieGenresList = [];
+        let tvGenresList = [];
+        let watchProvidersList = [];
+        let currentIndexTypeTab = 'external';
+        let currentModalIndexType = 'external';
+        let lastDiscoverResults = [];
+
         document.addEventListener('DOMContentLoaded', () => {
             fetchVersionInfo();
             fetchScrapers();
@@ -882,24 +1677,51 @@
             fetchLibraryLists();
             fetchNextEpisodes();
             fetchLogs();
+            loadGenresAndProviders();
             
-            // Poll logs every 3 seconds (No enforced auto-scrolling)
-            setInterval(fetchLogs, 3000);
+            // Poll logs every 3 seconds
+            setInterval(() => {
+                if (currentTab === 'tab-dashboard') {
+                    fetchLogs();
+                }
+            }, 3000);
         });
 
+        // -------------------------------------------------------------
+        // TAB SWITCHING
+        // -------------------------------------------------------------
+        function switchTab(tabId) {
+            currentTab = tabId;
+            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+
+            const targetPane = document.getElementById(tabId);
+            if (targetPane) targetPane.classList.add('active');
+
+            const targetBtn = document.getElementById(`nav-${tabId.replace('tab-', '')}`);
+            if (targetBtn) targetBtn.classList.add('active');
+
+            if (tabId === 'tab-indexes') {
+                fetchIndexesList();
+            } else if (tabId === 'tab-help') {
+                fetchDiagnostics();
+            }
+        }
+
+        // -------------------------------------------------------------
+        // VERSION & LOGS & DASHBOARD
+        // -------------------------------------------------------------
         async function fetchVersionInfo() {
             try {
                 const response = await fetch('/api/web/version');
                 const data = await response.json();
                 if (!data.success) return;
 
-                // Update the subtitle to show current version
                 const label = document.getElementById('version-label');
                 if (label && data.current_version) {
                     label.textContent = `v${data.current_version}`;
                 }
 
-                // Show update banner if a newer version is available
                 if (data.update_available && data.latest_version) {
                     const banner = document.getElementById('update-banner');
                     const bannerText = document.getElementById('update-banner-text');
@@ -920,7 +1742,7 @@
             try {
                 const response = await fetch('/api/web/scrapers');
                 const data = await response.json();
-                if(data.success) renderScrapers(data.scrapers);
+                if (data.success) renderScrapers(data.scrapers);
             } catch (error) { console.error('Failed to load scrapers', error); }
         }
 
@@ -928,7 +1750,7 @@
             try {
                 const response = await fetch('/api/web/platforms');
                 const data = await response.json();
-                if(data.success) renderPlatforms(data.platforms);
+                if (data.success) renderPlatforms(data.platforms);
             } catch (error) { console.error('Failed to load platforms', error); }
         }
 
@@ -936,7 +1758,7 @@
             try {
                 const response = await fetch('/api/web/library_lists');
                 const data = await response.json();
-                if(data.success) renderLibraryLists(data.lists);
+                if (data.success) renderLibraryLists(data.lists);
             } catch (error) { console.error('Failed to load library lists', error); }
         }
 
@@ -952,20 +1774,23 @@
             try {
                 const response = await fetch('/api/web/logs');
                 const data = await response.json();
-                if(data.success) renderLogs(data.logs);
+                if (data.success) renderLogs(data.logs);
             } catch (error) { console.error('Failed to load logs', error); }
         }
 
         function getScoreClass(score) {
-            if(score > 8) return 'score-high';
-            if(score > 3) return 'score-med';
+            if (score > 8) return 'score-high';
+            if (score > 3) return 'score-med';
             return 'score-low';
         }
 
         function renderScrapers(scrapers) {
             const container = document.getElementById('scrapers-container');
             container.innerHTML = ''; 
-            if(!scrapers || scrapers.length === 0) return;
+            if (!scrapers || scrapers.length === 0) {
+                container.innerHTML = '<div style="padding: 1.5rem; text-align: center; color: var(--text-muted);">No scrapers configured</div>';
+                return;
+            }
 
             scrapers.forEach(scraper => {
                 const row = document.createElement('div');
@@ -988,7 +1813,10 @@
         function renderPlatforms(platforms) {
             const container = document.getElementById('platforms-container');
             container.innerHTML = ''; 
-            if(!platforms || platforms.length === 0) return;
+            if (!platforms || platforms.length === 0) {
+                container.innerHTML = '<div style="padding: 1.5rem; text-align: center; color: var(--text-muted);">No platforms connected</div>';
+                return;
+            }
 
             platforms.forEach(platform => {
                 const row = document.createElement('div');
@@ -1004,7 +1832,10 @@
         function renderLibraryLists(lists) {
             const container = document.getElementById('lists-container');
             container.innerHTML = ''; 
-            if(!lists || lists.length === 0) return;
+            if (!lists || lists.length === 0) {
+                container.innerHTML = '<div style="padding: 1.5rem; text-align: center; color: var(--text-muted);">No library lists</div>';
+                return;
+            }
 
             lists.forEach(list => {
                 const row = document.createElement('div');
@@ -1019,8 +1850,724 @@
             });
         }
 
+        function renderNextEpisodes(episodes) {
+            const container = document.getElementById('next-episodes-container');
+            container.innerHTML = '';
+            if (!episodes || episodes.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.9rem; padding: 2rem; width: 100%; text-align: center;">No upcoming unwatched episodes found.</div>';
+                return;
+            }
+
+            episodes.forEach(ep => {
+                const card = document.createElement('div');
+                card.className = 'episode-card';
+                card.onclick = () => triggerFastStartScrape(ep);
+
+                const showTitle = ep.title || ep.show_title || 'Unknown Show';
+                const epNum = (ep.episode_number !== undefined && ep.episode_number !== null) ? ep.episode_number : ((ep.episode !== undefined && ep.episode !== null) ? ep.episode : 1);
+                const seasonNum = (ep.season !== undefined && ep.season !== null) ? ep.season : 1;
+                const epTitle = ep.episode_title ? ` - ${ep.episode_title}` : '';
+                const formattedSeasonEp = `S${String(seasonNum).padStart(2, '0')}E${String(epNum).padStart(2, '0')}${epTitle}`;
+
+                const posterUrl = ep.show_poster_path || ep.poster || ep.episode_poster_path || ep.show_thumbnail_path || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';
+
+                card.innerHTML = `
+                    <div class="episode-poster-container">
+                        <img src="${posterUrl}" alt="${escapeHtml(showTitle)} Poster" class="episode-poster" loading="lazy" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';">
+                    </div>
+                    <div class="episode-info">
+                        <div class="episode-show-title" title="${escapeHtml(showTitle)}">${escapeHtml(showTitle)}</div>
+                        <div class="episode-season-ep" title="${escapeHtml(formattedSeasonEp)}">${escapeHtml(formattedSeasonEp)}</div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function renderLogs(logs) {
+            const terminal = document.getElementById('terminal-window');
+            if (!logs || logs.length === 0) {
+                terminal.innerHTML = '<div style="color: var(--text-muted); font-style: italic;">No logs found.</div>';
+                return;
+            }
+
+            const atBottom = terminal.scrollHeight - terminal.scrollTop <= terminal.clientHeight + 40;
+            terminal.innerHTML = '';
+            
+            logs.forEach(log => {
+                const lineDiv = document.createElement('div');
+                lineDiv.className = 'log-line';
+                
+                let lvlClass = 'log-lvl-info';
+                let msgClass = 'log-msg';
+                let levelText = '[INFO]';
+                
+                if (log.includes('[WARNING]')) {
+                    lvlClass = 'log-lvl-warn';
+                    msgClass = 'log-msg-warn';
+                    levelText = '[WARNING]';
+                } else if (log.includes('[ERROR]')) {
+                    lvlClass = 'log-lvl-err';
+                    msgClass = 'log-msg-err';
+                    levelText = '[ERROR]';
+                }
+                
+                const timeMatch = log.match(/(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2},\d{3})/);
+                const timeStr = timeMatch ? timeMatch[0] : '';
+                const cleanMsg = log.replace(timeStr, '').replace(levelText, '').trim();
+
+                lineDiv.innerHTML = `
+                    ${timeStr ? `<span class="log-time">${timeStr}</span>` : ''}
+                    <span class="${lvlClass}">${levelText}</span>
+                    <span class="${msgClass}">${escapeHtml(cleanMsg)}</span>
+                `;
+                terminal.appendChild(lineDiv);
+            });
+
+            if (atBottom) {
+                terminal.scrollTop = terminal.scrollHeight;
+            }
+        }
+
+        // -------------------------------------------------------------
+        // DISCOVER STUDIO LOGIC
+        // -------------------------------------------------------------
+        async function loadGenresAndProviders() {
+            try {
+                // Fetch Genres
+                const gRes = await fetch('/api/web/genres');
+                const gData = await gRes.json();
+                if (gData.success) {
+                    movieGenresList = gData.movie_genres;
+                    tvGenresList = gData.tv_genres;
+                    renderGenreChips();
+                }
+
+                // Fetch Providers
+                const pRes = await fetch('/providers');
+                const pData = await pRes.json();
+                if (pData.success && pData.providers) {
+                    watchProvidersList = pData.providers;
+                } else {
+                    // Fallback popular providers
+                    watchProvidersList = [
+                        { provider_id: 8, name: 'Netflix' },
+                        { provider_id: 350, name: 'Apple TV+' },
+                        { provider_id: 9, name: 'Amazon Prime Video' },
+                        { provider_id: 337, name: 'Disney+' },
+                        { provider_id: 1899, name: 'Max' },
+                        { provider_id: 15, name: 'Hulu' },
+                        { provider_id: 531, name: 'Paramount+' }
+                    ];
+                }
+                renderProviderChips();
+            } catch (err) {
+                console.error('Error loading genres/providers:', err);
+            }
+        }
+
+        function setDiscoverMediaType(type) {
+            discoverMediaType = type;
+            document.getElementById('type-movie-btn').classList.toggle('active', type === 'movie');
+            document.getElementById('type-tv-btn').classList.toggle('active', type === 'tv');
+            activeGenres.clear();
+            renderGenreChips();
+        }
+
+        function renderGenreChips() {
+            const container = document.getElementById('discover-genres-container');
+            container.innerHTML = '';
+            const list = discoverMediaType === 'movie' ? movieGenresList : tvGenresList;
+            
+            list.forEach(g => {
+                const chip = document.createElement('div');
+                chip.className = `filter-chip ${activeGenres.has(g.id) ? 'active' : ''}`;
+                chip.textContent = g.name;
+                chip.onclick = () => {
+                    if (activeGenres.has(g.id)) activeGenres.delete(g.id);
+                    else activeGenres.add(g.id);
+                    chip.classList.toggle('active', activeGenres.has(g.id));
+                };
+                container.appendChild(chip);
+            });
+        }
+
+        function renderProviderChips() {
+            const container = document.getElementById('discover-providers-container');
+            container.innerHTML = '';
+            
+            watchProvidersList.slice(0, 15).forEach(p => {
+                const chip = document.createElement('div');
+                chip.className = `filter-chip provider-chip ${activeProviders.has(p.provider_id) ? 'active' : ''}`;
+                chip.textContent = p.name;
+                chip.onclick = () => {
+                    if (activeProviders.has(p.provider_id)) activeProviders.delete(p.provider_id);
+                    else activeProviders.add(p.provider_id);
+                    chip.classList.toggle('active', activeProviders.has(p.provider_id));
+                };
+                container.appendChild(chip);
+            });
+        }
+
+        function applyPreset(presetKey) {
+            resetDiscoverFilters(false);
+            const nowYear = new Date().getFullYear();
+            
+            switch (presetKey) {
+                case 'trending':
+                    document.getElementById('filter-sort-by').value = 'popularity.desc';
+                    document.getElementById('filter-vote-gte').value = '6.5';
+                    break;
+                case 'top_rated':
+                    document.getElementById('filter-sort-by').value = 'vote_average.desc';
+                    document.getElementById('filter-vote-gte').value = '8.0';
+                    document.getElementById('filter-votes-gte').value = '300';
+                    break;
+                case 'recent':
+                    document.getElementById('filter-year-gte').value = (nowYear - 1).toString();
+                    document.getElementById('filter-sort-by').value = 'primary_release_date.desc';
+                    break;
+                case 'netflix':
+                    activeProviders.add(8);
+                    renderProviderChips();
+                    break;
+                case 'apple':
+                    activeProviders.add(350);
+                    renderProviderChips();
+                    break;
+                case 'prime':
+                    activeProviders.add(9);
+                    renderProviderChips();
+                    break;
+                case 'disney':
+                    activeProviders.add(337);
+                    renderProviderChips();
+                    break;
+                case 'nineties':
+                    document.getElementById('filter-year-gte').value = '1990';
+                    document.getElementById('filter-year-lte').value = '1999';
+                    document.getElementById('filter-vote-gte').value = '7.0';
+                    break;
+            }
+            runDiscoverQuery();
+        }
+
+        function resetDiscoverFilters(reRender = true) {
+            activeGenres.clear();
+            activeProviders.clear();
+            document.getElementById('filter-year-gte').value = '';
+            document.getElementById('filter-year-lte').value = '';
+            document.getElementById('filter-vote-gte').value = '';
+            document.getElementById('filter-votes-gte').value = '';
+            document.getElementById('filter-language').value = 'en';
+            document.getElementById('filter-sort-by').value = 'popularity.desc';
+            if (reRender) {
+                renderGenreChips();
+                renderProviderChips();
+            }
+        }
+
+        function buildDiscoverParams() {
+            const params = {};
+            
+            if (activeGenres.size > 0) {
+                params['with_genres'] = Array.from(activeGenres).join(',');
+            }
+            if (activeProviders.size > 0) {
+                params['with_watch_providers'] = Array.from(activeProviders).join('|');
+                params['watch_region'] = 'US';
+            }
+
+            const yGte = document.getElementById('filter-year-gte').value.trim();
+            const yLte = document.getElementById('filter-year-lte').value.trim();
+            const prefix = discoverMediaType === 'movie' ? 'primary_release_date' : 'first_air_date';
+
+            if (yGte) params[`${prefix}.gte`] = `${yGte}-01-01`;
+            if (yLte) params[`${prefix}.lte`] = `${yLte}-12-31`;
+
+            const vGte = document.getElementById('filter-vote-gte').value.trim();
+            if (vGte) params['vote_average.gte'] = vGte;
+
+            const vcGte = document.getElementById('filter-votes-gte').value.trim();
+            if (vcGte) params['vote_count.gte'] = vcGte;
+
+            const lang = document.getElementById('filter-language').value;
+            if (lang) params['with_original_language'] = lang;
+
+            const sort = document.getElementById('filter-sort-by').value;
+            if (sort) params['sort_by'] = sort;
+
+            return params;
+        }
+
+        async function runDiscoverQuery() {
+            const container = document.getElementById('discover-results-container');
+            const spinner = document.getElementById('discover-loading-spinner');
+            const badge = document.getElementById('discover-results-badge');
+            
+            spinner.style.display = 'block';
+            container.innerHTML = `
+                <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; color: var(--text-muted); gap: 1rem;">
+                    <div class="scrape-spinner" style="margin: 0;"></div>
+                    <span style="font-size: 0.9rem;">Fetching discover results from TMDb...</span>
+                </div>
+            `;
+
+            const queryObj = buildDiscoverParams();
+            const qs = new URLSearchParams(queryObj).toString();
+            const endpoint = `/discover/${discoverMediaType}?${qs}`;
+
+            try {
+                const res = await fetch(endpoint);
+                const data = await res.json();
+                spinner.style.display = 'none';
+
+                if (Array.isArray(data)) {
+                    lastDiscoverResults = data;
+                    badge.textContent = `${data.length} items`;
+                    renderDiscoverResults(data);
+                } else {
+                    container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--log-error);">${data.error || 'Failed to fetch discover results'}</div>`;
+                }
+            } catch (err) {
+                spinner.style.display = 'none';
+                console.error('Discover error:', err);
+                container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--log-error);">Error executing discover query: ${err.message}</div>`;
+            }
+        }
+
+        function renderDiscoverResults(items) {
+            const container = document.getElementById('discover-results-container');
+            container.innerHTML = '';
+
+            if (!items || items.length === 0) {
+                container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted); font-style: italic;">No items found matching your filters. Try relaxing criteria.</div>';
+                return;
+            }
+
+            items.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'media-card';
+                card.dataset.mediaType = discoverMediaType;
+                card.dataset.tmdbId = item.tmdb_id || '';
+                card.dataset.title = item.title || item.original_title || 'Unknown';
+                card.dataset.year = item.year || (item.premiered ? item.premiered.split('-')[0] : 'N/A');
+                card.dataset.rating = item.rating ? parseFloat(item.rating).toFixed(1) : '0.0';
+                card.dataset.overview = item.overview || '';
+                
+                const posterUrl = item.poster_path || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';
+                card.dataset.posterUrl = posterUrl;
+                card.onclick = (e) => handleDetailsClick(e);
+
+                const safeTitle = escapeHtml(card.dataset.title);
+                const safeRating = escapeHtml(card.dataset.rating);
+                const safeYear = escapeHtml(card.dataset.year);
+                const safeType = escapeHtml(discoverMediaType);
+
+                card.innerHTML = `
+                    <div class="media-poster-container">
+                        <img src="${posterUrl}" alt="${safeTitle} Poster" class="media-poster" loading="lazy" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';">
+                        <div class="media-card-actions">
+                            <button class="action-btn details" onclick="handleDetailsClick(event)">Details</button>
+                            <button class="action-btn scrape" onclick="handleScrapeClick(event)">Scrape</button>
+                        </div>
+                    </div>
+                    <div class="media-info">
+                        <div class="media-title" title="${safeTitle}">${safeTitle}</div>
+                        <div class="media-meta">
+                            <span class="badge ${discoverMediaType === 'movie' ? 'active' : 'platform'}" style="padding: 0.15rem 0.45rem; font-size: 0.7rem;">${safeType.toUpperCase()}</span>
+                            <span style="font-weight: 600; color: #fbbf24;">★ ${safeRating}</span>
+                        </div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem;">${safeYear}</div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // -------------------------------------------------------------
+        // INDEX MANAGER LOGIC
+        // -------------------------------------------------------------
+        function switchIndexTypeTab(type) {
+            currentIndexTypeTab = type;
+            document.getElementById('idx-tab-ext').classList.toggle('active', type === 'external');
+            document.getElementById('idx-tab-int').classList.toggle('active', type === 'internal');
+            fetchIndexesList();
+        }
+
+        async function fetchIndexesList() {
+            const container = document.getElementById('indexes-cards-container');
+            container.innerHTML = '<div class="loading-shimmer" style="height: 120px;"></div><div class="loading-shimmer" style="height: 120px;"></div>';
+
+            const endpoint = currentIndexTypeTab === 'external' ? '/get_external_indexes' : '/get_internal_indexes';
+            try {
+                const res = await fetch(endpoint);
+                const data = await res.json();
+                renderIndexesList(data.indexes || []);
+            } catch (err) {
+                console.error('Failed to load indexes:', err);
+                container.innerHTML = `<div style="grid-column: 1 / -1; padding: 2rem; color: var(--log-error);">Failed to load indexes: ${err.message}</div>`;
+            }
+        }
+
+        function renderIndexesList(indexes) {
+            const container = document.getElementById('indexes-cards-container');
+            container.innerHTML = '';
+
+            if (!indexes || indexes.length === 0) {
+                container.innerHTML = `<div style="grid-column: 1 / -1; padding: 3rem; text-align: center; color: var(--text-muted);">No ${currentIndexTypeTab} indexes saved yet. Create one by clicking <strong>+ Create New Index</strong> or saving from Discover Studio!</div>`;
+                return;
+            }
+
+            indexes.forEach(idx => {
+                const card = document.createElement('div');
+                card.className = 'index-card';
+
+                const isLib = idx.add_to_library === 1 || idx.add_to_library === true || idx.add_to_library === 'true';
+                const paramsObj = typeof idx.parameters === 'object' ? idx.parameters : {};
+                
+                // Format parameter badges
+                const paramPills = Object.entries(paramsObj).map(([k, v]) => {
+                    return `<span class="param-pill" title="${k}: ${v}">${k}: ${v}</span>`;
+                }).join(' ');
+
+                card.innerHTML = `
+                    <div class="index-header">
+                        <div class="index-title">${escapeHtml(idx.id)}</div>
+                        <span class="badge ${idx.media_type === 'movie' ? 'active' : 'platform'}">${(idx.media_type || 'MEDIA').toUpperCase()}</span>
+                    </div>
+                    <div class="index-params">
+                        ${paramPills || '<span style="color: var(--text-muted); font-size: 0.75rem;">No extra filters</span>'}
+                    </div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem;">
+                        <span class="status-indicator ${isLib ? 'ok' : 'neutral'}"></span>
+                        Library Sync: <strong>${isLib ? 'Enabled' : 'Disabled'}</strong>
+                    </div>
+                    <div class="index-actions">
+                        ${currentIndexTypeTab === 'external' ? `<button class="action-btn details" onclick="loadIndexInDiscover('${escapeJs(idx.id)}', '${idx.media_type}', '${escapeJs(JSON.stringify(paramsObj))}')">▶ Run</button>` : ''}
+                        <button class="action-btn index" onclick="openEditIndexModal('${escapeJs(idx.id)}', '${idx.media_type}', '${escapeJs(JSON.stringify(paramsObj))}', ${isLib})">✎ Edit</button>
+                        <button class="action-btn remove" onclick="deleteIndex('${escapeJs(idx.id)}', '${idx.media_type}')">🗑 Delete</button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function loadIndexInDiscover(indexName, mediaType, paramsJson) {
+            try {
+                const params = JSON.parse(paramsJson);
+                switchTab('tab-discover');
+                setDiscoverMediaType(mediaType);
+                resetDiscoverFilters(false);
+
+                // Populate filter fields
+                if (params.with_genres) {
+                    params.with_genres.split(',').forEach(g => activeGenres.add(parseInt(g) || g));
+                    renderGenreChips();
+                }
+                if (params.with_watch_providers) {
+                    params.with_watch_providers.split('|').forEach(p => activeProviders.add(parseInt(p) || p));
+                    renderProviderChips();
+                }
+                if (params['primary_release_date.gte']) {
+                    document.getElementById('filter-year-gte').value = params['primary_release_date.gte'].split('-')[0];
+                }
+                if (params['primary_release_date.lte']) {
+                    document.getElementById('filter-year-lte').value = params['primary_release_date.lte'].split('-')[0];
+                }
+                if (params['vote_average.gte']) {
+                    document.getElementById('filter-vote-gte').value = params['vote_average.gte'];
+                }
+                if (params['sort_by']) {
+                    document.getElementById('filter-sort-by').value = params['sort_by'];
+                }
+
+                runDiscoverQuery();
+            } catch (err) {
+                console.error('Error loading index into discover:', err);
+            }
+        }
+
+        async function deleteIndex(indexId, mediaType) {
+            if (!confirm(`Are you sure you want to delete the index "${indexId}"?`)) return;
+            
+            const endpoint = currentIndexTypeTab === 'external' ? `/del_ext_index?index_id=${encodeURIComponent(indexId)}&item_type=${encodeURIComponent(mediaType)}` : `/del_internal_index?index_id=${encodeURIComponent(indexId)}&item_type=${encodeURIComponent(mediaType)}`;
+            
+            try {
+                const res = await fetch(endpoint, { method: 'PUT' });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    fetchIndexesList();
+                } else {
+                    alert(`Failed to delete index: ${data.message || 'Error'}`);
+                }
+            } catch (err) {
+                alert(`Error deleting index: ${err.message}`);
+            }
+        }
+
+        // Save / Edit Index Modal Handlers
+        function openSaveIndexModal() {
+            document.getElementById('save-index-modal-title').textContent = 'Save as External Index';
+            document.getElementById('modal-idx-orig-label').value = '';
+            document.getElementById('modal-idx-label').value = '';
+            document.getElementById('modal-idx-media-type').value = discoverMediaType;
+            document.getElementById('modal-idx-params-json').value = JSON.stringify(buildDiscoverParams(), null, 2);
+            document.getElementById('modal-idx-library').checked = false;
+            setModalIndexType('external');
+            toggleSaveIndexModal(true);
+        }
+
+        function openEditIndexModal(label, mediaType, paramsJson, isLib) {
+            document.getElementById('save-index-modal-title').textContent = `Edit Index: ${label}`;
+            document.getElementById('modal-idx-orig-label').value = label;
+            document.getElementById('modal-idx-label').value = label;
+            document.getElementById('modal-idx-media-type').value = mediaType;
+            document.getElementById('modal-idx-params-json').value = JSON.stringify(JSON.parse(paramsJson), null, 2);
+            document.getElementById('modal-idx-library').checked = isLib;
+            setModalIndexType(currentIndexTypeTab);
+            toggleSaveIndexModal(true);
+        }
+
+        function setModalIndexType(type) {
+            currentModalIndexType = type;
+            document.getElementById('modal-type-ext').classList.toggle('active', type === 'external');
+            document.getElementById('modal-type-int').classList.toggle('active', type === 'internal');
+        }
+
+        function toggleSaveIndexModal(show) {
+            const modal = document.getElementById('save-index-modal');
+            if (show) modal.classList.add('visible');
+            else modal.classList.remove('visible');
+        }
+
+        function closeSaveIndexModal(event) {
+            if (event.target === document.getElementById('save-index-modal')) {
+                toggleSaveIndexModal(false);
+            }
+        }
+
+        async function handleSaveIndexSubmit(event) {
+            event.preventDefault();
+            const label = document.getElementById('modal-idx-label').value.trim();
+            const origLabel = document.getElementById('modal-idx-orig-label').value.trim();
+            const mediaType = document.getElementById('modal-idx-media-type').value;
+            const isLib = document.getElementById('modal-idx-library').checked;
+            
+            let params = {};
+            try {
+                params = JSON.parse(document.getElementById('modal-idx-params-json').value);
+            } catch (e) {
+                alert('Invalid JSON in parameters field');
+                return;
+            }
+
+            const payload = {
+                label: label,
+                original_label: origLabel || label,
+                item_type: mediaType,
+                parameters: params,
+                add_to_library: isLib
+            };
+
+            const endpoint = currentModalIndexType === 'external' ? '/add_ext_index' : '/add_internal_index';
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    toggleSaveIndexModal(false);
+                    if (currentTab === 'tab-indexes') fetchIndexesList();
+                    else alert(`Index "${label}" saved successfully!`);
+                } else {
+                    alert(`Failed to save index: ${data.message || 'Error'}`);
+                }
+            } catch (err) {
+                alert(`Error saving index: ${err.message}`);
+            }
+        }
+
+        // -------------------------------------------------------------
+        // HELP & DIAGNOSTICS LOGIC
+        // -------------------------------------------------------------
+        async function fetchDiagnostics() {
+            const btn = document.getElementById('diag-refresh-btn');
+            btn.textContent = 'Checking...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/web/diagnostics');
+                const data = await res.json();
+                btn.textContent = '🔄 Run Health Check';
+                btn.disabled = false;
+
+                if (data.success && data.diagnostics) {
+                    renderDiagnostics(data.diagnostics);
+                }
+            } catch (err) {
+                btn.textContent = '🔄 Run Health Check';
+                btn.disabled = false;
+                console.error('Diagnostics error:', err);
+            }
+        }
+
+        function renderDiagnostics(diag) {
+            const container = document.getElementById('diag-cards-container');
+            container.innerHTML = '';
+
+            // Card 1: TMDb Health
+            const tmdbConn = diag.connectivity.tmdb || {};
+            const tmdbCard = document.createElement('div');
+            tmdbCard.className = 'status-card';
+            tmdbCard.innerHTML = `
+                <div class="status-card-header">
+                    <span class="status-card-title">🌐 TMDb API Connection</span>
+                    <span class="status-indicator ${tmdbConn.status === 'ok' ? 'ok' : 'err'}"></span>
+                </div>
+                <div class="diag-stat-row">
+                    <span>Status</span>
+                    <span class="diag-stat-val" style="color: ${tmdbConn.status === 'ok' ? '#34d399' : '#f87171'}">${(tmdbConn.status || 'Unknown').toUpperCase()}</span>
+                </div>
+                <div class="diag-stat-row">
+                    <span>Latency</span>
+                    <span class="diag-stat-val">${tmdbConn.latency_ms !== null && tmdbConn.latency_ms !== undefined ? tmdbConn.latency_ms + ' ms' : 'N/A'}</span>
+                </div>
+                <div class="diag-stat-row">
+                    <span>Account / Key</span>
+                    <span class="diag-stat-val">${diag.platforms.tmdb?.username || 'Active'}</span>
+                </div>
+            `;
+            container.appendChild(tmdbCard);
+
+            // Card 2: Trakt Health
+            const traktConn = diag.connectivity.trakt || {};
+            const traktPlat = diag.platforms.trakt || {};
+            const traktCard = document.createElement('div');
+            traktCard.className = 'status-card';
+            traktCard.innerHTML = `
+                <div class="status-card-header">
+                    <span class="status-card-title">📺 Trakt OAuth & API</span>
+                    <span class="status-indicator ${traktPlat.authorized && traktConn.status === 'ok' ? 'ok' : 'warn'}"></span>
+                </div>
+                <div class="diag-stat-row">
+                    <span>Authorized User</span>
+                    <span class="diag-stat-val">${traktPlat.username || 'Not configured'}</span>
+                </div>
+                <div class="diag-stat-row">
+                    <span>API Reachability</span>
+                    <span class="diag-stat-val">${traktConn.latency_ms ? traktConn.latency_ms + ' ms' : (traktConn.status || 'N/A')}</span>
+                </div>
+                <div class="diag-stat-row">
+                    <span>Token Status</span>
+                    <span class="diag-stat-val" style="color: ${traktPlat.authorized ? '#34d399' : '#fbbf24'}">${traktPlat.authorized ? 'Valid' : 'Unauthenticated'}</span>
+                </div>
+            `;
+            container.appendChild(traktCard);
+
+            // Card 3: Debrid Providers Summary
+            const debridCard = document.createElement('div');
+            debridCard.className = 'status-card';
+            const debridEntries = Object.entries(diag.debrid || {});
+            const enabledCount = debridEntries.filter(([_, v]) => v.enabled).length;
+            debridCard.innerHTML = `
+                <div class="status-card-header">
+                    <span class="status-card-title">⚡ Debrid Resolvers</span>
+                    <span class="badge active">${enabledCount} Active</span>
+                </div>
+                ${debridEntries.map(([name, info]) => `
+                    <div class="diag-stat-row">
+                        <span>${name}</span>
+                        <span class="diag-stat-val" style="color: ${info.enabled ? '#34d399' : (info.configured ? '#818cf8' : 'var(--text-dim)')}">
+                            ${info.enabled ? 'Enabled' : (info.configured ? 'Configured' : 'Disabled')}
+                        </span>
+                    </div>
+                `).join('')}
+            `;
+            container.appendChild(debridCard);
+
+            // Card 4: Scrapers & Cache Storage
+            const scraperCard = document.createElement('div');
+            scraperCard.className = 'status-card';
+            scraperCard.innerHTML = `
+                <div class="status-card-header">
+                    <span class="status-card-title">🗄️ Storage & Scrapers</span>
+                    <span class="badge neutral">${diag.summary?.total_db_size_mb || 0} MB Total</span>
+                </div>
+                <div class="diag-stat-row">
+                    <span>Total Scrapers</span>
+                    <span class="diag-stat-val">${diag.scrapers?.total || 0} (${diag.scrapers?.active || 0} active)</span>
+                </div>
+                <div class="diag-stat-row">
+                    <span>Total Scrapes Done</span>
+                    <span class="diag-stat-val">${diag.scrapers?.total_scrapes || 0}</span>
+                </div>
+                <div class="diag-stat-row">
+                    <span>Fanart.tv Latency</span>
+                    <span class="diag-stat-val">${diag.connectivity.fanart?.latency_ms ? diag.connectivity.fanart.latency_ms + ' ms' : 'Online'}</span>
+                </div>
+            `;
+            container.appendChild(scraperCard);
+
+            // Render Databases Table
+            const dbTable = document.getElementById('diag-db-table');
+            dbTable.innerHTML = '';
+            Object.entries(diag.databases || {}).forEach(([dbName, info]) => {
+                const row = document.createElement('div');
+                row.className = 'scraper-row';
+                row.style.gridTemplateColumns = '2fr 1fr 1fr 1fr 1fr';
+                row.innerHTML = `
+                    <div class="item-name" style="font-family: monospace; font-size: 0.85rem;">${dbName}.db</div>
+                    <div style="font-family: monospace; color: var(--text-muted);">${info.size_kb} KB</div>
+                    <div style="font-family: monospace; color: var(--text-muted);">${info.wal_size_kb} KB</div>
+                    <div style="font-family: monospace; color: var(--text-main); font-weight: 600;">${info.row_count}</div>
+                    <div><span class="badge ${info.integrity === 'ok' ? 'active' : 'inactive'}">${info.integrity}</span></div>
+                `;
+                dbTable.appendChild(row);
+            });
+        }
+
+        async function runDatabaseVacuum() {
+            const btn = document.getElementById('vacuum-btn');
+            btn.textContent = 'Vacuuming...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/web/vacuum', { method: 'POST' });
+                const data = await res.json();
+                btn.textContent = '🧹 Vacuum Databases';
+                btn.disabled = false;
+
+                if (data.success) {
+                    const totalFreed = data.results.reduce((acc, r) => acc + (r.freed_kb || 0), 0);
+                    alert(`Database vacuum complete! Reclaimed ${totalFreed.toFixed(1)} KB of storage.`);
+                    fetchDiagnostics();
+                } else {
+                    alert(`Vacuum error: ${data.error}`);
+                }
+            } catch (err) {
+                btn.textContent = '🧹 Vacuum Databases';
+                btn.disabled = false;
+                alert(`Error executing vacuum: ${err.message}`);
+            }
+        }
+
+        let currentModalListId = '';
+        let currentModalItems = [];
+
+        // -------------------------------------------------------------
+        // LIST ITEMS, SCRAPING & DETAILS MODALS
+        // -------------------------------------------------------------
         async function openListItems(listId, listName) {
+            currentModalListId = listId;
+            currentModalItems = [];
+            
             document.getElementById('modal-list-title').textContent = listName;
+            const searchInput = document.getElementById('modal-items-search');
+            if (searchInput) searchInput.value = '';
+            
             toggleListItemsModal(true);
             
             const container = document.getElementById('modal-items-container');
@@ -1035,7 +2582,8 @@
                 const response = await fetch(`/api/web/list_items?list_id=${encodeURIComponent(listId)}`);
                 const data = await response.json();
                 if (data.success) {
-                    renderModalItems(listId, data.items);
+                    currentModalItems = data.items || [];
+                    renderModalItems(listId, currentModalItems);
                 } else {
                     container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--log-error);">Failed to load items: ${data.error || 'Unknown error'}</div>`;
                 }
@@ -1045,13 +2593,26 @@
             }
         }
 
+        function filterModalItems(query) {
+            if (!currentModalItems) return;
+            const q = (query || '').toLowerCase().trim();
+            if (!q) {
+                renderModalItems(currentModalListId, currentModalItems);
+                return;
+            }
+            const filtered = currentModalItems.filter(item => {
+                const title = (item.title || '').toLowerCase();
+                const overview = (item.overview || '').toLowerCase();
+                const year = String(item.year || '');
+                return title.includes(q) || overview.includes(q) || year.includes(q);
+            });
+            renderModalItems(currentModalListId, filtered);
+        }
+
         function toggleListItemsModal(show) {
             const modal = document.getElementById('list-items-modal');
-            if (show) {
-                modal.classList.add('visible');
-            } else {
-                modal.classList.remove('visible');
-            }
+            if (show) modal.classList.add('visible');
+            else modal.classList.remove('visible');
         }
 
         function closeListItemsModal(event) {
@@ -1064,8 +2625,13 @@
             const container = document.getElementById('modal-items-container');
             container.innerHTML = '';
             
+            const countBadge = document.getElementById('modal-list-count');
+            if (countBadge) {
+                countBadge.textContent = `${items ? items.length : 0} ${(items && items.length === 1) ? 'item' : 'items'}`;
+            }
+            
             if (!items || items.length === 0) {
-                container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted); font-style: italic; font-size: 0.95rem;">This list is empty.</div>';
+                container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted); font-style: italic; font-size: 0.95rem;">No items found.</div>';
                 return;
             }
             
@@ -1083,17 +2649,19 @@
                 
                 let posterUrl = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';
                 if (item.poster_path) {
-                    if (item.poster_path.startsWith('http')) {
-                        posterUrl = item.poster_path;
-                    } else {
-                        posterUrl = `https://image.tmdb.org/t/p/w300${item.poster_path}`;
-                    }
+                    posterUrl = item.poster_path.startsWith('http') ? item.poster_path : `https://image.tmdb.org/t/p/w500${item.poster_path}`;
                 }
                 card.dataset.posterUrl = posterUrl;
+                card.onclick = (e) => handleDetailsClick(e);
+                
+                const safeTitle = escapeHtml(item.title || 'Unknown');
+                const safeRating = escapeHtml(card.dataset.rating);
+                const safeYear = escapeHtml(item.year || 'N/A');
+                const safeType = escapeHtml(item.media_type || 'item');
                 
                 card.innerHTML = `
                     <div class="media-poster-container">
-                        <img src="${posterUrl}" alt="${item.title} Poster" class="media-poster" loading="lazy" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';">
+                        <img src="${posterUrl}" alt="${safeTitle} Poster" class="media-poster" loading="lazy" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';">
                         <div class="media-card-actions">
                             <button class="action-btn details" onclick="handleDetailsClick(event)">Details</button>
                             <button class="action-btn scrape" onclick="handleScrapeClick(event)">Scrape</button>
@@ -1101,17 +2669,19 @@
                         </div>
                     </div>
                     <div class="media-info">
-                        <div class="media-title" title="${item.title}">${item.title}</div>
+                        <div class="media-title" title="${safeTitle}">${safeTitle}</div>
                         <div class="media-meta">
-                            <span class="badge ${item.media_type === 'movie' ? 'active' : 'platform'}" style="padding: 0.1rem 0.35rem; font-size: 0.6rem;">${item.media_type.toUpperCase()}</span>
-                            <span style="font-weight: 600;">★ ${card.dataset.rating}</span>
+                            <span class="badge ${item.media_type === 'movie' ? 'active' : 'platform'}" style="padding: 0.15rem 0.45rem; font-size: 0.7rem;">${safeType.toUpperCase()}</span>
+                            <span style="font-weight: 600; color: #fbbf24;">★ ${safeRating}</span>
                         </div>
-                        <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 0.15rem;">${item.year || 'N/A'}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem;">${safeYear}</div>
                     </div>
                 `;
                 container.appendChild(card);
             });
         }
+
+        let currentDetailsItem = null;
 
         function handleDetailsClick(event) {
             event.stopPropagation();
@@ -1123,6 +2693,8 @@
             const rating = card.dataset.rating;
             const overview = card.dataset.overview;
             const posterUrl = card.dataset.posterUrl;
+            
+            currentDetailsItem = { mediaType, tmdbId, title, year };
             
             document.getElementById('details-modal-title').textContent = title;
             document.getElementById('details-poster').src = posterUrl;
@@ -1138,13 +2710,15 @@
             fetchReviews(tmdbId, mediaType);
         }
 
+        function handleDetailsModalScrape() {
+            if (!currentDetailsItem) return;
+            triggerScrape(currentDetailsItem.mediaType, currentDetailsItem.tmdbId, currentDetailsItem.title, currentDetailsItem.year);
+        }
+
         function toggleDetailsModal(show) {
             const modal = document.getElementById('details-modal');
-            if (show) {
-                modal.classList.add('visible');
-            } else {
-                modal.classList.remove('visible');
-            }
+            if (show) modal.classList.add('visible');
+            else modal.classList.remove('visible');
         }
 
         function closeDetailsModal(event) {
@@ -1153,57 +2727,53 @@
             }
         }
 
-        function formatReviewText(text) {
-            if (!text) return '';
-            // Basic HTML escape helper
-            let escaped = text
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
-                
-            // Format BBCode tags
-            return escaped
-                .replace(/\[B\]/gi, '<strong>')
-                .replace(/\[\/B\]/gi, '</strong>')
-                .replace(/\[CR\]/gi, '<br>')
-                .replace(/\r\n/g, '<br>')
-                .replace(/\n/g, '<br>');
-        }
-
         async function fetchReviews(tmdbId, mediaType) {
             const container = document.getElementById('details-reviews-container');
             container.innerHTML = `
-                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem 0; color: var(--text-muted); gap: 0.5rem;">
-                    <div class="scrape-spinner" style="margin: 0; width: 30px; height: 30px;"></div>
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; color: var(--text-muted); gap: 0.75rem;">
+                    <div class="scrape-spinner" style="width: 24px; height: 24px;"></div>
                     <span style="font-size: 0.8rem;">Loading reviews...</span>
                 </div>
             `;
             
+            if (!tmdbId) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; font-style: italic;">No reviews available (missing TMDb ID).</div>';
+                return;
+            }
+            
             try {
-                const typeParam = mediaType === 'show' ? 'tv' : 'movie';
-                const response = await fetch(`/reviews?tmdb_id=${tmdbId}&media_type=${typeParam}`);
+                const response = await fetch(`/reviews?tmdb_id=${encodeURIComponent(tmdbId)}&media_type=${encodeURIComponent(mediaType)}`);
                 const data = await response.json();
                 
                 if (data.success && data.reviews && data.reviews.length > 0) {
                     container.innerHTML = '';
                     data.reviews.forEach(rev => {
-                        const div = document.createElement('div');
-                        div.className = 'scrape-result-item';
-                        div.style.padding = '0.75rem';
-                        div.style.background = 'rgba(255, 255, 255, 0.02)';
-                        div.style.lineHeight = '1.4';
-                        div.style.fontSize = '0.8rem';
-                        div.innerHTML = formatReviewText(rev);
-                        container.appendChild(div);
+                        const revDiv = document.createElement('div');
+                        revDiv.style.background = 'rgba(255, 255, 255, 0.03)';
+                        revDiv.style.border = '1px solid var(--border-glass)';
+                        revDiv.style.borderRadius = '0.5rem';
+                        revDiv.style.padding = '0.75rem';
+                        revDiv.style.display = 'flex';
+                        revDiv.style.flexDirection = 'column';
+                        revDiv.style.gap = '0.35rem';
+                        
+                        revDiv.innerHTML = `
+                            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
+                                <strong style="color: var(--text-main);">${escapeHtml(rev.author || 'Anonymous')}</strong>
+                                <span>${rev.rating ? '★ ' + rev.rating : ''}</span>
+                            </div>
+                            <div style="font-size: 0.8rem; line-height: 1.4; color: var(--text-muted); max-height: 100px; overflow-y: auto;">
+                                ${escapeHtml(rev.content || '')}
+                            </div>
+                        `;
+                        container.appendChild(revDiv);
                     });
                 } else {
-                    container.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 2rem 0; font-style: italic; font-size: 0.85rem;">No reviews found for this title.</div>';
+                    container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; font-style: italic;">No reviews found for this title.</div>';
                 }
-            } catch (err) {
-                console.error(err);
-                container.innerHTML = `<div style="color: var(--log-error); text-align: center; padding: 2rem 0; font-size: 0.8rem;">Error loading reviews: ${err.message || err}</div>`;
+            } catch (error) {
+                console.error('Failed to fetch reviews', error);
+                container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; font-style: italic;">Failed to load reviews.</div>';
             }
         }
 
@@ -1213,28 +2783,75 @@
             const mediaType = card.dataset.mediaType;
             const tmdbId = card.dataset.tmdbId;
             const title = card.dataset.title;
-            const year = parseInt(card.dataset.year) || null;
+            const year = card.dataset.year;
             
             triggerScrape(mediaType, tmdbId, title, year);
         }
 
-        function handleRemoveClick(event) {
-            event.stopPropagation();
-            const card = event.currentTarget.closest('.media-card');
-            const listId = card.dataset.listId;
-            const mediaType = card.dataset.mediaType;
-            const traktId = card.dataset.traktId;
-            const tmdbId = card.dataset.tmdbId;
+        function triggerFastStartScrape(ep) {
+            toggleScrapeOverlay(true);
             
-            removeListItem(listId, mediaType, traktId, tmdbId, card);
+            const epNum = (ep.episode_number !== undefined && ep.episode_number !== null) ? ep.episode_number : ((ep.episode !== undefined && ep.episode !== null) ? ep.episode : 1);
+            const seasonNum = (ep.season !== undefined && ep.season !== null) ? ep.season : 1;
+            const showTitle = ep.title || ep.show_title || '';
+
+            const params = new URLSearchParams({
+                media_type: 'episode',
+                title: showTitle,
+                show_title: showTitle,
+                episode_title: ep.episode_title || '',
+                tmdb_id: ep.show_tmdb_id || ep.tmdb_id || '',
+                imdb_id: ep.imdb_id || ep.show_imdb_id || '',
+                tvdb_id: ep.tvdb_id || '',
+                season: seasonNum,
+                episode: epNum
+            });
+            
+            fetch(`/fast_start_episode?${params.toString()}`)
+                .then(r => r.json())
+                .then(data => {
+                    displayScrapeResults(data);
+                })
+                .catch(err => {
+                    console.error('Fast start scrape failed', err);
+                    displayScrapeResults({ results: [] });
+                });
+        }
+
+        function triggerScrape(mediaType, tmdbId, title, year) {
+            toggleScrapeOverlay(true);
+            
+            const queryParams = new URLSearchParams({
+                media_type: mediaType,
+                tmdb_id: tmdbId,
+                title: title,
+                year: year
+            });
+            
+            fetch(`/scrape?${queryParams.toString()}`)
+                .then(r => r.json())
+                .then(data => {
+                    displayScrapeResults(data);
+                })
+                .catch(err => {
+                    console.error('Scrape failed', err);
+                    displayScrapeResults({ results: [] });
+                });
         }
 
         function toggleScrapeOverlay(show) {
-            const modal = document.getElementById('scrape-overlay');
+            const overlay = document.getElementById('scrape-overlay');
+            const loading = document.getElementById('scrape-loading-container');
+            const summary = document.getElementById('scrape-results-summary');
+            const closeBtn = document.getElementById('scrape-close-btn');
+            
             if (show) {
-                modal.classList.add('visible');
+                loading.style.display = 'flex';
+                summary.style.display = 'none';
+                closeBtn.style.display = 'none';
+                overlay.classList.add('visible');
             } else {
-                modal.classList.remove('visible');
+                overlay.classList.remove('visible');
             }
         }
 
@@ -1244,222 +2861,93 @@
             }
         }
 
-        async function triggerScrape(mediaType, tmdbId, title, year) {
-            let season = 1;
-            let episode = 1;
-            if (mediaType === 'show') {
-                const input = prompt(`Enter Season and Episode for "${title}" (e.g. 1x01 or 1 1):`, '1x01');
-                if (input === null) return;
-                const match = input.match(/(\d+)\D+(\d+)/);
-                if (match) {
-                    season = parseInt(match[1]);
-                    episode = parseInt(match[2]);
-                } else {
-                    alert('Invalid format. Scraping Season 1, Episode 1.');
-                }
-            }
-
-            toggleScrapeOverlay(true);
-            document.getElementById('scrape-loading-container').style.display = 'flex';
-            document.getElementById('scrape-results-summary').style.display = 'none';
-            document.getElementById('scrape-close-btn').style.display = 'none';
-            document.getElementById('scrape-status-text').textContent = `Querying scrapers for "${title}"${mediaType === 'show' ? ` S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}` : ''}...`;
-
-            try {
-                let url = `/scrape?tmdb_id=${tmdbId}&item_type=${mediaType === 'show' ? 'episode' : 'movie'}`;
-                if (mediaType === 'show') {
-                    url += `&season=${season}&episode=${episode}`;
-                }
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                document.getElementById('scrape-loading-container').style.display = 'none';
-                
-                if (data.success && data.results) {
-                    const count = data.results.length;
-                    document.getElementById('scrape-results-meta').textContent = `Found ${count} source${count === 1 ? '' : 's'} for "${title}"`;
-                    
-                    const itemsContainer = document.getElementById('scrape-results-items');
-                    itemsContainer.innerHTML = '';
-                    
-                    if (count === 0) {
-                        itemsContainer.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 2rem; font-style: italic;">No sources found.</div>';
-                    } else {
-                        data.results.slice(0, 30).forEach(res => {
-                            const div = document.createElement('div');
-                            div.className = 'scrape-result-item';
-                            
-                            let sizeStr = 'N/A';
-                            if (res.size) {
-                                const sizeGB = (res.size / (1024 * 1024 * 1024)).toFixed(2);
-                                sizeStr = `${sizeGB} GB`;
-                            } else if (res.size_bytes) {
-                                const sizeGB = (res.size_bytes / (1024 * 1024 * 1024)).toFixed(2);
-                                sizeStr = `${sizeGB} GB`;
-                            }
-                            
-                            const name = res.title || res.name || 'Unnamed Source';
-                            const provider = res.provider || res.source || 'unknown';
-                            const quality = res.quality || 'Unknown';
-                            const seeders = res.seeders !== undefined ? res.seeders : 'N/A';
-                            
-                            div.innerHTML = `
-                                <div class="scrape-result-title" title="${name}">${name}</div>
-                                <div class="scrape-result-details">
-                                    <span>Provider: <strong style="color: #a855f7;">${provider}</strong></span>
-                                    <span>Quality: <strong>${quality}</strong></span>
-                                    <span>Size: <strong>${sizeStr}</strong></span>
-                                    <span>Seeders: <strong>${seeders}</strong></span>
-                                </div>
-                            `;
-                            itemsContainer.appendChild(div);
-                        });
-                    }
-                    
-                    document.getElementById('scrape-results-summary').style.display = 'block';
-                } else {
-                    document.getElementById('scrape-status-text').textContent = `Scrape failed: ${data.error || 'Unknown error'}`;
-                    document.getElementById('scrape-loading-container').style.display = 'flex';
-                }
-            } catch (err) {
-                console.error(err);
-                document.getElementById('scrape-status-text').textContent = `Error: ${err.message || err}`;
-                document.getElementById('scrape-loading-container').style.display = 'flex';
-            } finally {
-                document.getElementById('scrape-close-btn').style.display = 'block';
-            }
-        }
-
-        async function removeListItem(listId, mediaType, traktId, tmdbId, cardElement) {
-            if (!confirm("Are you sure you want to remove this item from the list?")) {
+        function displayScrapeResults(data) {
+            const loading = document.getElementById('scrape-loading-container');
+            const summary = document.getElementById('scrape-results-summary');
+            const meta = document.getElementById('scrape-results-meta');
+            const itemsList = document.getElementById('scrape-results-items');
+            const closeBtn = document.getElementById('scrape-close-btn');
+            
+            loading.style.display = 'none';
+            summary.style.display = 'block';
+            closeBtn.style.display = 'block';
+            
+            const results = data.results || (Array.isArray(data) ? data : []);
+            meta.textContent = `Found ${results.length} sources`;
+            itemsList.innerHTML = '';
+            
+            if (results.length === 0) {
+                itemsList.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; font-style: italic; padding: 1rem 0;">No streams found for this item.</div>';
                 return;
             }
             
+            results.forEach(res => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'scrape-result-item';
+                
+                const title = res.name || res.display_name || res.title || 'Unknown Stream';
+                const quality = res.quality || (res.extra_info ? res.extra_info.quality : '') || 'HD';
+                const provider = res.provider || res.scraper || 'Debrid';
+                const size = res.size_label || (res.size ? (res.size / (1024*1024*1024)).toFixed(2) + ' GB' : '');
+                
+                itemDiv.innerHTML = `
+                    <div class="scrape-result-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+                    <div class="scrape-result-details">
+                        <span class="badge ${quality.includes('4K') || quality.includes('2160') ? 'active' : 'neutral'}" style="padding: 0.05rem 0.3rem; font-size: 0.6rem;">${quality}</span>
+                        <span>${provider}</span>
+                        <span>${size}</span>
+                    </div>
+                `;
+                itemsList.appendChild(itemDiv);
+            });
+        }
+
+        async function handleRemoveClick(event) {
+            event.stopPropagation();
+            const card = event.currentTarget.closest('.media-card');
+            const listId = card.dataset.listId;
+            const mediaType = card.dataset.mediaType;
+            const tmdbId = card.dataset.tmdbId;
+            const traktId = card.dataset.traktId;
+            const title = card.dataset.title;
+            
+            if (!confirm(`Are you sure you want to remove "${title}" from this list?`)) return;
+            
             try {
-                const response = await fetch('/api/web/list_items/remove', {
+                const res = await fetch('/api/web/list_items/remove', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         list_id: listId,
                         media_type: mediaType,
-                        trakt_id: traktId ? parseInt(traktId) : null,
-                        tmdb_id: tmdbId ? parseInt(tmdbId) : null
+                        tmdb_id: tmdbId,
+                        trakt_id: traktId
                     })
                 });
-                
-                const data = await response.json();
+                const data = await res.json();
                 if (data.success) {
-                    cardElement.style.transition = 'transform 0.3s, opacity 0.3s';
-                    cardElement.style.transform = 'scale(0.8)';
-                    cardElement.style.opacity = '0';
-                    setTimeout(() => {
-                        cardElement.remove();
-                        const container = document.getElementById('modal-items-container');
-                        if (container.children.length === 0) {
-                            container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted); font-style: italic; font-size: 0.95rem;">This list is empty.</div>';
-                        }
-                    }, 300);
+                    card.style.transition = 'all 0.3s ease';
+                    card.style.opacity = '0';
+                    card.style.transform = 'scale(0.8)';
+                    setTimeout(() => card.remove(), 300);
                 } else {
                     alert(`Failed to remove item: ${data.error || 'Unknown error'}`);
                 }
-            } catch (error) {
-                console.error('Failed to remove item', error);
-                alert(`Error removing item: ${error.message || error}`);
+            } catch (err) {
+                console.error('Error removing item:', err);
+                alert(`Error removing item: ${err.message || err}`);
             }
         }
 
-
-        function renderNextEpisodes(episodes) {
-            const container = document.getElementById('next-episodes-container');
-            container.innerHTML = '';
-            
-            if (!episodes || !Array.isArray(episodes) || episodes.length === 0) {
-                container.innerHTML = '<div style="color: var(--text-muted); padding: 1rem; font-style: italic;">No upcoming episodes to display.</div>';
-                return;
-            }
-
-            episodes.forEach(ep => {
-                const card = document.createElement('div');
-                card.className = 'episode-card';
-                
-                let imageUrl = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';
-                if (ep.show_poster_path) {
-                    if (ep.show_poster_path.startsWith('http')) {
-                        imageUrl = ep.show_poster_path;
-                    } else {
-                        imageUrl = `https://image.tmdb.org/t/p/w300${ep.show_poster_path}`;
-                    }
-                } else if (ep.episode_poster_path) {
-                    if (ep.episode_poster_path.startsWith('http')) {
-                        imageUrl = ep.episode_poster_path;
-                    } else {
-                        imageUrl = `https://image.tmdb.org/t/p/w300${ep.episode_poster_path}`;
-                    }
-                }
-                
-                const seasonNum = String(ep.season).padStart(2, '0');
-                const epNum = String(ep.episode_number).padStart(2, '0');
-                const seStr = `S${seasonNum}E${epNum}`;
-                
-                const showTitle = ep.title || 'Unknown Show';
-                const epTitle = ep.episode_title || '';
-                
-                card.innerHTML = `
-                    <div class="episode-poster-container">
-                        <img src="${imageUrl}" alt="${showTitle} Poster" class="episode-poster" loading="lazy" onerror="this.src=''; this.style.display='none';">
-                    </div>
-                    <div class="episode-info">
-                        <span class="episode-show-title" title="${showTitle}">${showTitle}</span>
-                        <span class="episode-season-ep" title="${seStr} - ${epTitle}">${seStr} - ${epTitle}</span>
-                    </div>
-                `;
-                container.appendChild(card);
-            });
+        // Helper string sanitizers
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
         }
 
-        function renderLogs(logs) {
-            const terminal = document.getElementById('terminal-window');
-            
-            // Generate HTML array to prevent reflows
-            let htmlStr = '';
-            
-            logs.forEach(logLine => {
-                // Parse log: [Orac] 2026-04-10 12:00:00 [INFO] Message
-                // Match regex for typical brackets structure
-                const match = logLine.match(/\[(.*?)\]\s([\d-]+\s[\d:]+)\s\[(.*?)\]\s(.*)/);
-                
-                if (match && match.length === 5) {
-                    const time = match[2];
-                    const level = match[3];
-                    const msg = match[4];
-                    
-                    let levelClass = 'log-lvl-info';
-                    let msgClass = 'log-msg';
-                    
-                    if (level === 'WARNING') { levelClass = 'log-lvl-warn'; msgClass = 'log-msg-warn'; }
-                    else if (level === 'ERROR' || level === 'FATAL') { levelClass = 'log-lvl-err'; msgClass = 'log-msg-err'; }
-                    
-                    htmlStr += `<div class="log-line">
-                        <span class="log-time">[${time}]</span>
-                        <span class="${levelClass}">[${level}]</span>
-                        <span class="${msgClass}">${msg}</span>
-                    </div>`;
-                } else {
-                    // Fallback unparsed
-                    let levelClass = 'log-lvl-info';
-                    let msgClass = 'log-msg';
-                    if(logLine.includes('[WARNING]')) { levelClass = 'log-lvl-warn'; msgClass = 'log-msg-warn'; }
-                    if(logLine.includes('[ERROR]')) { levelClass = 'log-lvl-err'; msgClass = 'log-msg-err'; }
-                    htmlStr += `<div class="log-line"><span class="${msgClass}">${logLine}</span></div>`;
-                }
-            });
-            
-            // Reconcile and preserve exact scroll position for the user.
-            if (terminal.innerHTML !== htmlStr) {
-                const currentScroll = terminal.scrollTop;
-                terminal.innerHTML = htmlStr;
-                terminal.scrollTop = currentScroll;
-            }
+        function escapeJs(str) {
+            if (!str) return '';
+            return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
         }
     </script>
 </body>

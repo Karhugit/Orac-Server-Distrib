@@ -394,7 +394,9 @@ def insert_episode_combined(cursor, trakt_episode_data, tmdb_episode_data, show_
                 except Exception as e:
                     log(f"[DB] Error deleting placeholder episode: {e}", level=LOGERROR)
 
-    air_date = tmdb_episode_data.get("air_date") or trakt_episode_data.get("first_aired", "")
+    raw_air_date = tmdb_episode_data.get("air_date") or trakt_episode_data.get("first_aired") or trakt_episode_data.get("effective_release_date") or ""
+    air_date = raw_air_date[:10] if raw_air_date and len(raw_air_date) >= 10 else ""
+    first_aired = trakt_episode_data.get("first_aired") or air_date
     runtime = tmdb_episode_data.get("runtime") or trakt_episode_data.get("runtime", 0)
     rating = tmdb_episode_data.get("vote_average") or trakt_episode_data.get("rating", 0.0)
     votes = tmdb_episode_data.get("vote_count") or trakt_episode_data.get("votes", 0)
@@ -422,7 +424,7 @@ def insert_episode_combined(cursor, trakt_episode_data, tmdb_episode_data, show_
         imdb_id,
         tvdb_id,
         rating,
-        air_date,  # Use combined air_date for first_aired
+        first_aired,
         updated_at,
         votes,
         runtime,

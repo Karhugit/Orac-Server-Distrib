@@ -5,7 +5,6 @@ from resources.lib.log_utils import log, LOGDEBUG, LOGINFO, LOGERROR, LOGWARNING
 from datetime import datetime
 import sqlite3
 from resources.lib.watched import update_dynamic_tvshow_data, sync_dropped_shows, update_dynamic_movie_data
-from resources.lib.flixpatrol_sync import FlixPatrolSync
 from resources.lib.mdblist_list_sync import mdblist_list_sync_task
 from resources.lib.trakt_to_mdblist_sync import sync_trakt_lists_to_mdblist_task
 
@@ -313,45 +312,15 @@ async def sync_lists_and_items(trakt_handler, tmdb_handler, movies_static_db_pat
             log("[Orac] Restarting TraktQueueWorker after updating dynamic TV show data", level=LOGINFO)
             trakt_queue_worker.resume()
 
-    # Run FlixPatrol Sync
-    # Run FlixPatrol Sync
+    # Clean up any legacy FlixPatrol entries from lists cache
     try:
-        # Check if we need to run FlixPatrol sync (Daily check)
-        should_run_flixpatrol = True
-        try:
-            with db_connect(lists_db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT last_checked FROM lists WHERE slug = ?", ('flixpatrol-netflix-movie',))
-                row = cursor.fetchone()
-                if row and row[0]:
-                    last_checked_str = row[0]
-                    # Dates are stored as "2026-02-01T18:42:54.000Z"
-                    try:
-                        last_checked_dt = datetime.strptime(last_checked_str, "%Y-%m-%dT%H:%M:%S.000Z")
-                        time_diff = (datetime.utcnow() - last_checked_dt).total_seconds()
-                        if time_diff < 86400: # 24 hours
-                            should_run_flixpatrol = False
-                            log(f"[Orac] Skipping FlixPatrol sync (Last checked: {last_checked_str}, {time_diff/3600:.1f} hours ago)", level=LOGINFO)
-                    except ValueError:
-                        pass # proceed if date format is weird
-        except Exception as e:
-            log(f"[Orac] Error checking FlixPatrol last_checked status: {e}", level=LOGWARNING)
-
-        if should_run_flixpatrol:
-            log("[Orac] Starting FlixPatrol Sync...", level=LOGINFO)
-            flix_sync = FlixPatrolSync(
-                tmdb_handler, 
-                lists_db_path,
-                movies_static_db_path,
-                movies_dynamic_db_path,
-                tvshows_static_db_path,
-                tvshows_dynamic_db_path,
-                trakt_update_queue_path
-            )
-            await flix_sync.run_sync()
-
-    except Exception as e:
-        log(f"[Orac] Error running FlixPatrol sync: {e}", level=LOGERROR)
+        with db_connect(lists_db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM list_items WHERE list_id IN (SELECT list_id FROM lists WHERE user = 'flixpatrol' OR source = 'flixpatrol')")
+            cursor.execute("DELETE FROM lists WHERE user = 'flixpatrol' OR source = 'flixpatrol'")
+            conn.commit()
+    except Exception:
+        pass
 
     # Finally, run garbage collection to clean up orphaned static entries
     # Note: tags_db_path should be passed from caller, but for backward compatibility, default to None
