@@ -228,9 +228,11 @@
         /* 3 Column Layout for Dashboard */
         .dashboard-grid {
             display: grid;
-            grid-template-columns: 1.6fr 1.3fr 1.1fr;
+            grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.25fr) minmax(0, 1.1fr);
             gap: 1.5rem;
-            align-items: start;
+            align-items: stretch;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .column-stack {
@@ -238,22 +240,44 @@
             flex-direction: column;
             gap: 1.5rem;
             height: 75vh;
+            min-height: 0;
+            min-width: 0;
+            box-sizing: border-box;
         }
 
         .log-panel-container {
             height: 75vh;
+            min-height: 0;
+            min-width: 0;
+            overflow: hidden;
+            box-sizing: border-box;
         }
 
-        @media (max-width: 1400px) {
+        .scraper-panel-container {
+            height: 75vh;
+            min-height: 0;
+            min-width: 0;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+
+        @media (max-width: 1200px) {
             .dashboard-grid {
-                grid-template-columns: 1fr 1fr;
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
             }
             .log-panel-container {
                 grid-column: 1 / -1;
+                height: 48vh;
+            }
+            .scraper-panel-container {
+                height: 52vh;
+            }
+            .column-stack {
+                height: 52vh;
             }
         }
 
-        @media (max-width: 1024px) {
+        @media (max-width: 850px) {
             .header {
                 flex-direction: column;
                 align-items: stretch;
@@ -265,11 +289,18 @@
                 overflow-x: auto;
             }
             .dashboard-grid {
-                grid-template-columns: 1fr;
+                grid-template-columns: minmax(0, 1fr);
+            }
+            .log-panel-container {
+                grid-column: auto;
+                height: 45vh;
+            }
+            .scraper-panel-container {
+                height: 45vh;
             }
             .column-stack {
                 height: auto;
-                max-height: 75vh;
+                max-height: 55vh;
             }
         }
 
@@ -279,19 +310,26 @@
             border: 1px solid var(--border-glass);
             border-radius: 0.75rem;
             padding: 1rem;
-            flex-grow: 1;
+            flex: 1 1 0;
+            min-height: 0;
+            min-width: 0;
             overflow-y: auto;
+            overflow-x: hidden;
             font-family: 'Fira Code', monospace;
             font-size: 0.85rem;
             line-height: 1.5;
             box-shadow: inset 0 2px 10px rgba(0,0,0,0.2);
+            box-sizing: border-box;
         }
 
         .log-line {
             padding: 0.2rem 0;
-            word-wrap: break-word;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
             border-bottom: 1px solid rgba(255,255,255,0.02);
             margin-bottom: 0.1rem;
+            min-width: 0;
         }
         
         .log-line:hover {
@@ -1155,7 +1193,7 @@
                 </div>
 
                 <!-- Center Column: Scrapers Box -->
-                <div class="glass-panel" style="height: 75vh;">
+                <div class="glass-panel scraper-panel-container">
                     <div class="panel-title">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
                         Scraper Metrics
