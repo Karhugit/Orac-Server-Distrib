@@ -326,7 +326,7 @@
             padding: 0.2rem 0;
             word-break: break-word;
             overflow-wrap: anywhere;
-            white-space: pre-wrap;
+            white-space: normal;
             border-bottom: 1px solid rgba(255,255,255,0.02);
             margin-bottom: 0.1rem;
             min-width: 0;
@@ -340,9 +340,9 @@
         .log-lvl-info { color: #34d399; font-weight: 600; margin-right: 0.5rem; }
         .log-lvl-warn { color: var(--log-warn); font-weight: 700; margin-right: 0.5rem; }
         .log-lvl-err { color: var(--log-error); font-weight: 700; margin-right: 0.5rem; }
-        .log-msg { color: var(--log-info); }
-        .log-msg-warn { color: rgba(251, 191, 36, 0.9); }
-        .log-msg-err { color: rgba(248, 113, 113, 0.9); }
+        .log-msg { color: var(--log-info); word-break: break-word; overflow-wrap: anywhere; white-space: pre-wrap; }
+        .log-msg-warn { color: rgba(251, 191, 36, 0.9); word-break: break-word; overflow-wrap: anywhere; white-space: pre-wrap; }
+        .log-msg-err { color: rgba(248, 113, 113, 0.9); word-break: break-word; overflow-wrap: anywhere; white-space: pre-wrap; }
 
         /* Tables & List Items */
         .table-header, .table-header-sm {
@@ -1954,11 +1954,7 @@
                 const timeStr = timeMatch ? timeMatch[0] : '';
                 const cleanMsg = log.replace(timeStr, '').replace(levelText, '').trim();
 
-                lineDiv.innerHTML = `
-                    ${timeStr ? `<span class="log-time">${timeStr}</span>` : ''}
-                    <span class="${lvlClass}">${levelText}</span>
-                    <span class="${msgClass}">${escapeHtml(cleanMsg)}</span>
-                `;
+                lineDiv.innerHTML = `${timeStr ? `<span class="log-time">${timeStr}</span> ` : ''}<span class="${lvlClass}">${levelText}</span> <span class="${msgClass}">${escapeHtml(cleanMsg)}</span>`;
                 terminal.appendChild(lineDiv);
             });
 
