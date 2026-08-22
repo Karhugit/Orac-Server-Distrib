@@ -940,39 +940,210 @@
             color: var(--text-main);
         }
 
-        .guide-card {
+        /* -------------------------------------------------------------
+           HELP & KNOWLEDGE BASE CENTER
+        ------------------------------------------------------------- */
+        .help-layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 1.5rem;
+            align-items: stretch;
+            min-height: 520px;
+        }
+
+        @media (max-width: 960px) {
+            .help-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .help-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
             background: rgba(15, 23, 42, 0.5);
             border: 1px solid var(--border-glass);
-            border-radius: 0.9rem;
+            border-radius: 1.25rem;
             padding: 1.25rem;
-            margin-bottom: 1rem;
+            box-sizing: border-box;
         }
 
-        .guide-title {
-            font-size: 1.05rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-            color: #818cf8;
+        .help-topic-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            overflow-y: auto;
+            flex: 1 1 auto;
+            padding-right: 0.35rem;
+            max-height: 550px;
+        }
+
+        .help-topic-item {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.85rem;
+            padding: 0.85rem 1rem;
+            border-radius: 0.75rem;
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid var(--border-glass);
+            cursor: pointer;
+            transition: all var(--animation-timing);
+            color: var(--text-main);
+            text-align: left;
+            user-select: none;
+            width: 100%;
+            box-sizing: border-box;
         }
 
-        .guide-body {
-            font-size: 0.88rem;
-            line-height: 1.6;
+        .help-topic-item:hover {
+            background: rgba(99, 102, 241, 0.15);
+            border-color: rgba(99, 102, 241, 0.4);
+            transform: translateX(4px);
+        }
+
+        .help-topic-item.active {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(168, 85, 247, 0.25));
+            border-color: #818cf8;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.2);
+        }
+
+        .help-topic-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            border-radius: 0.6rem;
+            background: rgba(255, 255, 255, 0.05);
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .help-topic-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .help-topic-title {
+            font-size: 0.92rem;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: var(--text-main);
+        }
+
+        .help-topic-desc {
+            font-size: 0.75rem;
             color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .help-content-pane {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-glass);
+            border-radius: 1.25rem;
+            padding: 2rem 2.25rem;
+            min-height: 520px;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            overflow-y: auto;
+            max-height: 700px;
+        }
+
+        .help-article {
+            display: none;
+            animation: fadeIn 0.25s ease-in-out;
+        }
+
+        .help-article.active {
+            display: block;
+        }
+
+        .help-article-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-glass);
+            padding-bottom: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .help-article-title {
+            font-size: 1.45rem;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            margin: 0;
+        }
+
+        .help-body-text {
+            font-size: 0.95rem;
+            line-height: 1.7;
+            color: #cbd5e1;
+        }
+
+        .help-body-text p {
+            margin: 0 0 1.1rem 0;
+            color: #cbd5e1;
+        }
+
+        .help-body-text h3 {
+            font-size: 1.15rem;
+            margin: 1.6rem 0 0.6rem 0;
+            color: #818cf8;
+            font-weight: 600;
+        }
+
+        .help-body-text ul, .help-body-text ol {
+            margin: 0 0 1.25rem 1.5rem;
+            color: #cbd5e1;
+        }
+
+        .help-body-text li {
+            margin-bottom: 0.45rem;
+        }
+
+        .help-callout {
+            padding: 1rem 1.25rem;
+            border-radius: 0.75rem;
+            margin: 1.25rem 0;
+            background: rgba(99, 102, 241, 0.12);
+            border-left: 4px solid #6366f1;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: #e0e7ff;
+        }
+
+        .help-callout.tip {
+            background: rgba(16, 185, 129, 0.12);
+            border-left-color: #10b981;
+            color: #d1fae5;
+        }
+
+        .help-callout.warn {
+            background: rgba(245, 158, 11, 0.12);
+            border-left-color: #f59e0b;
+            color: #fef3c7;
         }
 
         .code-block {
-            background: rgba(0, 0, 0, 0.4);
+            background: rgba(0, 0, 0, 0.45);
             border: 1px solid var(--border-glass);
             border-radius: 0.5rem;
             padding: 0.75rem 1rem;
             font-family: 'Fira Code', monospace;
-            font-size: 0.8rem;
+            font-size: 0.82rem;
             color: #c7d2fe;
-            margin: 0.5rem 0;
+            margin: 0.75rem 0;
             overflow-x: auto;
         }
 
@@ -1467,84 +1638,291 @@
                 </div>
             </div>
 
-            <!-- Setup Guides & Documentation -->
+            <!-- Interactive Knowledge Base & Documentation Center -->
             <div class="glass-panel" style="margin-bottom: 1.5rem;">
                 <div class="panel-title">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
-                    Liberator & Orac Architecture Guide
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+                    <span>Orac & Liberator Knowledge Base</span>
                 </div>
 
-                <div class="guide-card">
-                    <div class="guide-title">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                        1. Connecting Liberator to Orac Server
-                    </div>
-                    <div class="guide-body">
-                        Orac operates as a headless backend service. Liberator can communicate with Orac via <strong>HTTP API</strong> (for remote servers/docker) or <strong>Local IPC socket</strong> (when running on the same host).
-                        <div class="code-block">Liberator Settings → General → Orac Server IP: &lt;YOUR_ORAC_IP&gt; | Port: 8000</div>
-                    </div>
-                </div>
+                <div class="help-layout">
+                    <!-- Left Sidebar: Topic Headers -->
+                    <div class="help-sidebar">
+                        <div style="position: relative; margin-bottom: 0.25rem;">
+                            <input type="text" class="input-control" placeholder="🔍 Search help topics..." oninput="filterHelpTopics(this.value)" style="font-size: 0.85rem; padding: 0.55rem 0.85rem;">
+                        </div>
 
-                <div class="guide-card">
-                    <div class="guide-title">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                        2. External Indexing vs. Internal Indexing
-                    </div>
-                    <div class="guide-body">
-                        <ul>
-                            <li><strong>External Indexes:</strong> Query TMDb directly based on release year, score, provider (e.g. Netflix, Disney+), and genres. Saving an external index in Discover Studio makes it instantly appear in Liberator's Discover menus!</li>
-                            <li><strong>Internal Indexes:</strong> Filter and browse movies and TV shows that are already indexed in your local SQLite databases.</li>
-                        </ul>
-                    </div>
-                </div>
+                        <div class="help-topic-list" id="help-topic-list">
+                            <div class="help-topic-item active" data-topic="architecture" onclick="selectHelpTopic('architecture')">
+                                <div class="help-topic-icon">🏛️</div>
+                                <div class="help-topic-info">
+                                    <div class="help-topic-title">Architecture & Overview</div>
+                                    <div class="help-topic-desc">System design & backend model</div>
+                                </div>
+                            </div>
 
-                <div class="guide-card">
-                    <div class="guide-title">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                        3. Multi-Debrid Scraping & Cloud Resolving
-                    </div>
-                    <div class="guide-body">
-                        Orac aggregates real-time stream links from multiple scrapers across Real-Debrid, Premiumize, TorBox, OffCloud, and EasyDebrid. Scrapers are benchmarked with live success scoring and prioritized automatically.
-                    </div>
-                </div>
-            </div>
+                            <div class="help-topic-item" data-topic="connection" onclick="selectHelpTopic('connection')">
+                                <div class="help-topic-icon">🔌</div>
+                                <div class="help-topic-info">
+                                    <div class="help-topic-title">Connecting Liberator</div>
+                                    <div class="help-topic-desc">IP, port & IPC socket setup</div>
+                                </div>
+                            </div>
 
-            <!-- API Explorer -->
-            <div class="glass-panel">
-                <div class="panel-title">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
-                    REST API Reference
-                </div>
-                <div class="table-header" style="grid-template-columns: 1fr 2fr 3fr;">
-                    <div>Method</div>
-                    <div>Endpoint</div>
-                    <div>Description</div>
-                </div>
-                <div class="list-container-scroll" style="max-height: 250px;">
-                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
-                        <div><span class="badge active">GET</span></div>
-                        <div class="item-name" style="font-family: monospace;">/discover/{item_type}</div>
-                        <div style="color: var(--text-muted); font-size: 0.8rem;">Query TMDb discover with filters or stored index name</div>
+                            <div class="help-topic-item" data-topic="discover" onclick="selectHelpTopic('discover')">
+                                <div class="help-topic-icon">🧭</div>
+                                <div class="help-topic-info">
+                                    <div class="help-topic-title">Discover Studio</div>
+                                    <div class="help-topic-desc">TMDb queries & external indexes</div>
+                                </div>
+                            </div>
+
+                            <div class="help-topic-item" data-topic="indexes" onclick="selectHelpTopic('indexes')">
+                                <div class="help-topic-icon">📑</div>
+                                <div class="help-topic-info">
+                                    <div class="help-topic-title">Internal Library Indexes</div>
+                                    <div class="help-topic-desc">Filtering cached movies & shows</div>
+                                </div>
+                            </div>
+
+                            <div class="help-topic-item" data-topic="scrapers" onclick="selectHelpTopic('scrapers')">
+                                <div class="help-topic-icon">⚡</div>
+                                <div class="help-topic-info">
+                                    <div class="help-topic-title">Scrapers & Debrid Resolving</div>
+                                    <div class="help-topic-desc">Providers, cloud streams & scoring</div>
+                                </div>
+                            </div>
+
+                            <div class="help-topic-item" data-topic="sync" onclick="selectHelpTopic('sync')">
+                                <div class="help-topic-icon">🔄</div>
+                                <div class="help-topic-info">
+                                    <div class="help-topic-title">Account Synchronization</div>
+                                    <div class="help-topic-desc">Trakt, Simkl & MDBList sync</div>
+                                </div>
+                            </div>
+
+                            <div class="help-topic-item" data-topic="diagnostics" onclick="selectHelpTopic('diagnostics')">
+                                <div class="help-topic-icon">🛠️</div>
+                                <div class="help-topic-info">
+                                    <div class="help-topic-title">Diagnostics & Maintenance</div>
+                                    <div class="help-topic-desc">Health checks, vacuum & logs</div>
+                                </div>
+                            </div>
+
+                            <div class="help-topic-item" data-topic="api" onclick="selectHelpTopic('api')">
+                                <div class="help-topic-icon">🌐</div>
+                                <div class="help-topic-info">
+                                    <div class="help-topic-title">REST API Reference</div>
+                                    <div class="help-topic-desc">HTTP endpoints & payloads</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
-                        <div><span class="badge active">GET</span></div>
-                        <div class="item-name" style="font-family: monospace;">/get_external_indexes</div>
-                        <div style="color: var(--text-muted); font-size: 0.8rem;">Fetch stored external discover indexes</div>
-                    </div>
-                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
-                        <div><span class="badge active">GET</span></div>
-                        <div class="item-name" style="font-family: monospace;">/next_episodes</div>
-                        <div style="color: var(--text-muted); font-size: 0.8rem;">Get unwatched next episodes list with artwork</div>
-                    </div>
-                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
-                        <div><span class="badge active">GET</span></div>
-                        <div class="item-name" style="font-family: monospace;">/api/web/diagnostics</div>
-                        <div style="color: var(--text-muted); font-size: 0.8rem;">Live system connectivity, token status, and DB sizes</div>
-                    </div>
-                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
-                        <div><span class="badge platform">PUT</span></div>
-                        <div class="item-name" style="font-family: monospace;">/add_ext_index</div>
-                        <div style="color: var(--text-muted); font-size: 0.8rem;">Save or update an external discover index query</div>
+
+                    <!-- Right Reader Pane: Selected Help Article -->
+                    <div class="help-content-pane">
+
+                        <!-- Article 1: Architecture & Overview -->
+                        <div class="help-article active" id="article-architecture">
+                            <div class="help-article-header">
+                                <h2 class="help-article-title">🏛️ Architecture & Overview</h2>
+                                <span class="badge active">Core System</span>
+                            </div>
+                            <div class="help-body-text">
+                                <p><strong>Orac Server</strong> is a standalone media aggregation, metadata indexing, and stream scraping engine designed to power the <strong>Liberator Kodi Addon</strong>.</p>
+
+                                <h3>How It Works</h3>
+                                <ul>
+                                    <li><strong>Headless Backend:</strong> Runs silently on Windows, Linux, or Docker container, maintaining local SQLite caches for ultra-fast metadata access without hitting external API rate limits.</li>
+                                    <li><strong>Unified Scraping Engine:</strong> Aggregates torrent hashes, direct stream links, and Debrid cloud files simultaneously across configured scraper modules.</li>
+                                    <li><strong>Fast Local IPC & Web API:</strong> Liberator communicates with Orac either via high-speed Unix/Windows named sockets (IPC) on the same machine, or via standard REST HTTP endpoints across your local home network.</li>
+                                </ul>
+
+                                <div class="help-callout tip">
+                                    💡 <strong>Tip:</strong> Running Orac Server on an always-on NAS or mini PC allows multiple Kodi boxes in your household to share the same indexed databases, watched status, and scraper configurations.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Article 2: Connecting Liberator to Orac -->
+                        <div class="help-article" id="article-connection">
+                            <div class="help-article-header">
+                                <h2 class="help-article-title">🔌 Connecting Liberator to Orac Server</h2>
+                                <span class="badge active">Configuration</span>
+                            </div>
+                            <div class="help-body-text">
+                                <p>To connect the Liberator Kodi addon to your running Orac Server instance:</p>
+
+                                <h3>Step-by-Step Connection</h3>
+                                <ol>
+                                    <li>Open <strong>Kodi</strong> and navigate to <strong>Liberator → Tools → Settings</strong>.</li>
+                                    <li>Select the <strong>General / Server</strong> tab.</li>
+                                    <li>Configure the server host details:
+                                        <div class="code-block">Orac Server IP: 192.168.1.100 (or 127.0.0.1 if running on the same PC)
+Orac Server Port: 8000 (default)</div>
+                                    </li>
+                                    <li>Toggle <em>Enable Orac Server Connection</em> to ON.</li>
+                                    <li>Click <strong>OK</strong> and verify connectivity in the Liberator status indicator.</li>
+                                </ol>
+
+                                <div class="help-callout">
+                                    ⚙️ <strong>Port Note:</strong> If running Orac in Docker or a custom environment, ensure port <code>8000</code> (or your chosen port) is forwarded and reachable across your local subnet.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Article 3: Discover Studio & External Indexes -->
+                        <div class="help-article" id="article-discover">
+                            <div class="help-article-header">
+                                <h2 class="help-article-title">🧭 Discover Studio & External Indexes</h2>
+                                <span class="badge active">Discovery</span>
+                            </div>
+                            <div class="help-body-text">
+                                <p>The <strong>Discover Studio</strong> tab allows you to query TMDb's global catalog with deep filters (genres, release years, vote score, watch providers) and save queries directly as <strong>External Indexes</strong>.</p>
+
+                                <h3>Creating & Managing External Indexes</h3>
+                                <ul>
+                                    <li><strong>Live Query:</strong> Set your target media type (Movies or TV Shows), select genres, minimum score, and release year range, then click <em>Discover</em>.</li>
+                                    <li><strong>Save as Index:</strong> Click <em>📑 Save as Index</em>, give your index a unique name (e.g. <code>Top Netflix Sci-Fi</code>), and click Save.</li>
+                                    <li><strong>Liberator Integration:</strong> Saved external indexes instantly appear in Liberator under the <strong>Discover / Indexes</strong> category menu!</li>
+                                    <li><strong>Manage & Delete:</strong> Open the <strong>External Indexes</strong> tab to view all created queries, test them with live preview results, or delete outdated indexes.</li>
+                                </ul>
+
+                                <div class="help-callout tip">
+                                    💡 <strong>Provider Filtering:</strong> Selecting providers like Netflix, Disney+, Prime Video, or Apple TV+ queries TMDb's localized catalog to find titles available on those platforms.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Article 4: Internal Library Indexes -->
+                        <div class="help-article" id="article-indexes">
+                            <div class="help-article-header">
+                                <h2 class="help-article-title">📑 Internal Library Indexes</h2>
+                                <span class="badge active">Library</span>
+                            </div>
+                            <div class="help-body-text">
+                                <p>While External Indexes query TMDb online, <strong>Internal Indexes</strong> run against your local cached library in <code>movies_static_cache.db</code> and <code>tvshows_static_cache.db</code>.</p>
+
+                                <h3>Key Advantages</h3>
+                                <ul>
+                                    <li><strong>Instant Browsing:</strong> Sub-millisecond response times because all metadata, cast, ratings, and artwork URLs are stored locally in SQLite.</li>
+                                    <li><strong>Custom Filters:</strong> Filter your library by status (e.g. Continuing, Ended), release decade, watched progress, or genres.</li>
+                                    <li><strong>Offline Capability:</strong> Browse your media collection even when external APIs or internet connections are temporarily unavailable.</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Article 5: Multi-Debrid Scrapers & Cloud Resolving -->
+                        <div class="help-article" id="article-scrapers">
+                            <div class="help-article-header">
+                                <h2 class="help-article-title">⚡ Multi-Debrid Scrapers & Cloud Resolving</h2>
+                                <span class="badge active">Scraping</span>
+                            </div>
+                            <div class="help-body-text">
+                                <p>Orac includes high-performance scrapers supporting the leading premium Debrid providers.</p>
+
+                                <h3>Supported Services</h3>
+                                <ul>
+                                    <li><strong>Real-Debrid:</strong> Fast cached torrent resolving and hoster links.</li>
+                                    <li><strong>Premiumize.me:</strong> Cloud inspection, direct stream links, and RSS downloading.</li>
+                                    <li><strong>TorBox / OffCloud / EasyDebrid:</strong> Direct cloud stream resolutions.</li>
+                                    <li><strong>AIOStreams:</strong> External multi-indexer integration.</li>
+                                </ul>
+
+                                <h3>Scraper Metrics & Prioritization</h3>
+                                <p>The dashboard continuously benchmarks scrapers based on response latency, stream quality (4K, 1080p, HDR/DV), and scrape success rate, ensuring the fastest sources are resolved first.</p>
+                            </div>
+                        </div>
+
+                        <!-- Article 6: Account Synchronization -->
+                        <div class="help-article" id="article-sync">
+                            <div class="help-article-header">
+                                <h2 class="help-article-title">🔄 Account Synchronization (Trakt / Simkl)</h2>
+                                <span class="badge active">Sync Engine</span>
+                            </div>
+                            <div class="help-body-text">
+                                <p>Orac synchronizes watch history, ratings, collection items, and custom lists across platforms.</p>
+
+                                <h3>Supported Platforms</h3>
+                                <ul>
+                                    <li><strong>Trakt:</strong> Full two-way synchronization of watched movies, episodes, collection items, and custom lists. Air dates and metadata are enriched with extended detail.</li>
+                                    <li><strong>Simkl:</strong> Fast token-based sync for anime, TV shows, and movie watchlists.</li>
+                                    <li><strong>MDBList:</strong> Dynamic list synchronization for curated trending and popular media lists.</li>
+                                </ul>
+
+                                <div class="help-callout">
+                                    ⚠️ <strong>Automatic Background Worker:</strong> Orac runs periodic hourly sync tasks in the background so your watched status and next episodes are always up to date.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Article 7: Diagnostics & Maintenance -->
+                        <div class="help-article" id="article-diagnostics">
+                            <div class="help-article-header">
+                                <h2 class="help-article-title">🛠️ Diagnostics, Database Maintenance & Health</h2>
+                                <span class="badge active">Maintenance</span>
+                            </div>
+                            <div class="help-body-text">
+                                <p>Use the Diagnostics panel at the top of the Help tab to monitor server health in real-time.</p>
+
+                                <h3>Key Tools</h3>
+                                <ul>
+                                    <li><strong>🔄 Health Check:</strong> Tests live API connectivity and latency to TMDb, Trakt, and Fanart.tv.</li>
+                                    <li><strong>🧹 Vacuum Databases:</strong> Executes SQLite <code>VACUUM</code> across all database files (movies, shows, lists, config) to reclaim unused disk space and rebuild indexes for optimal performance.</li>
+                                    <li><strong>Integrity Check:</strong> Performs <code>PRAGMA quick_check</code> on every database file to ensure no data corruption has occurred.</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Article 8: REST API Reference -->
+                        <div class="help-article" id="article-api">
+                            <div class="help-article-header">
+                                <h2 class="help-article-title">🌐 REST API Reference</h2>
+                                <span class="badge active">Developer API</span>
+                            </div>
+                            <div class="help-body-text">
+                                <p>Orac Server provides a lightweight REST API for automation and third-party integrations.</p>
+
+                                <div class="table-header" style="grid-template-columns: 1fr 2fr 3fr; margin-top: 1rem;">
+                                    <div>Method</div>
+                                    <div>Endpoint</div>
+                                    <div>Description</div>
+                                </div>
+                                <div class="list-container-scroll" style="max-height: 300px;">
+                                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
+                                        <div><span class="badge active">GET</span></div>
+                                        <div class="item-name" style="font-family: monospace;">/discover/{item_type}</div>
+                                        <div style="color: var(--text-muted); font-size: 0.8rem;">Query TMDb discover with filters or stored index name</div>
+                                    </div>
+                                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
+                                        <div><span class="badge active">GET</span></div>
+                                        <div class="item-name" style="font-family: monospace;">/get_external_indexes</div>
+                                        <div style="color: var(--text-muted); font-size: 0.8rem;">Fetch stored external discover indexes</div>
+                                    </div>
+                                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
+                                        <div><span class="badge active">GET</span></div>
+                                        <div class="item-name" style="font-family: monospace;">/next_episodes</div>
+                                        <div style="color: var(--text-muted); font-size: 0.8rem;">Get unwatched next episodes list with artwork</div>
+                                    </div>
+                                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
+                                        <div><span class="badge active">GET</span></div>
+                                        <div class="item-name" style="font-family: monospace;">/api/web/diagnostics</div>
+                                        <div style="color: var(--text-muted); font-size: 0.8rem;">Live system connectivity, token status, and DB sizes</div>
+                                    </div>
+                                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
+                                        <div><span class="badge platform">PUT</span></div>
+                                        <div class="item-name" style="font-family: monospace;">/add_ext_index</div>
+                                        <div style="color: var(--text-muted); font-size: 0.8rem;">Save or update an external discover index query</div>
+                                    </div>
+                                    <div class="scraper-row" style="grid-template-columns: 1fr 2fr 3fr;">
+                                        <div><span class="badge platform">DELETE</span></div>
+                                        <div class="item-name" style="font-family: monospace;">/del_ext_index</div>
+                                        <div style="color: var(--text-muted); font-size: 0.8rem;">Delete a stored external discover index</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -2585,7 +2963,40 @@
                 btn.textContent = '🧹 Vacuum Databases';
                 btn.disabled = false;
                 alert(`Error executing vacuum: ${err.message}`);
-            }
+        }
+
+        // -------------------------------------------------------------
+        // HELP CENTER / KNOWLEDGE BASE
+        // -------------------------------------------------------------
+        function selectHelpTopic(topicId) {
+            document.querySelectorAll('.help-topic-item').forEach(item => {
+                if (item.dataset.topic === topicId) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+
+            document.querySelectorAll('.help-article').forEach(article => {
+                if (article.id === `article-${topicId}`) {
+                    article.classList.add('active');
+                } else {
+                    article.classList.remove('active');
+                }
+            });
+        }
+
+        function filterHelpTopics(query) {
+            const q = (query || '').toLowerCase().trim();
+            document.querySelectorAll('.help-topic-item').forEach(item => {
+                const title = (item.querySelector('.help-topic-title')?.textContent || '').toLowerCase();
+                const desc = (item.querySelector('.help-topic-desc')?.textContent || '').toLowerCase();
+                if (!q || title.includes(q) || desc.includes(q)) {
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
         }
 
         let currentModalListId = '';
