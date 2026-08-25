@@ -358,6 +358,18 @@
 
         .table-header { grid-template-columns: 2fr 1fr 1fr 1fr; }
         .table-header-sm { grid-template-columns: 1.5fr 2fr; }
+        .table-header-platform {
+            display: grid;
+            grid-template-columns: 1.1fr 1.5fr 85px;
+            padding: 0 0.75rem 0.75rem 0.75rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--border-glass);
+            align-items: center;
+        }
 
         .list-container-scroll {
             overflow-y: auto;
@@ -376,7 +388,7 @@
 
         .scraper-row, .platform-row {
             display: grid;
-            padding: 1rem 0.75rem;
+            padding: 0.85rem 0.75rem;
             border-bottom: 1px solid var(--border-glass);
             align-items: center;
             transition: background var(--animation-timing);
@@ -385,7 +397,7 @@
         }
 
         .scraper-row { grid-template-columns: 2fr 1fr 1fr 1fr; }
-        .platform-row { grid-template-columns: 1.5fr 2fr; }
+        .platform-row { grid-template-columns: 1.1fr 1.5fr 85px; }
 
         .scraper-row:last-child, .platform-row:last-child {
             border-bottom: none;
@@ -393,6 +405,43 @@
 
         .scraper-row:hover, .platform-row:hover {
             background: var(--surface-hover);
+        }
+
+        .btn-sm-action {
+            padding: 0.35rem 0.7rem;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all var(--animation-timing);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.3rem;
+            white-space: nowrap;
+            text-decoration: none;
+        }
+        .btn-sm-primary {
+            background: var(--primary-gradient);
+            color: #ffffff;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+        }
+        .btn-sm-primary:hover {
+            filter: brightness(1.15);
+            transform: scale(1.04);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.45);
+        }
+        .btn-sm-danger {
+            background: rgba(244, 63, 94, 0.18);
+            color: #fb7185;
+            border: 1px solid rgba(244, 63, 94, 0.35);
+        }
+        .btn-sm-danger:hover {
+            background: rgba(244, 63, 94, 0.3);
+            border-color: rgba(244, 63, 94, 0.6);
+            color: #ffffff;
+            transform: scale(1.04);
         }
 
         .item-name {
@@ -1393,14 +1442,16 @@
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                             Authorised Platforms
                         </div>
-                        <div class="table-header-sm">
+                        <div class="table-header-platform">
                             <div>Service</div>
-                            <div>Username</div>
+                            <div>Account / Status</div>
+                            <div style="text-align: right;">Action</div>
                         </div>
                         <div class="list-container-scroll" id="platforms-container">
                             <div class="platform-row">
                                 <div class="loading-shimmer" style="width: 50%;"></div>
                                 <div class="loading-shimmer" style="width: 70%;"></div>
+                                <div class="loading-shimmer" style="width: 50%;"></div>
                             </div>
                         </div>
                     </div>
@@ -1934,6 +1985,163 @@ Orac Server Port: 8000 (default)</div>
          MODALS
     ===================================================================== -->
 
+    <!-- MDBList Authorisation Modal -->
+    <div id="mdblist-auth-modal" class="modal-overlay" onclick="closeMdbAuthModal(event)" style="z-index: 1200;">
+        <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>Authorise MDBList</h2>
+                <button class="modal-close-btn" onclick="toggleMdbAuthModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            
+            <form id="mdblist-auth-form" onsubmit="handleMdbAuthSubmit(event)" style="display: flex; flex-direction: column; gap: 1.25rem;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
+                    Enter your MDBList API key below to link your MDBList account with Orac Server.
+                </p>
+                
+                <div class="filter-group">
+                    <label class="filter-label">MDBList API Key</label>
+                    <input type="text" id="modal-mdblist-api-key" class="form-input" required placeholder="Paste your API key here..." style="width: 100%; font-family: 'Fira Code', monospace; font-size: 0.85rem;">
+                </div>
+
+                <div id="modal-mdblist-msg" style="display: none; font-size: 0.82rem; padding: 0.5rem 0.75rem; border-radius: 0.4rem;"></div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+                    <button type="button" class="btn-secondary" onclick="toggleMdbAuthModal(false)">Cancel</button>
+                    <button type="submit" id="modal-mdblist-submit-btn" class="btn-primary">Save & Authorise</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- TMDb Authorisation Modal -->
+    <div id="tmdb-auth-modal" class="modal-overlay" onclick="closeTmdbAuthModal(event)" style="z-index: 1200;">
+        <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem; text-align: center;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="justify-content: space-between;">
+                <h2>Authorise TMDb</h2>
+                <button class="modal-close-btn" onclick="toggleTmdbAuthModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            
+            <div id="tmdb-auth-body" style="display: flex; flex-direction: column; gap: 1.25rem; align-items: center; width: 100%;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
+                    Click the button below to approve Orac on TheMovieDatabase (TMDb), or scan the QR code from another device.
+                </p>
+
+                <div id="tmdb-qr-container" style="background: white; padding: 0.5rem; border-radius: 0.5rem; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+                    <img id="tmdb-qr-img" src="" alt="TMDb QR Code" style="width: 160px; height: 160px; display: block; border-radius: 0.25rem;">
+                </div>
+
+                <a id="tmdb-browser-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-primary" style="padding: 0.6rem 1.4rem; font-size: 0.9rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;">
+                    <span>Open TMDb Authorisation</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                </a>
+
+                <div id="tmdb-auth-status" style="font-size: 0.85rem; padding: 0.5rem 0.75rem; border-radius: 0.4rem; width: 100%; box-sizing: border-box; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                        <span class="loading-spinner-sm" style="display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(129, 140, 248, 0.3); border-top-color: #818cf8; border-radius: 50%; animation: spin 1s linear infinite;"></span>
+                        <span id="tmdb-status-text">Waiting for approval on TMDb...</span>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; width: 100%; margin-top: 0.25rem;">
+                    <button type="button" class="btn-secondary" onclick="toggleTmdbAuthModal(false)">Cancel</button>
+                    <button type="button" class="btn-primary" onclick="checkTmdbAuthOnce()">Check Status</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Simkl Authorisation Modal -->
+    <div id="simkl-auth-modal" class="modal-overlay" onclick="closeSimklAuthModal(event)" style="z-index: 1200;">
+        <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem; text-align: center;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="justify-content: space-between;">
+                <h2>Authorise Simkl</h2>
+                <button class="modal-close-btn" onclick="toggleSimklAuthModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            
+            <div id="simkl-auth-body" style="display: flex; flex-direction: column; gap: 1.25rem; align-items: center; width: 100%;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
+                    Click the button below to approve Orac on Simkl, or scan the QR code and enter the PIN.
+                </p>
+
+                <div id="simkl-code-display" style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-glass); border-radius: 0.75rem; padding: 0.75rem 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; width: 100%; box-sizing: border-box;">
+                    <span style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted);">Your Simkl PIN Code</span>
+                    <span id="simkl-user-code" style="font-family: 'Fira Code', monospace; font-size: 1.8rem; font-weight: 700; letter-spacing: 4px; color: #38bdf8;">----</span>
+                </div>
+
+                <div id="simkl-qr-container" style="background: white; padding: 0.5rem; border-radius: 0.5rem; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+                    <img id="simkl-qr-img" src="" alt="Simkl QR Code" style="width: 150px; height: 150px; display: block; border-radius: 0.25rem;">
+                </div>
+
+                <a id="simkl-browser-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-primary" style="padding: 0.6rem 1.4rem; font-size: 0.9rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;">
+                    <span>Open Simkl Authorisation</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                </a>
+
+                <div id="simkl-auth-status" style="font-size: 0.85rem; padding: 0.5rem 0.75rem; border-radius: 0.4rem; width: 100%; box-sizing: border-box; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                        <span class="loading-spinner-sm" style="display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(129, 140, 248, 0.3); border-top-color: #818cf8; border-radius: 50%; animation: spin 1s linear infinite;"></span>
+                        <span id="simkl-status-text">Waiting for approval on Simkl...</span>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; width: 100%; margin-top: 0.25rem;">
+                    <button type="button" class="btn-secondary" onclick="toggleSimklAuthModal(false)">Cancel</button>
+                    <button type="button" class="btn-primary" onclick="checkSimklAuthOnce()">Check Status</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trakt Authorisation Modal -->
+    <div id="trakt-auth-modal" class="modal-overlay" onclick="closeTraktAuthModal(event)" style="z-index: 1200;">
+        <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem; text-align: center;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="justify-content: space-between;">
+                <h2>Authorise Trakt</h2>
+                <button class="modal-close-btn" onclick="toggleTraktAuthModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            
+            <div id="trakt-auth-body" style="display: flex; flex-direction: column; gap: 1.25rem; align-items: center; width: 100%;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
+                    Click the button below to approve Orac on Trakt, or scan the QR code and enter the PIN.
+                </p>
+
+                <div id="trakt-code-display" style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-glass); border-radius: 0.75rem; padding: 0.75rem 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; width: 100%; box-sizing: border-box;">
+                    <span style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted);">Your Trakt PIN Code</span>
+                    <span id="trakt-user-code" style="font-family: 'Fira Code', monospace; font-size: 1.8rem; font-weight: 700; letter-spacing: 4px; color: #ed1c24;">----</span>
+                </div>
+
+                <div id="trakt-qr-container" style="background: white; padding: 0.5rem; border-radius: 0.5rem; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+                    <img id="trakt-qr-img" src="" alt="Trakt QR Code" style="width: 150px; height: 150px; display: block; border-radius: 0.25rem;">
+                </div>
+
+                <a id="trakt-browser-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-primary" style="padding: 0.6rem 1.4rem; font-size: 0.9rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;">
+                    <span>Open Trakt Activation</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                </a>
+
+                <div id="trakt-auth-status" style="font-size: 0.85rem; padding: 0.5rem 0.75rem; border-radius: 0.4rem; width: 100%; box-sizing: border-box; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                        <span class="loading-spinner-sm" style="display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(129, 140, 248, 0.3); border-top-color: #818cf8; border-radius: 50%; animation: spin 1s linear infinite;"></span>
+                        <span id="trakt-status-text">Waiting for approval on Trakt...</span>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; width: 100%; margin-top: 0.25rem;">
+                    <button type="button" class="btn-secondary" onclick="toggleTraktAuthModal(false)">Cancel</button>
+                    <button type="button" class="btn-primary" onclick="checkTraktAuthOnce()">Check Status</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Save / Edit Index Modal -->
     <div id="save-index-modal" class="modal-overlay" onclick="closeSaveIndexModal(event)" style="z-index: 1200;">
         <div class="modal-container" style="max-width: 580px; height: auto; min-height: 380px; max-height: 90vh; padding: 1.75rem;" onclick="event.stopPropagation()">
@@ -2237,12 +2445,587 @@ Orac Server Port: 8000 (default)</div>
             platforms.forEach(platform => {
                 const row = document.createElement('div');
                 row.className = 'platform-row';
+                
+                const isAuth = platform.authenticated !== false && platform.username && platform.username !== 'empty_setting';
+                const userDisplay = isAuth 
+                    ? `<span style="font-size:0.85rem; font-weight:500; color: var(--text-main);">${escapeHtml(platform.username)}</span>` 
+                    : `<span style="font-size:0.82rem; color: var(--text-dim); font-style: italic;">Not authorised</span>`;
+                
+                let actionBtnHtml = '';
+                if (platform.id === 'mdblist' || platform.name.toLowerCase() === 'mdblist') {
+                    if (isAuth) {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokeMdbAuth()">Revoke</button>`;
+                    } else {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openMdbAuthModal()">Authorise</button>`;
+                    }
+                } else if (platform.id === 'tmdb' || platform.name.toLowerCase() === 'tmdb') {
+                    if (isAuth) {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokeTmdbAuth()">Revoke</button>`;
+                    } else {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openTmdbAuthModal()">Authorise</button>`;
+                    }
+                } else if (platform.id === 'simkl' || platform.name.toLowerCase() === 'simkl') {
+                    if (isAuth) {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokeSimklAuth()">Revoke</button>`;
+                    } else {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openSimklAuthModal()">Authorise</button>`;
+                    }
+                } else if (platform.id === 'trakt' || platform.name.toLowerCase() === 'trakt') {
+                    if (isAuth) {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokeTraktAuth()">Revoke</button>`;
+                    } else {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openTraktAuthModal()">Authorise</button>`;
+                    }
+                }
+
                 row.innerHTML = `
-                    <div><span class="badge platform">${platform.name}</span></div>
-                    <div class="item-name" style="font-size:0.9rem; font-weight:500;">${platform.username}</div>
+                    <div><span class="badge ${isAuth ? 'platform' : 'neutral'}">${escapeHtml(platform.name)}</span></div>
+                    <div class="item-name" style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${userDisplay}</div>
+                    <div style="text-align: right;">${actionBtnHtml}</div>
                 `;
                 container.appendChild(row);
             });
+        }
+
+        function toggleMdbAuthModal(show) {
+            const modal = document.getElementById('mdblist-auth-modal');
+            if (show) {
+                modal.classList.add('visible');
+                document.getElementById('modal-mdblist-api-key').value = '';
+                const msg = document.getElementById('modal-mdblist-msg');
+                msg.style.display = 'none';
+                msg.textContent = '';
+                setTimeout(() => document.getElementById('modal-mdblist-api-key').focus(), 50);
+            } else {
+                modal.classList.remove('visible');
+            }
+        }
+
+        function openMdbAuthModal() {
+            toggleMdbAuthModal(true);
+        }
+
+        function closeMdbAuthModal(e) {
+            if (e.target.id === 'mdblist-auth-modal') {
+                toggleMdbAuthModal(false);
+            }
+        }
+
+        async function handleMdbAuthSubmit(e) {
+            e.preventDefault();
+            const apiKey = (document.getElementById('modal-mdblist-api-key').value || '').trim();
+            const msgEl = document.getElementById('modal-mdblist-msg');
+            const submitBtn = document.getElementById('modal-mdblist-submit-btn');
+
+            if (!apiKey) {
+                msgEl.style.display = 'block';
+                msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                msgEl.style.color = '#fb7185';
+                msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                msgEl.textContent = 'Please enter a valid API key.';
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Validating...';
+            msgEl.style.display = 'block';
+            msgEl.style.background = 'rgba(99, 102, 241, 0.15)';
+            msgEl.style.color = '#818cf8';
+            msgEl.style.border = '1px solid rgba(99, 102, 241, 0.3)';
+            msgEl.textContent = 'Contacting MDBList API...';
+
+            try {
+                const resp = await fetch('/api/web/platforms/mdblist/auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: apiKey })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    msgEl.style.background = 'rgba(16, 185, 129, 0.15)';
+                    msgEl.style.color = '#34d399';
+                    msgEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                    msgEl.textContent = `Successfully authorised as ${data.username || 'user'}!`;
+                    setTimeout(() => {
+                        toggleMdbAuthModal(false);
+                        fetchPlatforms();
+                    }, 900);
+                } else {
+                    msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                    msgEl.style.color = '#fb7185';
+                    msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                    msgEl.textContent = data.error || 'Failed to authorise MDBList';
+                }
+            } catch (err) {
+                msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                msgEl.style.color = '#fb7185';
+                msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                msgEl.textContent = `Network error: ${err.message}`;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Save & Authorise';
+            }
+        }
+
+        async function revokeMdbAuth() {
+            if (!confirm('Are you sure you want to revoke MDBList authorisation?')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/web/platforms/mdblist/revoke', {
+                    method: 'POST'
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    fetchPlatforms();
+                } else {
+                    alert('Error revoking MDBList: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Network error revoking MDBList: ' + err.message);
+            }
+        }
+
+        let tmdbPollInterval = null;
+        let currentTmdbRequestToken = null;
+
+        function toggleTmdbAuthModal(show) {
+            const modal = document.getElementById('tmdb-auth-modal');
+            if (show) {
+                modal.classList.add('visible');
+                startTmdbAuth();
+            } else {
+                modal.classList.remove('visible');
+                if (tmdbPollInterval) {
+                    clearInterval(tmdbPollInterval);
+                    tmdbPollInterval = null;
+                }
+                currentTmdbRequestToken = null;
+            }
+        }
+
+        function openTmdbAuthModal() {
+            toggleTmdbAuthModal(true);
+        }
+
+        function closeTmdbAuthModal(e) {
+            if (e.target.id === 'tmdb-auth-modal') {
+                toggleTmdbAuthModal(false);
+            }
+        }
+
+        async function startTmdbAuth() {
+            const statusText = document.getElementById('tmdb-status-text');
+            const statusBox = document.getElementById('tmdb-auth-status');
+            const qrImg = document.getElementById('tmdb-qr-img');
+            const browserLink = document.getElementById('tmdb-browser-link');
+
+            statusBox.style.background = 'rgba(99, 102, 241, 0.15)';
+            statusBox.style.color = '#818cf8';
+            statusBox.style.border = '1px solid rgba(99, 102, 241, 0.3)';
+            statusText.textContent = 'Generating TMDb request token...';
+            browserLink.style.pointerEvents = 'none';
+            browserLink.style.opacity = '0.5';
+
+            try {
+                const resp = await fetch('/api/web/platforms/tmdb/start_auth', { method: 'POST' });
+                const data = await resp.json();
+                if (data.success && data.request_token) {
+                    currentTmdbRequestToken = data.request_token;
+                    browserLink.href = data.auth_url;
+                    browserLink.style.pointerEvents = 'auto';
+                    browserLink.style.opacity = '1';
+
+                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(data.auth_url)}`;
+                    qrImg.src = qrUrl;
+
+                    statusText.textContent = 'Waiting for approval on TMDb...';
+
+                    // Start polling every 3 seconds
+                    if (tmdbPollInterval) clearInterval(tmdbPollInterval);
+                    let attempts = 0;
+                    tmdbPollInterval = setInterval(async () => {
+                        attempts++;
+                        if (attempts > 100) { // ~5 minutes
+                            clearInterval(tmdbPollInterval);
+                            statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                            statusBox.style.color = '#fb7185';
+                            statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                            statusText.textContent = 'Authorization session timed out. Please try again.';
+                            return;
+                        }
+                        await checkTmdbAuthOnce(true);
+                    }, 3000);
+                } else {
+                    statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                    statusBox.style.color = '#fb7185';
+                    statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                    statusText.textContent = data.error || 'Failed to initialize TMDb authorization';
+                }
+            } catch (err) {
+                statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                statusBox.style.color = '#fb7185';
+                statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                statusText.textContent = `Network error: ${err.message}`;
+            }
+        }
+
+        async function checkTmdbAuthOnce(isAutoPoll = false) {
+            if (!currentTmdbRequestToken) return;
+
+            const statusText = document.getElementById('tmdb-status-text');
+            const statusBox = document.getElementById('tmdb-auth-status');
+
+            if (!isAutoPoll) {
+                statusText.textContent = 'Checking authorization status...';
+            }
+
+            try {
+                const resp = await fetch('/api/web/platforms/tmdb/check_auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ request_token: currentTmdbRequestToken })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    if (tmdbPollInterval) {
+                        clearInterval(tmdbPollInterval);
+                        tmdbPollInterval = null;
+                    }
+                    statusBox.style.background = 'rgba(16, 185, 129, 0.15)';
+                    statusBox.style.color = '#34d399';
+                    statusBox.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                    statusText.textContent = `Successfully authorised as ${data.username}!`;
+
+                    setTimeout(() => {
+                        toggleTmdbAuthModal(false);
+                        fetchPlatforms();
+                    }, 1000);
+                } else if (!isAutoPoll) {
+                    statusText.textContent = data.error || 'Approval not detected yet. Please approve in browser.';
+                }
+            } catch (err) {
+                if (!isAutoPoll) {
+                    statusText.textContent = `Error: ${err.message}`;
+                }
+            }
+        }
+
+        async function revokeTmdbAuth() {
+            if (!confirm('Are you sure you want to revoke TMDb authorisation?')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/web/platforms/tmdb/revoke', {
+                    method: 'POST'
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    fetchPlatforms();
+                } else {
+                    alert('Error revoking TMDb: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Network error revoking TMDb: ' + err.message);
+            }
+        }
+
+        let simklPollInterval = null;
+        let currentSimklUserCode = null;
+
+        function toggleSimklAuthModal(show) {
+            const modal = document.getElementById('simkl-auth-modal');
+            if (show) {
+                modal.classList.add('visible');
+                startSimklAuth();
+            } else {
+                modal.classList.remove('visible');
+                if (simklPollInterval) {
+                    clearInterval(simklPollInterval);
+                    simklPollInterval = null;
+                }
+                currentSimklUserCode = null;
+            }
+        }
+
+        function openSimklAuthModal() {
+            toggleSimklAuthModal(true);
+        }
+
+        function closeSimklAuthModal(e) {
+            if (e.target.id === 'simkl-auth-modal') {
+                toggleSimklAuthModal(false);
+            }
+        }
+
+        async function startSimklAuth() {
+            const statusText = document.getElementById('simkl-status-text');
+            const statusBox = document.getElementById('simkl-auth-status');
+            const qrImg = document.getElementById('simkl-qr-img');
+            const browserLink = document.getElementById('simkl-browser-link');
+            const codeDisplay = document.getElementById('simkl-user-code');
+
+            statusBox.style.background = 'rgba(99, 102, 241, 0.15)';
+            statusBox.style.color = '#818cf8';
+            statusBox.style.border = '1px solid rgba(99, 102, 241, 0.3)';
+            statusText.textContent = 'Requesting Simkl PIN code...';
+            codeDisplay.textContent = '----';
+            browserLink.style.pointerEvents = 'none';
+            browserLink.style.opacity = '0.5';
+
+            try {
+                const resp = await fetch('/api/web/platforms/simkl/start_auth', { method: 'POST' });
+                const data = await resp.json();
+                if (data.success && data.user_code) {
+                    currentSimklUserCode = data.user_code;
+                    codeDisplay.textContent = data.user_code;
+                    browserLink.href = data.verification_url;
+                    browserLink.style.pointerEvents = 'auto';
+                    browserLink.style.opacity = '1';
+
+                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(data.verification_url)}`;
+                    qrImg.src = qrUrl;
+
+                    statusText.textContent = 'Waiting for approval on Simkl...';
+
+                    // Start polling
+                    if (simklPollInterval) clearInterval(simklPollInterval);
+                    let pollSeconds = data.interval || 5;
+                    let attempts = 0;
+                    let maxAttempts = Math.floor((data.expires_in || 900) / pollSeconds);
+                    simklPollInterval = setInterval(async () => {
+                        attempts++;
+                        if (attempts > maxAttempts) {
+                            clearInterval(simklPollInterval);
+                            statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                            statusBox.style.color = '#fb7185';
+                            statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                            statusText.textContent = 'Authorization session expired. Please try again.';
+                            return;
+                        }
+                        await checkSimklAuthOnce(true);
+                    }, pollSeconds * 1000);
+                } else {
+                    statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                    statusBox.style.color = '#fb7185';
+                    statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                    statusText.textContent = data.error || 'Failed to initialize Simkl authorization';
+                }
+            } catch (err) {
+                statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                statusBox.style.color = '#fb7185';
+                statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                statusText.textContent = `Network error: ${err.message}`;
+            }
+        }
+
+        async function checkSimklAuthOnce(isAutoPoll = false) {
+            if (!currentSimklUserCode) return;
+
+            const statusText = document.getElementById('simkl-status-text');
+            const statusBox = document.getElementById('simkl-auth-status');
+
+            if (!isAutoPoll) {
+                statusText.textContent = 'Checking authorization status...';
+            }
+
+            try {
+                const resp = await fetch('/api/web/platforms/simkl/check_auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_code: currentSimklUserCode })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    if (simklPollInterval) {
+                        clearInterval(simklPollInterval);
+                        simklPollInterval = null;
+                    }
+                    statusBox.style.background = 'rgba(16, 185, 129, 0.15)';
+                    statusBox.style.color = '#34d399';
+                    statusBox.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                    statusText.textContent = `Successfully authorised as ${data.username}!`;
+
+                    setTimeout(() => {
+                        toggleSimklAuthModal(false);
+                        fetchPlatforms();
+                    }, 1000);
+                } else if (!isAutoPoll) {
+                    statusText.textContent = data.error || 'Approval not detected yet. Please approve on Simkl.';
+                }
+            } catch (err) {
+                if (!isAutoPoll) {
+                    statusText.textContent = `Error: ${err.message}`;
+                }
+            }
+        }
+
+        async function revokeSimklAuth() {
+            if (!confirm('Are you sure you want to revoke Simkl authorisation?')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/web/platforms/simkl/revoke', {
+                    method: 'POST'
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    fetchPlatforms();
+                } else {
+                    alert('Error revoking Simkl: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Network error revoking Simkl: ' + err.message);
+            }
+        }
+
+        let traktPollInterval = null;
+        let currentTraktDeviceCode = null;
+
+        function toggleTraktAuthModal(show) {
+            const modal = document.getElementById('trakt-auth-modal');
+            if (show) {
+                modal.classList.add('visible');
+                startTraktAuth();
+            } else {
+                modal.classList.remove('visible');
+                if (traktPollInterval) {
+                    clearInterval(traktPollInterval);
+                    traktPollInterval = null;
+                }
+                currentTraktDeviceCode = null;
+            }
+        }
+
+        function openTraktAuthModal() {
+            toggleTraktAuthModal(true);
+        }
+
+        function closeTraktAuthModal(e) {
+            if (e.target.id === 'trakt-auth-modal') {
+                toggleTraktAuthModal(false);
+            }
+        }
+
+        async function startTraktAuth() {
+            const statusText = document.getElementById('trakt-status-text');
+            const statusBox = document.getElementById('trakt-auth-status');
+            const qrImg = document.getElementById('trakt-qr-img');
+            const browserLink = document.getElementById('trakt-browser-link');
+            const codeDisplay = document.getElementById('trakt-user-code');
+
+            statusBox.style.background = 'rgba(99, 102, 241, 0.15)';
+            statusBox.style.color = '#818cf8';
+            statusBox.style.border = '1px solid rgba(99, 102, 241, 0.3)';
+            statusText.textContent = 'Requesting Trakt PIN code...';
+            codeDisplay.textContent = '----';
+            browserLink.style.pointerEvents = 'none';
+            browserLink.style.opacity = '0.5';
+
+            try {
+                const resp = await fetch('/api/web/platforms/trakt/start_auth', { method: 'POST' });
+                const data = await resp.json();
+                if (data.success && data.device_code) {
+                    currentTraktDeviceCode = data.device_code;
+                    codeDisplay.textContent = data.user_code;
+                    browserLink.href = data.verification_url;
+                    browserLink.style.pointerEvents = 'auto';
+                    browserLink.style.opacity = '1';
+
+                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(data.verification_url)}`;
+                    qrImg.src = qrUrl;
+
+                    statusText.textContent = 'Waiting for approval on Trakt...';
+
+                    // Start polling
+                    if (traktPollInterval) clearInterval(traktPollInterval);
+                    let pollSeconds = data.interval || 5;
+                    let attempts = 0;
+                    let maxAttempts = Math.floor((data.expires_in || 600) / pollSeconds);
+                    traktPollInterval = setInterval(async () => {
+                        attempts++;
+                        if (attempts > maxAttempts) {
+                            clearInterval(traktPollInterval);
+                            statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                            statusBox.style.color = '#fb7185';
+                            statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                            statusText.textContent = 'Authorization session expired. Please try again.';
+                            return;
+                        }
+                        await checkTraktAuthOnce(true);
+                    }, pollSeconds * 1000);
+                } else {
+                    statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                    statusBox.style.color = '#fb7185';
+                    statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                    statusText.textContent = data.error || 'Failed to initialize Trakt authorization';
+                }
+            } catch (err) {
+                statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                statusBox.style.color = '#fb7185';
+                statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                statusText.textContent = `Network error: ${err.message}`;
+            }
+        }
+
+        async function checkTraktAuthOnce(isAutoPoll = false) {
+            if (!currentTraktDeviceCode) return;
+
+            const statusText = document.getElementById('trakt-status-text');
+            const statusBox = document.getElementById('trakt-auth-status');
+
+            if (!isAutoPoll) {
+                statusText.textContent = 'Checking authorization status...';
+            }
+
+            try {
+                const resp = await fetch('/api/web/platforms/trakt/check_auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ device_code: currentTraktDeviceCode })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    if (traktPollInterval) {
+                        clearInterval(traktPollInterval);
+                        traktPollInterval = null;
+                    }
+                    statusBox.style.background = 'rgba(16, 185, 129, 0.15)';
+                    statusBox.style.color = '#34d399';
+                    statusBox.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                    statusText.textContent = `Successfully authorised as ${data.username}!`;
+
+                    setTimeout(() => {
+                        toggleTraktAuthModal(false);
+                        fetchPlatforms();
+                    }, 1000);
+                } else if (!isAutoPoll) {
+                    statusText.textContent = data.error || 'Approval not detected yet. Please approve on Trakt.';
+                }
+            } catch (err) {
+                if (!isAutoPoll) {
+                    statusText.textContent = `Error: ${err.message}`;
+                }
+            }
+        }
+
+        async function revokeTraktAuth() {
+            if (!confirm('Are you sure you want to revoke Trakt authorisation?')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/web/platforms/trakt/revoke', {
+                    method: 'POST'
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    fetchPlatforms();
+                } else {
+                    alert('Error revoking Trakt: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Network error revoking Trakt: ' + err.message);
+            }
         }
 
         function renderLibraryLists(lists) {

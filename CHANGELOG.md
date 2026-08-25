@@ -6,6 +6,12 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.3.4] — 2026-08-25
+
+### Added
+- **Central Account Authorization in Web Dashboard** — added full OAuth and PIN-based authorization workflows directly within the web dashboard for Trakt, Simkl, TMDb, and MDBList.
+- **Static Platform Management** — Trakt, Simkl, TMDb, and MDBList permanently display in the Authorised Platforms dashboard with live connection status, PIN codes, QR codes, and instant revoke support.
+
 ## [1.3.3] — 2026-08-07
 
 ### Fixed

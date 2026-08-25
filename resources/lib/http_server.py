@@ -36,7 +36,7 @@ from .movies_handler import handle_movie_request
 from .discover_handler import handle_discover_request
 from .shows_handler import handle_show_request
 from .search_handler import search_tmdb
-from .config_handler import update_config_values, get_trakt_user, get_config_value
+from .config_handler import update_config_values, get_trakt_user, get_config_value, clear_trakt_config
 from .indexing import add_external_index, del_external_index
 from .internal_indexing import add_internal_index, del_internal_index, get_internal_indexes, get_internal_index_contents, get_available_languages
 from .scrape_handler import handle_scrape_request
@@ -910,27 +910,470 @@ def app_factory(
         try:
             with db_connect(app.state.config_db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT key, value FROM config WHERE key IN ('trakt_user', 'simkl_user', 'tmdb_user', 'mdblist.user', 'mdblist_user')")
+                cursor.execute("SELECT key, value FROM config WHERE key IN ('trakt_user', 'trakt.user', 'trakt_token', 'trakt.token', 'simkl_user', 'simkl.user', 'simkl.token', 'simkl_token', 'tmdb_user', 'tmdb.user', 'mdblist.user', 'mdblist_user', 'mdblist_api')")
                 rows = cursor.fetchall()
                 
                 # Normalize keys slightly in case of duplicates or variants
                 data = {row[0]: row[1] for row in rows}
                 
                 platforms = []
-                if 'trakt_user' in data:
-                    platforms.append({"name": "Trakt", "username": data['trakt_user']})
-                if 'simkl_user' in data:
-                    platforms.append({"name": "Simkl", "username": data['simkl_user']})
-                if 'tmdb_user' in data:
-                    platforms.append({"name": "TMDb", "username": data['tmdb_user']})
                 
+                trakt_user = data.get('trakt_user') or data.get('trakt.user')
+                trakt_token = data.get('trakt_token') or data.get('trakt.token')
+                is_trakt_auth = bool(trakt_user and trakt_token and trakt_user not in ('empty_setting', '') and trakt_token not in ('empty_setting', ''))
+                # Trakt is static - always present in the platforms list
+                platforms.append({
+                    "name": "Trakt",
+                    "id": "trakt",
+                    "username": (trakt_user if is_trakt_auth else ""),
+                    "authenticated": is_trakt_auth,
+                    "can_auth": True
+                })
+                
+                simkl_user = data.get('simkl.user') or data.get('simkl_user')
+                simkl_token = data.get('simkl.token') or data.get('simkl_token')
+                is_simkl_auth = bool(simkl_user and simkl_token and simkl_user not in ('empty_setting', '') and simkl_token not in ('empty_setting', ''))
+                # Simkl is static - always present in the platforms list
+                platforms.append({
+                    "name": "Simkl",
+                    "id": "simkl",
+                    "username": (simkl_user if is_simkl_auth else ""),
+                    "authenticated": is_simkl_auth,
+                    "can_auth": True
+                })
+                
+                tmdb_user = data.get('tmdb_user') or data.get('tmdb.user')
+                is_tmdb_auth = bool(tmdb_user and tmdb_user not in ('empty_setting', ''))
+                # TMDb is static - always present in the platforms list
+                platforms.append({
+                    "name": "TMDb",
+                    "id": "tmdb",
+                    "username": (tmdb_user if is_tmdb_auth else ""),
+                    "authenticated": is_tmdb_auth,
+                    "can_auth": True
+                })
+                
+                mdblist_api = data.get('mdblist_api')
                 mdblist_user = data.get('mdblist.user') or data.get('mdblist_user')
-                if mdblist_user:
-                    platforms.append({"name": "MDBList", "username": mdblist_user})
+                is_mdblist_auth = bool(mdblist_api and mdblist_api not in ('empty_setting', ''))
+                
+                # MDBList is static - always present in the platforms list
+                platforms.append({
+                    "name": "MDBList",
+                    "id": "mdblist",
+                    "username": (mdblist_user if (mdblist_user and mdblist_user not in ('empty_setting', '')) else ("Authorised" if is_mdblist_auth else "")),
+                    "authenticated": is_mdblist_auth,
+                    "can_auth": True
+                })
                     
                 return JSONResponse(status_code=200, content={"success": True, "platforms": platforms})
         except Exception as e:
             log(f"Error fetching platform tokens from config DB: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/trakt/start_auth")
+    async def web_trakt_start_auth_api():
+        try:
+            client_id = get_config_value("client_id", app.state.config_db_path) or get_config_value("trakt_client", app.state.config_db_path) or get_config_value("trakt.client", app.state.config_db_path)
+            if not client_id or client_id in ('empty_setting', ''):
+                client_id = "f986871799a140dc20a166adfa637c98c8fa474dc80757aabad8668b99e184de"
+
+            url = "https://api.trakt.tv/oauth/device/code"
+            headers = {
+                "Content-Type": "application/json",
+                "trakt-api-version": "2",
+                "trakt-api-key": client_id
+            }
+            resp = requests.post(url, json={"client_id": client_id}, headers=headers, timeout=10)
+            if resp.status_code != 200:
+                return JSONResponse(status_code=400, content={"success": False, "error": f"Trakt error ({resp.status_code}): Failed to get device code"})
+
+            data = resp.json()
+            device_code = data.get("device_code")
+            user_code = data.get("user_code")
+            verification_url = data.get("verification_url") or "https://trakt.tv/activate"
+            expires_in = data.get("expires_in", 600)
+            interval = data.get("interval", 5)
+
+            return JSONResponse(status_code=200, content={
+                "success": True,
+                "device_code": device_code,
+                "user_code": user_code,
+                "verification_url": verification_url,
+                "expires_in": expires_in,
+                "interval": interval
+            })
+        except Exception as e:
+            log(f"Error starting Trakt authentication: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/trakt/check_auth")
+    async def web_trakt_check_auth_api(request: Request):
+        try:
+            body = await request.json()
+            device_code = (body.get("device_code") or "").strip()
+            if not device_code:
+                return JSONResponse(status_code=400, content={"success": False, "error": "Missing device code"})
+
+            client_id = get_config_value("client_id", app.state.config_db_path) or get_config_value("trakt_client", app.state.config_db_path) or get_config_value("trakt.client", app.state.config_db_path)
+            if not client_id or client_id in ('empty_setting', ''):
+                client_id = "f986871799a140dc20a166adfa637c98c8fa474dc80757aabad8668b99e184de"
+
+            client_secret = get_config_value("client_secret", app.state.config_db_path) or get_config_value("trakt_secret", app.state.config_db_path) or get_config_value("trakt.secret", app.state.config_db_path)
+            if not client_secret or client_secret in ('empty_setting', ''):
+                client_secret = "579a93101ccf4cb251884dc1d632d74c3b3f34d275cee59d56e82cac31161f71"
+
+            url = "https://api.trakt.tv/oauth/device/token"
+            headers = {
+                "Content-Type": "application/json",
+                "trakt-api-version": "2",
+                "trakt-api-key": client_id
+            }
+            payload = {
+                "code": device_code,
+                "client_id": client_id,
+                "client_secret": client_secret
+            }
+            resp = requests.post(url, json=payload, headers=headers, timeout=10)
+            if resp.status_code == 400:
+                return JSONResponse(status_code=200, content={"success": False, "status": "pending", "error": "Approval pending"})
+            elif resp.status_code != 200:
+                return JSONResponse(status_code=200, content={"success": False, "status": "pending", "error": f"Trakt response {resp.status_code}"})
+
+            data = resp.json()
+            access_token = data.get("access_token")
+            refresh_token = data.get("refresh_token")
+            expires_in = data.get("expires_in", 7776000)
+
+            if not access_token:
+                return JSONResponse(status_code=200, content={"success": False, "status": "pending", "error": "No access token returned"})
+
+            # Fetch username from /users/me
+            user_headers = {
+                "Content-Type": "application/json",
+                "trakt-api-version": "2",
+                "trakt-api-key": client_id,
+                "Authorization": f"Bearer {access_token}"
+            }
+            user_resp = requests.get("https://api.trakt.tv/users/me", headers=user_headers, timeout=10)
+            username = "trakt_user"
+            if user_resp.status_code == 200:
+                user_data = user_resp.json()
+                username = user_data.get("username") or user_data.get("ids", {}).get("slug") or "trakt_user"
+
+            expires_at = str(time.time() + expires_in)
+            success = update_config_values({
+                "trakt_user": username,
+                "trakt.user": username,
+                "trakt_token": access_token,
+                "trakt.token": access_token,
+                "trakt_refresh": refresh_token,
+                "trakt.refresh": refresh_token,
+                "trakt_expires": expires_at,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "trakt_token_refreshed": str(int(time.time()))
+            }, app.state.config_db_path)
+
+            # Reload Trakt auth in running server state if present
+            if hasattr(app.state, 'trakt_auth') and app.state.trakt_auth:
+                app.state.trakt_auth.reload_credentials()
+
+            if success:
+                log(f"[Trakt] Successfully authorised as user: {username}", level=LOGINFO)
+                return JSONResponse(status_code=200, content={"success": True, "username": username})
+            else:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to save Trakt tokens in config database"})
+        except Exception as e:
+            log(f"Error checking Trakt authentication: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/trakt/revoke")
+    async def web_trakt_revoke_api():
+        try:
+            token = get_config_value("trakt_token", app.state.config_db_path) or get_config_value("trakt.token", app.state.config_db_path)
+            client_id = get_config_value("client_id", app.state.config_db_path) or "f986871799a140dc20a166adfa637c98c8fa474dc80757aabad8668b99e184de"
+            client_secret = get_config_value("client_secret", app.state.config_db_path) or "579a93101ccf4cb251884dc1d632d74c3b3f34d275cee59d56e82cac31161f71"
+            if token and token not in ('empty_setting', ''):
+                try:
+                    headers = {"Content-Type": "application/json", "trakt-api-version": "2", "trakt-api-key": client_id}
+                    requests.post("https://api.trakt.tv/oauth/revoke", json={"token": token, "client_id": client_id, "client_secret": client_secret}, headers=headers, timeout=5)
+                except Exception:
+                    pass
+
+            clear_trakt_config(app.state.config_db_path)
+            update_config_values({
+                "trakt_user": "empty_setting",
+                "trakt.user": "empty_setting",
+                "trakt_token": "empty_setting",
+                "trakt.token": "empty_setting",
+                "trakt_refresh": "empty_setting",
+                "trakt.refresh": "empty_setting",
+                "trakt_expires": "empty_setting"
+            }, app.state.config_db_path)
+
+            if hasattr(app.state, 'trakt_auth') and app.state.trakt_auth:
+                app.state.trakt_auth.reload_credentials()
+
+            log(f"[Trakt] Successfully revoked Trakt authorisation", level=LOGINFO)
+            return JSONResponse(status_code=200, content={"success": True})
+        except Exception as e:
+            log(f"Error revoking Trakt authorisation: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/simkl/start_auth")
+    async def web_simkl_start_auth_api():
+        try:
+            client_id = get_config_value("simkl.client", app.state.config_db_path) or get_config_value("simkl_client", app.state.config_db_path)
+            if not client_id or client_id in ('empty_setting', ''):
+                client_id = "8cdf2298c78dd4ff8cb8039faecd1b9f11cf108fac2b88092abd15c22cfe2cc2"
+
+            url = "https://api.simkl.com/oauth/pin"
+            resp = requests.get(url, params={"client_id": client_id}, timeout=10)
+            if resp.status_code != 200:
+                return JSONResponse(status_code=400, content={"success": False, "error": f"Simkl error ({resp.status_code}): Failed to get device PIN"})
+
+            data = resp.json()
+            user_code = data.get("user_code")
+            verification_url = data.get("verification_url") or f"https://simkl.com/pin/{user_code}"
+            expires_in = data.get("expires_in", 900)
+            interval = data.get("interval", 5)
+
+            return JSONResponse(status_code=200, content={
+                "success": True,
+                "user_code": user_code,
+                "verification_url": verification_url,
+                "expires_in": expires_in,
+                "interval": interval
+            })
+        except Exception as e:
+            log(f"Error starting Simkl authentication: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/simkl/check_auth")
+    async def web_simkl_check_auth_api(request: Request):
+        try:
+            body = await request.json()
+            user_code = (body.get("user_code") or "").strip()
+            if not user_code:
+                return JSONResponse(status_code=400, content={"success": False, "error": "Missing user code"})
+
+            client_id = get_config_value("simkl.client", app.state.config_db_path) or get_config_value("simkl_client", app.state.config_db_path)
+            if not client_id or client_id in ('empty_setting', ''):
+                client_id = "8cdf2298c78dd4ff8cb8039faecd1b9f11cf108fac2b88092abd15c22cfe2cc2"
+
+            url = f"https://api.simkl.com/oauth/pin/{user_code}"
+            resp = requests.get(url, params={"client_id": client_id}, timeout=10)
+            if resp.status_code != 200:
+                return JSONResponse(status_code=200, content={"success": False, "status": "pending", "error": "Not yet approved on Simkl"})
+
+            data = resp.json()
+            if data.get("result") != "OK" or "access_token" not in data:
+                return JSONResponse(status_code=200, content={"success": False, "status": "pending", "error": "Approval pending"})
+
+            access_token = data["access_token"]
+
+            # Fetch account settings to get username
+            settings_url = "https://api.simkl.com/users/settings"
+            headers = {
+                "Content-Type": "application/json",
+                "simkl-api-key": client_id,
+                "Authorization": f"Bearer {access_token}"
+            }
+            user_resp = requests.get(settings_url, headers=headers, timeout=10)
+            username = "simkl_user"
+            if user_resp.status_code == 200:
+                user_data = user_resp.json()
+                if "user" in user_data and "name" in user_data["user"]:
+                    username = str(user_data["user"]["name"])
+
+            # Save in config.db
+            success = update_config_values({
+                "simkl.user": username,
+                "simkl_user": username,
+                "simkl.token": access_token,
+                "simkl_token": access_token,
+                "simkl.client": client_id
+            }, app.state.config_db_path)
+
+            if success:
+                log(f"[Simkl] Successfully authorised as user: {username}", level=LOGINFO)
+                return JSONResponse(status_code=200, content={"success": True, "username": username})
+            else:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to save Simkl tokens in config database"})
+        except Exception as e:
+            log(f"Error checking Simkl authentication: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/simkl/revoke")
+    async def web_simkl_revoke_api():
+        try:
+            success = update_config_values({
+                "simkl.user": "empty_setting",
+                "simkl_user": "empty_setting",
+                "simkl.token": "empty_setting",
+                "simkl_token": "empty_setting"
+            }, app.state.config_db_path)
+
+            if success:
+                log(f"[Simkl] Successfully revoked Simkl authorisation", level=LOGINFO)
+                return JSONResponse(status_code=200, content={"success": True})
+            else:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to clear Simkl configuration values"})
+        except Exception as e:
+            log(f"Error revoking Simkl authorisation: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/mdblist/auth")
+    async def web_mdblist_auth_api(request: Request):
+        try:
+            body = await request.json()
+            api_key = (body.get("api_key") or "").strip()
+            if not api_key or api_key == "empty_setting":
+                return JSONResponse(status_code=400, content={"success": False, "error": "API key cannot be empty"})
+
+            # Validate key against MDBList API
+            url = f"https://api.mdblist.com/user?apikey={api_key}"
+            resp = requests.get(url, timeout=10)
+            if resp.status_code != 200:
+                return JSONResponse(status_code=400, content={"success": False, "error": f"MDBList API error ({resp.status_code}): Invalid API key"})
+            
+            data = resp.json()
+            username = data.get("username") or data.get("name") or "mdblist_user"
+
+            # Save in config DB
+            success = update_config_values({
+                "mdblist_api": api_key,
+                "mdblist.user": username,
+                "mdblist_user": username
+            }, app.state.config_db_path)
+
+            if success:
+                log(f"[MDBList] Successfully authorised as user: {username}", level=LOGINFO)
+                return JSONResponse(status_code=200, content={"success": True, "username": username})
+            else:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to update configuration database"})
+        except Exception as e:
+            log(f"Error authenticating MDBList API: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/mdblist/revoke")
+    async def web_mdblist_revoke_api():
+        try:
+            success = update_config_values({
+                "mdblist_api": "empty_setting",
+                "mdblist.user": "empty_setting",
+                "mdblist_user": "empty_setting"
+            }, app.state.config_db_path)
+
+            if success:
+                log(f"[MDBList] Successfully revoked MDBList authorisation", level=LOGINFO)
+                return JSONResponse(status_code=200, content={"success": True})
+            else:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to clear configuration values"})
+        except Exception as e:
+            log(f"Error revoking MDBList authorisation: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/tmdb/start_auth")
+    async def web_tmdb_start_auth_api():
+        try:
+            tmdb_h = getattr(app.state, 'tmdb_handler', None)
+            api_key = getattr(tmdb_h, 'api_key', None) if tmdb_h else None
+            if not api_key or api_key in ('empty_setting', ''):
+                stored_key = get_config_value("tmdb_api_key", app.state.config_db_path) or get_config_value("tmdb_api", app.state.config_db_path)
+                api_key = stored_key if stored_key and stored_key not in ('empty_setting', '') else "872d408b3d926ebb32f84f5167764cc3"
+
+            url = f"https://api.themoviedb.org/3/authentication/token/new?api_key={api_key}"
+            resp = requests.get(url, timeout=10)
+            if resp.status_code != 200:
+                return JSONResponse(status_code=400, content={"success": False, "error": f"TMDb error ({resp.status_code}): Failed to get request token"})
+            
+            data = resp.json()
+            request_token = data.get("request_token")
+            if not request_token:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Invalid response from TMDb"})
+            
+            auth_url = f"https://www.themoviedb.org/authenticate/{request_token}"
+            return JSONResponse(status_code=200, content={
+                "success": True,
+                "request_token": request_token,
+                "auth_url": auth_url
+            })
+        except Exception as e:
+            log(f"Error starting TMDb authentication: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/tmdb/check_auth")
+    async def web_tmdb_check_auth_api(request: Request):
+        try:
+            body = await request.json()
+            request_token = (body.get("request_token") or "").strip()
+            if not request_token:
+                return JSONResponse(status_code=400, content={"success": False, "error": "Missing request token"})
+
+            tmdb_h = getattr(app.state, 'tmdb_handler', None)
+            api_key = getattr(tmdb_h, 'api_key', None) if tmdb_h else None
+            if not api_key or api_key in ('empty_setting', ''):
+                stored_key = get_config_value("tmdb_api_key", app.state.config_db_path) or get_config_value("tmdb_api", app.state.config_db_path)
+                api_key = stored_key if stored_key and stored_key not in ('empty_setting', '') else "872d408b3d926ebb32f84f5167764cc3"
+
+            url = f"https://api.themoviedb.org/3/authentication/session/new?api_key={api_key}"
+            resp = requests.post(url, json={"request_token": request_token}, timeout=10)
+            
+            if resp.status_code != 200:
+                return JSONResponse(status_code=200, content={"success": False, "status": "pending", "error": "Not yet approved on TMDb"})
+
+            session_data = resp.json()
+            if not session_data.get("success") or not session_data.get("session_id"):
+                return JSONResponse(status_code=200, content={"success": False, "status": "pending", "error": "Approval pending"})
+
+            session_id = session_data["session_id"]
+
+            # Fetch username
+            account_url = f"https://api.themoviedb.org/3/account?api_key={api_key}&session_id={session_id}"
+            acc_resp = requests.get(account_url, timeout=10)
+            if acc_resp.status_code != 200:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to fetch account info from TMDb"})
+
+            account_data = acc_resp.json()
+            username = account_data.get("username") or "tmdb_user"
+
+            # Save in config.db
+            success = update_config_values({
+                "tmdb_user": username,
+                "tmdb.user": username,
+                "tmdb_session_id": session_id,
+                "tmdb.session_id": session_id,
+                "tmdb_api_key": api_key
+            }, app.state.config_db_path)
+
+            if success:
+                log(f"[TMDb] Successfully authorised as user: {username}", level=LOGINFO)
+                return JSONResponse(status_code=200, content={"success": True, "username": username})
+            else:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to save TMDb tokens in config database"})
+        except Exception as e:
+            log(f"Error checking TMDb authentication: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/tmdb/revoke")
+    async def web_tmdb_revoke_api():
+        try:
+            success = update_config_values({
+                "tmdb_user": "empty_setting",
+                "tmdb.user": "empty_setting",
+                "tmdb_session_id": "empty_setting",
+                "tmdb.session_id": "empty_setting"
+            }, app.state.config_db_path)
+
+            if success:
+                log(f"[TMDb] Successfully revoked TMDb authorisation", level=LOGINFO)
+                return JSONResponse(status_code=200, content={"success": True})
+            else:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to clear TMDb configuration values"})
+        except Exception as e:
+            log(f"Error revoking TMDb authorisation: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
     @app.get("/api/web/library_lists")
