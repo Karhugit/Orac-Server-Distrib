@@ -443,6 +443,82 @@
             color: #ffffff;
             transform: scale(1.04);
         }
+        .btn-sm-secondary {
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-muted);
+            border: 1px solid var(--border-glass);
+        }
+        .btn-sm-secondary:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: var(--text-main);
+        }
+
+        .platform-sync-option {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 0.85rem;
+            margin-top: 0.75rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-glass);
+            border-radius: 0.5rem;
+            transition: all var(--animation-timing);
+        }
+        .platform-sync-option:hover {
+            background: var(--surface-hover);
+            border-color: rgba(99, 102, 241, 0.3);
+        }
+        .platform-sync-label {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-main);
+        }
+        .form-switch {
+            position: relative;
+            display: inline-block;
+            width: 38px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+        .form-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .switch-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: .25s ease;
+            border-radius: 20px;
+        }
+        .switch-slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 2px;
+            bottom: 2px;
+            background-color: #ffffff;
+            transition: .25s ease;
+            border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+        }
+        .form-switch input:checked + .switch-slider {
+            background: var(--primary-gradient);
+            border-color: rgba(99, 102, 241, 0.6);
+        }
+        .form-switch input:checked + .switch-slider:before {
+            transform: translateX(18px);
+        }
 
         .item-name {
             font-weight: 600;
@@ -1454,6 +1530,28 @@
                                 <div class="loading-shimmer" style="width: 50%;"></div>
                             </div>
                         </div>
+                        <!-- Trakt -> MDBlist sync option (only displayed when both Trakt and MDBlist are authorised) -->
+                        <div id="trakt-mdblist-sync-container" class="platform-sync-option" style="display: none;">
+                            <div class="platform-sync-label">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #818cf8; flex-shrink: 0;"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+                                <span>Trakt lists -> MDBlist</span>
+                            </div>
+                            <label class="form-switch" title="Sync Trakt custom lists and collections to MDBlist">
+                                <input type="checkbox" id="toggle-trakt-mdblist-sync" onchange="handleTraktMdblistSyncToggle(this.checked)">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <!-- Fanart storage mode option (only displayed when Fanart is authorised) -->
+                        <div id="fanart-storage-mode-container" class="platform-sync-option" style="display: none;">
+                            <div class="platform-sync-label">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #38bdf8; flex-shrink: 0;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                                <span>Fanart Storage</span>
+                            </div>
+                            <div style="display: flex; gap: 0.35rem; align-items: center;">
+                                <button id="fanart-mode-url-btn" class="btn-sm-action btn-sm-secondary" style="padding: 0.2rem 0.55rem; font-size: 0.72rem;" onclick="handleFanartStorageModeChange('URL')">URL</button>
+                                <button id="fanart-mode-local-btn" class="btn-sm-action btn-sm-secondary" style="padding: 0.2rem 0.55rem; font-size: 0.72rem;" onclick="handleFanartStorageModeChange('Local')">Local</button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Library Lists Box -->
@@ -2015,6 +2113,50 @@ Orac Server Port: 8000 (default)</div>
         </div>
     </div>
 
+    <!-- Fanart Authorisation Modal -->
+    <div id="fanart-auth-modal" class="modal-overlay" onclick="closeFanartAuthModal(event)" style="z-index: 1200;">
+        <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>Authorise Fanart.tv</h2>
+                <button class="modal-close-btn" onclick="toggleFanartAuthModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            
+            <form id="fanart-auth-form" onsubmit="handleFanartAuthSubmit(event)" style="display: flex; flex-direction: column; gap: 1.25rem;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
+                    Enter your Fanart.tv personal API key below to link Fanart.tv artwork enhancements (clearlogos and custom fanarts).
+                </p>
+                
+                <div class="filter-group">
+                    <label class="filter-label">Fanart.tv API Key</label>
+                    <input type="text" id="modal-fanart-api-key" class="form-input" required placeholder="Paste your API key here..." style="width: 100%; font-family: 'Fira Code', monospace; font-size: 0.85rem;">
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Artwork Storage Mode</label>
+                    <div style="display: flex; gap: 1.25rem; margin-top: 0.25rem;">
+                        <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; color: var(--text-main);">
+                            <input type="radio" name="fanart-storage-mode" value="URL" id="modal-fanart-mode-url" checked style="accent-color: var(--primary);">
+                            <span>URL (Stream directly)</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; color: var(--text-main);">
+                            <input type="radio" name="fanart-storage-mode" value="Local" id="modal-fanart-mode-local" style="accent-color: var(--primary);">
+                            <span>Local (Download files)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="modal-fanart-msg" style="display: none; font-size: 0.82rem; padding: 0.5rem 0.75rem; border-radius: 0.4rem;"></div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+                    <button type="button" class="btn-secondary" onclick="toggleFanartAuthModal(false)">Cancel</button>
+                    <button type="submit" id="modal-fanart-submit-btn" class="btn-primary">Save & Authorise</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- TMDb Authorisation Modal -->
     <div id="tmdb-auth-modal" class="modal-overlay" onclick="closeTmdbAuthModal(event)" style="z-index: 1200;">
         <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem; text-align: center;" onclick="event.stopPropagation()">
@@ -2374,7 +2516,7 @@ Orac Server Port: 8000 (default)</div>
             try {
                 const response = await fetch('/api/web/platforms');
                 const data = await response.json();
-                if (data.success) renderPlatforms(data.platforms);
+                if (data.success) renderPlatforms(data.platforms, data.trakt_to_mdblist_sync, data.fanart_storage_mode);
             } catch (error) { console.error('Failed to load platforms', error); }
         }
 
@@ -2434,19 +2576,44 @@ Orac Server Port: 8000 (default)</div>
             });
         }
 
-        function renderPlatforms(platforms) {
+        let currentFanartStorageMode = 'URL';
+
+        function renderPlatforms(platforms, traktToMdblistSyncEnabled, fanartStorageMode) {
             const container = document.getElementById('platforms-container');
             container.innerHTML = ''; 
+            const syncToggleContainer = document.getElementById('trakt-mdblist-sync-container');
+            const syncCheckbox = document.getElementById('toggle-trakt-mdblist-sync');
+            const fanartStorageContainer = document.getElementById('fanart-storage-mode-container');
+            const fanartUrlBtn = document.getElementById('fanart-mode-url-btn');
+            const fanartLocalBtn = document.getElementById('fanart-mode-local-btn');
+
+            if (fanartStorageMode) {
+                currentFanartStorageMode = fanartStorageMode;
+            }
+
             if (!platforms || platforms.length === 0) {
                 container.innerHTML = '<div style="padding: 1.5rem; text-align: center; color: var(--text-muted);">No platforms connected</div>';
+                if (syncToggleContainer) syncToggleContainer.style.display = 'none';
+                if (fanartStorageContainer) fanartStorageContainer.style.display = 'none';
                 return;
             }
+
+            let isTraktAuth = false;
+            let isMdbAuth = false;
+            let isFanartAuth = false;
 
             platforms.forEach(platform => {
                 const row = document.createElement('div');
                 row.className = 'platform-row';
                 
                 const isAuth = platform.authenticated !== false && platform.username && platform.username !== 'empty_setting';
+                if (platform.id === 'trakt' && isAuth) isTraktAuth = true;
+                if (platform.id === 'mdblist' && isAuth) isMdbAuth = true;
+                if (platform.id === 'fanart' && isAuth) {
+                    isFanartAuth = true;
+                    if (platform.storage_mode) currentFanartStorageMode = platform.storage_mode;
+                }
+
                 const userDisplay = isAuth 
                     ? `<span style="font-size:0.85rem; font-weight:500; color: var(--text-main);">${escapeHtml(platform.username)}</span>` 
                     : `<span style="font-size:0.82rem; color: var(--text-dim); font-style: italic;">Not authorised</span>`;
@@ -2457,6 +2624,12 @@ Orac Server Port: 8000 (default)</div>
                         actionBtnHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokeMdbAuth()">Revoke</button>`;
                     } else {
                         actionBtnHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openMdbAuthModal()">Authorise</button>`;
+                    }
+                } else if (platform.id === 'fanart' || platform.name.toLowerCase() === 'fanart') {
+                    if (isAuth) {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokeFanartAuth()">Revoke</button>`;
+                    } else {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openFanartAuthModal()">Authorise</button>`;
                     }
                 } else if (platform.id === 'tmdb' || platform.name.toLowerCase() === 'tmdb') {
                     if (isAuth) {
@@ -2485,6 +2658,56 @@ Orac Server Port: 8000 (default)</div>
                 `;
                 container.appendChild(row);
             });
+
+            // Toggle switch for Trakt -> MDBlist sync (only show if both Trakt and MDBlist are authorized)
+            if (syncToggleContainer && syncCheckbox) {
+                if (isTraktAuth && isMdbAuth) {
+                    syncToggleContainer.style.display = 'flex';
+                    if (traktToMdblistSyncEnabled !== undefined) {
+                        syncCheckbox.checked = Boolean(traktToMdblistSyncEnabled);
+                    }
+                } else {
+                    syncToggleContainer.style.display = 'none';
+                }
+            }
+
+            // Sub option for Fanart storage mode (only show if Fanart is authorized)
+            if (fanartStorageContainer) {
+                if (isFanartAuth) {
+                    fanartStorageContainer.style.display = 'flex';
+                    if (fanartUrlBtn && fanartLocalBtn) {
+                        if (currentFanartStorageMode === 'Local') {
+                            fanartLocalBtn.className = 'btn-sm-action btn-sm-primary';
+                            fanartUrlBtn.className = 'btn-sm-action btn-sm-secondary';
+                        } else {
+                            fanartUrlBtn.className = 'btn-sm-action btn-sm-primary';
+                            fanartLocalBtn.className = 'btn-sm-action btn-sm-secondary';
+                        }
+                    }
+                } else {
+                    fanartStorageContainer.style.display = 'none';
+                }
+            }
+        }
+
+        async function handleTraktMdblistSyncToggle(enabled) {
+            const syncCheckbox = document.getElementById('toggle-trakt-mdblist-sync');
+            try {
+                const resp = await fetch('/api/web/platforms/trakt_to_mdblist_sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: enabled })
+                });
+                const data = await resp.json();
+                if (!data.success) {
+                    if (syncCheckbox) syncCheckbox.checked = !enabled;
+                    alert('Failed to update Trakt -> MDBlist sync setting');
+                }
+            } catch (err) {
+                console.error('Error updating Trakt -> MDBlist sync option', err);
+                if (syncCheckbox) syncCheckbox.checked = !enabled;
+                alert('Error connecting to server to update setting.');
+            }
         }
 
         function toggleMdbAuthModal(show) {
@@ -2583,6 +2806,133 @@ Orac Server Port: 8000 (default)</div>
                 }
             } catch (err) {
                 alert('Network error revoking MDBList: ' + err.message);
+            }
+        }
+
+        function toggleFanartAuthModal(show) {
+            const modal = document.getElementById('fanart-auth-modal');
+            if (show) {
+                modal.classList.add('visible');
+                document.getElementById('modal-fanart-api-key').value = '';
+                const msg = document.getElementById('modal-fanart-msg');
+                msg.style.display = 'none';
+                msg.textContent = '';
+                if (currentFanartStorageMode === 'Local') {
+                    const localRadio = document.getElementById('modal-fanart-mode-local');
+                    if (localRadio) localRadio.checked = true;
+                } else {
+                    const urlRadio = document.getElementById('modal-fanart-mode-url');
+                    if (urlRadio) urlRadio.checked = true;
+                }
+                setTimeout(() => document.getElementById('modal-fanart-api-key').focus(), 50);
+            } else {
+                modal.classList.remove('visible');
+            }
+        }
+
+        function openFanartAuthModal() {
+            toggleFanartAuthModal(true);
+        }
+
+        function closeFanartAuthModal(e) {
+            if (e.target.id === 'fanart-auth-modal') {
+                toggleFanartAuthModal(false);
+            }
+        }
+
+        async function handleFanartAuthSubmit(e) {
+            e.preventDefault();
+            const apiKey = (document.getElementById('modal-fanart-api-key').value || '').trim();
+            const storageMode = document.querySelector('input[name="fanart-storage-mode"]:checked')?.value || 'URL';
+            const msgEl = document.getElementById('modal-fanart-msg');
+            const submitBtn = document.getElementById('modal-fanart-submit-btn');
+
+            if (!apiKey) {
+                msgEl.style.display = 'block';
+                msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                msgEl.style.color = '#fb7185';
+                msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                msgEl.textContent = 'Please enter a valid API key.';
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Validating...';
+            msgEl.style.display = 'block';
+            msgEl.style.background = 'rgba(99, 102, 241, 0.15)';
+            msgEl.style.color = '#818cf8';
+            msgEl.style.border = '1px solid rgba(99, 102, 241, 0.3)';
+            msgEl.textContent = 'Validating with Fanart.tv...';
+
+            try {
+                const resp = await fetch('/api/web/platforms/fanart/auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: apiKey, storage_mode: storageMode })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    msgEl.style.background = 'rgba(16, 185, 129, 0.15)';
+                    msgEl.style.color = '#34d399';
+                    msgEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                    msgEl.textContent = `Successfully authorised Fanart.tv!`;
+                    setTimeout(() => {
+                        toggleFanartAuthModal(false);
+                        fetchPlatforms();
+                    }, 900);
+                } else {
+                    msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                    msgEl.style.color = '#fb7185';
+                    msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                    msgEl.textContent = data.error || 'Failed to authorise Fanart.tv';
+                }
+            } catch (err) {
+                msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                msgEl.style.color = '#fb7185';
+                msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                msgEl.textContent = `Network error: ${err.message}`;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Save & Authorise';
+            }
+        }
+
+        async function revokeFanartAuth() {
+            if (!confirm('Are you sure you want to revoke Fanart.tv authorisation?')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/web/platforms/fanart/revoke', {
+                    method: 'POST'
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    fetchPlatforms();
+                } else {
+                    alert('Error revoking Fanart.tv: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Network error revoking Fanart.tv: ' + err.message);
+            }
+        }
+
+        async function handleFanartStorageModeChange(mode) {
+            try {
+                const resp = await fetch('/api/web/platforms/fanart/storage_mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ storage_mode: mode })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    currentFanartStorageMode = mode;
+                    fetchPlatforms();
+                } else {
+                    alert('Failed to update Fanart storage mode: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                console.error('Error updating Fanart storage mode', err);
+                alert('Network error updating Fanart storage mode.');
             }
         }
 
@@ -3350,7 +3700,7 @@ Orac Server Port: 8000 (default)</div>
                 card.dataset.rating = item.rating ? parseFloat(item.rating).toFixed(1) : '0.0';
                 card.dataset.overview = item.overview || '';
                 
-                const posterUrl = item.poster_path || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';
+                const posterUrl = resolvePosterUrl(item.poster_path);
                 card.dataset.posterUrl = posterUrl;
                 card.onclick = (e) => handleDetailsClick(e);
 
@@ -3876,10 +4226,7 @@ Orac Server Port: 8000 (default)</div>
                 card.dataset.overview = item.overview || '';
                 card.dataset.listId = listId;
                 
-                let posterUrl = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';
-                if (item.poster_path) {
-                    posterUrl = item.poster_path.startsWith('http') ? item.poster_path : `https://image.tmdb.org/t/p/w500${item.poster_path}`;
-                }
+                const posterUrl = resolvePosterUrl(item.poster_path);
                 card.dataset.posterUrl = posterUrl;
                 card.onclick = (e) => handleDetailsClick(e);
                 
@@ -3976,27 +4323,40 @@ Orac Server Port: 8000 (default)</div>
                 
                 if (data.success && data.reviews && data.reviews.length > 0) {
                     container.innerHTML = '';
-                    data.reviews.forEach(rev => {
+                    let validCount = 0;
+                    data.reviews.forEach(rawRev => {
+                        const rev = parseReviewItem(rawRev);
+                        if (!rev.content && (!rev.author || rev.author === 'Anonymous')) return;
+                        
+                        validCount++;
                         const revDiv = document.createElement('div');
                         revDiv.style.background = 'rgba(255, 255, 255, 0.03)';
                         revDiv.style.border = '1px solid var(--border-glass)';
-                        revDiv.style.borderRadius = '0.5rem';
-                        revDiv.style.padding = '0.75rem';
+                        revDiv.style.borderRadius = '0.6rem';
+                        revDiv.style.padding = '0.85rem 1rem';
                         revDiv.style.display = 'flex';
                         revDiv.style.flexDirection = 'column';
-                        revDiv.style.gap = '0.35rem';
+                        revDiv.style.gap = '0.45rem';
+                        
+                        const ratingHtml = rev.rating 
+                            ? `<span style="font-weight: 600; color: #fbbf24; font-size: 0.8rem;">★ ${escapeHtml(rev.rating)}</span>` 
+                            : '';
                         
                         revDiv.innerHTML = `
-                            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
-                                <strong style="color: var(--text-main);">${escapeHtml(rev.author || 'Anonymous')}</strong>
-                                <span>${rev.rating ? '★ ' + rev.rating : ''}</span>
+                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem;">
+                                <strong style="color: var(--text-main); font-size: 0.85rem;">${escapeHtml(rev.author || 'Anonymous')}</strong>
+                                ${ratingHtml}
                             </div>
-                            <div style="font-size: 0.8rem; line-height: 1.4; color: var(--text-muted); max-height: 100px; overflow-y: auto;">
+                            <div style="font-size: 0.82rem; line-height: 1.5; color: var(--text-muted); white-space: pre-line; word-break: break-word;">
                                 ${escapeHtml(rev.content || '')}
                             </div>
                         `;
                         container.appendChild(revDiv);
                     });
+                    
+                    if (validCount === 0) {
+                        container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; font-style: italic;">No reviews found for this title.</div>';
+                    }
                 } else {
                     container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; font-style: italic;">No reviews found for this title.</div>';
                 }
@@ -4166,6 +4526,70 @@ Orac Server Port: 8000 (default)</div>
                 console.error('Error removing item:', err);
                 alert(`Error removing item: ${err.message || err}`);
             }
+        }
+
+        function resolvePosterUrl(path) {
+            if (!path) return 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';
+            if (path.startsWith('http://') || path.startsWith('https://')) return path;
+            if (path.startsWith('/assets/') || path.startsWith('assets/')) return path.startsWith('/') ? path : `/${path}`;
+            if (path.startsWith('movie_') || path.startsWith('show_') || path.startsWith('episode_')) return `/assets/images/${path}`;
+            if (path.startsWith('/')) return `https://image.tmdb.org/t/p/w500${path}`;
+            return `https://image.tmdb.org/t/p/w500/${path}`;
+        }
+
+        function parseReviewItem(rev) {
+            if (!rev) return { author: 'Anonymous', rating: '', content: '' };
+            if (typeof rev === 'object') {
+                return {
+                    author: rev.author || 'Anonymous',
+                    rating: rev.rating ? String(rev.rating) : '',
+                    content: rev.content || rev.review || ''
+                };
+            }
+            if (typeof rev !== 'string') {
+                return { author: 'Anonymous', rating: '', content: String(rev) };
+            }
+
+            const raw = rev.trim();
+            let author = 'Anonymous';
+            let rating = '';
+            let content = '';
+
+            const splitPattern = /\[CR\]\[CR\]|\r?\n\r?\n/;
+            const parts = raw.split(splitPattern);
+
+            if (parts.length >= 2) {
+                const header = parts[0];
+                content = parts.slice(1).join('\n\n');
+
+                const ratingMatch = header.match(/Rating:\s*([0-9.]+(?:\/[0-9]+)?)/i);
+                if (ratingMatch) {
+                    rating = ratingMatch[1];
+                }
+
+                let authorClean = header
+                    .replace(/\[B\]\s*Rating:[^\]]*\[\/B\]/gi, '')
+                    .replace(/Rating:\s*[0-9.]+(?:\/[0-9]+)?/gi, '')
+                    .replace(/\[\/?B\]/gi, '')
+                    .replace(/\[\/?I\]/gi, '')
+                    .replace(/\[\/?COLOR[^\]]*\]/gi, '')
+                    .trim();
+
+                if (authorClean) {
+                    author = authorClean;
+                }
+            } else {
+                content = raw;
+            }
+
+            content = content
+                .replace(/\[CR\]/gi, '\n')
+                .replace(/\[\/?B\]/gi, '')
+                .replace(/\[\/?I\]/gi, '')
+                .replace(/\[\/?COLOR[^\]]*\]/gi, '')
+                .trim();
+
+            return { author, rating, content };
         }
 
         // Helper string sanitizers

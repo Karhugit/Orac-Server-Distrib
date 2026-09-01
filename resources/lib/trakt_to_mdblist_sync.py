@@ -76,6 +76,10 @@ def sync_trakt_lists_to_mdblist(config_db_path, trakt_handler, lists_db_path=Non
     """
     Synchronizes Trakt user custom lists and Trakt Collections to MDBList static lists.
     """
+    if get_config_value("trakt_to_mdblist_sync", config_db_path, "false") != "true":
+        log("[Trakt->MDBList] Trakt -> MDBList sync is disabled in settings. Skipping.", level=LOGINFO)
+        return False
+
     api_key = get_config_value("mdblist_api", config_db_path)
     if not api_key or api_key == "empty_setting":
         log("[Trakt->MDBList] Missing or empty MDBList API key. Skipping Trakt->MDBList list sync.", level=LOGINFO)

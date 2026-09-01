@@ -242,15 +242,20 @@ async def sync_lists_and_items(trakt_handler, tmdb_handler, movies_static_db_pat
         log(f"[Orac] MDBList sync completed in {time() - mdblist_start_time:.2f} seconds", level=LOGINFO)
 
         # Sync Trakt Lists & Collections to MDBList
-        log(f"[Orac] **SYNC** Starting Trakt -> MDBList list and collection sync", level=LOGINFO)
-        t_to_m_start_time = time()
-        await sync_trakt_lists_to_mdblist_task(
-            config_db_path,
-            trakt_handler,
-            lists_db_path=lists_db_path,
-            tmdb_handler=tmdb_handler
-        )
-        log(f"[Orac] Trakt -> MDBList sync completed in {time() - t_to_m_start_time:.2f} seconds", level=LOGINFO)
+        from resources.lib.config_handler import get_config_value
+        trakt_to_mdb_sync = get_config_value("trakt_to_mdblist_sync", config_db_path, "false") == "true"
+        if trakt_to_mdb_sync:
+            log(f"[Orac] **SYNC** Starting Trakt -> MDBList list and collection sync", level=LOGINFO)
+            t_to_m_start_time = time()
+            await sync_trakt_lists_to_mdblist_task(
+                config_db_path,
+                trakt_handler,
+                lists_db_path=lists_db_path,
+                tmdb_handler=tmdb_handler
+            )
+            log(f"[Orac] Trakt -> MDBList sync completed in {time() - t_to_m_start_time:.2f} seconds", level=LOGINFO)
+        else:
+            log(f"[Orac] **SYNC** Trakt -> MDBList sync is disabled in settings. Skipping.", level=LOGINFO)
 
 
     # Sync recent TV show updates to static DB (Trakt Source)

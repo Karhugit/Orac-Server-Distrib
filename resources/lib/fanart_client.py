@@ -199,7 +199,8 @@ def sync_fanart_for_item(item_id, media_type, tmdb_handler, config_db_path, forc
                         clearlogo_path = f"{media_type}_{item_id}/{f_name}"
             else:
                 # URL Mode
-                poster_path = assets.get("poster")
+                # Keep canonical TMDb poster and only update fanart/clearlogo from Fanart.tv in URL mode
+                poster_path = None
                 fanart_path = assets.get("fanart")
                 clearlogo_path = assets.get("clearlogo")
                 
@@ -361,3 +362,61 @@ def run_fanart_latest_sync(config_db_path, tmdb_handler):
     except Exception as e:
         log(f"[Fanart] Error in background latest sync: {e}", level=LOGERROR)
         return False
+
+def cleanup_broken_fanart_posters(config_db_path, tmdb_handler=None):
+    """
+    Scans movies and TV shows static databases for any poster_path containing
+    'fanart.tv' and restores their official TMDb poster URLs.
+    """
+    try:
+        from resources.lib.database_manager import DatabaseManager
+        from resources.lib.config_handler import get_config_value
+        from resources.lib.tmdb_handler import TMDbAPI
+        
+        movies_static_path = DatabaseManager().get_path("movies_static")
+        tvshows_static_path = DatabaseManager().get_path("tvshows_static")
+        
+        if not tmdb_handler:
+            api_key = get_config_value("tmdb_api_key", config_db_path)
+            if not api_key:
+                return
+            tmdb_handler = TMDbAPI(api_key=api_key, static_db_path=movies_static_path)
+            
+        # 1. Movies
+        if movies_static_path:
+            with db_connect(movies_static_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT tmdb_id FROM movies WHERE poster_path LIKE '%fanart.tv%'")
+                rows = cursor.fetchall()
+                for (tmdb_id,) in rows:
+                    try:
+                        d = tmdb_handler._get(f"/movie/{tmdb_id}")
+                        if d and d.get("poster_path"):
+                            new_p = f"https://image.tmdb.org/t/p/w780{d['poster_path']}"
+                            cursor.execute("UPDATE movies SET poster_path = ?, thumbnail_path = ? WHERE tmdb_id = ?", (new_p, new_p, tmdb_id))
+                    except Exception as e:
+                        log(f"[Fanart] Error restoring TMDb poster for movie {tmdb_id}: {e}", level=LOGWARNING)
+                conn.commit()
+                if rows:
+                    log(f"[Fanart] Restored {len(rows)} movie posters from TMDb.", level=LOGINFO)
+                    
+        # 2. TV Shows
+        if tvshows_static_path:
+            with db_connect(tvshows_static_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT show_tmdb_id FROM shows WHERE poster_path LIKE '%fanart.tv%'")
+                rows = cursor.fetchall()
+                for (show_tmdb_id,) in rows:
+                    try:
+                        d = tmdb_handler._get(f"/tv/{show_tmdb_id}")
+                        if d and d.get("poster_path"):
+                            new_p = f"https://image.tmdb.org/t/p/w780{d['poster_path']}"
+                            cursor.execute("UPDATE shows SET poster_path = ?, thumbnail_path = ? WHERE show_tmdb_id = ?", (new_p, new_p, show_tmdb_id))
+                    except Exception as e:
+                        log(f"[Fanart] Error restoring TMDb poster for show {show_tmdb_id}: {e}", level=LOGWARNING)
+                conn.commit()
+                if rows:
+                    log(f"[Fanart] Restored {len(rows)} TV show posters from TMDb.", level=LOGINFO)
+    except Exception as e:
+        log(f"[Fanart] Error in cleanup_broken_fanart_posters: {e}", level=LOGWARNING)
+

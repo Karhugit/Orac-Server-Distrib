@@ -12,7 +12,7 @@ from urllib.parse import urlparse, unquote
 
 import xbmc
 from fastapi import FastAPI, Request, Response, HTTPException, Path, Query
-from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -213,6 +213,15 @@ def app_factory(
         import threading as _threading
         log(f"[Orac] Orac Server v{__version__} starting up.", level=LOGINFO)
         _threading.Thread(target=check_for_update, daemon=True, name="UpdateCheck").start()
+        
+        # Automatic poster cleanup for any legacy fanart.tv URLs
+        from resources.lib.fanart_client import cleanup_broken_fanart_posters
+        _threading.Thread(
+            target=cleanup_broken_fanart_posters, 
+            args=(application.state.config_db_path, application.state.tmdb_handler), 
+            daemon=True, 
+            name="PosterCleanup"
+        ).start()
 
         # Background sync loop — runs every hour; also re-syncs providers and
         # checks for updates daily
@@ -858,9 +867,22 @@ def app_factory(
         media_type = query.get('media_type', ['movie'])[0]
         try:
             max_reviews = int(query.get('max_reviews', ['20'])[0])
-        except:
+        except Exception:
             max_reviews = 20
-        reviews = app.state.tmdb_handler.get_reviews(tmdb_id, media_type=media_type, max_reviews=max_reviews)
+
+        reviews = []
+        if app.state.tmdb_handler:
+            reviews = app.state.tmdb_handler.get_reviews(tmdb_id, media_type=media_type, max_reviews=max_reviews)
+        else:
+            try:
+                from resources.lib.tmdb_handler import TMDbAPI
+                from resources.lib.config_handler import get_config_value
+                api_key = get_config_value('tmdb_api_key', app.state.config_db_path)
+                if api_key:
+                    handler = TMDbAPI(api_key=api_key, static_db_path=app.state.movies_static_db_path)
+                    reviews = handler.get_reviews(tmdb_id, media_type=media_type, max_reviews=max_reviews)
+            except Exception as e:
+                log(f"[Orac] Error initializing TMDbAPI in reviews_route: {e}", level=LOGWARNING)
         if media_type == 'movie':
             try:
                 with db_connect(app.state.movies_static_db_path) as conn:
@@ -910,7 +932,7 @@ def app_factory(
         try:
             with db_connect(app.state.config_db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT key, value FROM config WHERE key IN ('trakt_user', 'trakt.user', 'trakt_token', 'trakt.token', 'simkl_user', 'simkl.user', 'simkl.token', 'simkl_token', 'tmdb_user', 'tmdb.user', 'mdblist.user', 'mdblist_user', 'mdblist_api')")
+                cursor.execute("SELECT key, value FROM config WHERE key IN ('trakt_user', 'trakt.user', 'trakt_token', 'trakt.token', 'simkl_user', 'simkl.user', 'simkl.token', 'simkl_token', 'tmdb_user', 'tmdb.user', 'mdblist.user', 'mdblist_user', 'mdblist_api', 'trakt_to_mdblist_sync', 'fanart_api_key', 'fanart_enabled', 'fanart_storage_mode')")
                 rows = cursor.fetchall()
                 
                 # Normalize keys slightly in case of duplicates or variants
@@ -965,10 +987,44 @@ def app_factory(
                     "authenticated": is_mdblist_auth,
                     "can_auth": True
                 })
+                
+                fanart_api = data.get('fanart_api_key')
+                fanart_storage_mode = data.get('fanart_storage_mode') or 'URL'
+                is_fanart_auth = bool(fanart_api and fanart_api not in ('empty_setting', ''))
+                
+                # Fanart is static - always present in the platforms list
+                platforms.append({
+                    "name": "Fanart",
+                    "id": "fanart",
+                    "username": ("Authorised" if is_fanart_auth else ""),
+                    "authenticated": is_fanart_auth,
+                    "storage_mode": fanart_storage_mode,
+                    "can_auth": True
+                })
+                
+                trakt_to_mdblist_sync_enabled = (data.get('trakt_to_mdblist_sync') == 'true')
                     
-                return JSONResponse(status_code=200, content={"success": True, "platforms": platforms})
+                return JSONResponse(status_code=200, content={
+                    "success": True, 
+                    "platforms": platforms,
+                    "fanart_storage_mode": fanart_storage_mode,
+                    "trakt_to_mdblist_sync": trakt_to_mdblist_sync_enabled
+                })
         except Exception as e:
             log(f"Error fetching platform tokens from config DB: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/trakt_to_mdblist_sync")
+    async def update_trakt_to_mdblist_sync_api(request: Request):
+        try:
+            body = await request.json()
+            enabled = bool(body.get("enabled", False))
+            val_str = "true" if enabled else "false"
+            success = update_config_values({"trakt_to_mdblist_sync": val_str}, app.state.config_db_path)
+            log(f"[Orac] Updated Trakt -> MDBList sync toggle to: {val_str}", level=LOGINFO)
+            return JSONResponse(status_code=200 if success else 500, content={"success": success, "enabled": enabled})
+        except Exception as e:
+            log(f"Error updating Trakt -> MDBList sync setting: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
     @app.post("/api/web/platforms/trakt/start_auth")
@@ -1275,6 +1331,78 @@ def app_factory(
             log(f"Error revoking MDBList authorisation: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
+    @app.post("/api/web/platforms/fanart/auth")
+    async def web_fanart_auth_api(request: Request):
+        try:
+            body = await request.json()
+            api_key = (body.get("api_key") or "").strip()
+            storage_mode = body.get("storage_mode") or "URL"
+            if storage_mode not in ("URL", "Local"):
+                storage_mode = "URL"
+            if not api_key or api_key == "empty_setting":
+                return JSONResponse(status_code=400, content={"success": False, "error": "API key cannot be empty"})
+
+            # Validate key against Fanart.tv API
+            url = f"https://webservice.fanart.tv/v3/movies/11?api_key={api_key}"
+            try:
+                resp = requests.get(url, timeout=8)
+                if resp.status_code == 401:
+                    return JSONResponse(status_code=400, content={"success": False, "error": "Fanart.tv API error (401): Invalid API key"})
+            except requests.RequestException as e:
+                log(f"[Fanart] Warning: Fanart.tv validation network issue: {e}", level=LOGWARNING)
+
+            # Save in config DB
+            success = update_config_values({
+                "fanart_api_key": api_key,
+                "fanart_enabled": "true",
+                "fanart_storage_mode": storage_mode
+            }, app.state.config_db_path)
+
+            if success:
+                log(f"[Fanart] Successfully authorised Fanart.tv (Storage mode: {storage_mode})", level=LOGINFO)
+                return JSONResponse(status_code=200, content={"success": True, "storage_mode": storage_mode})
+            else:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to update configuration database"})
+        except Exception as e:
+            log(f"Error authenticating Fanart.tv API: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/fanart/revoke")
+    async def web_fanart_revoke_api():
+        try:
+            success = update_config_values({
+                "fanart_api_key": "empty_setting",
+                "fanart_enabled": "false"
+            }, app.state.config_db_path)
+
+            if success:
+                log(f"[Fanart] Successfully revoked Fanart.tv authorisation", level=LOGINFO)
+                return JSONResponse(status_code=200, content={"success": True})
+            else:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to clear configuration values"})
+        except Exception as e:
+            log(f"Error revoking Fanart.tv authorisation: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/fanart/storage_mode")
+    async def web_fanart_storage_mode_api(request: Request):
+        try:
+            body = await request.json()
+            storage_mode = body.get("storage_mode")
+            if storage_mode not in ("URL", "Local"):
+                return JSONResponse(status_code=400, content={"success": False, "error": "Invalid storage mode (must be 'URL' or 'Local')"})
+            success = update_config_values({
+                "fanart_storage_mode": storage_mode
+            }, app.state.config_db_path)
+            if success:
+                log(f"[Fanart] Updated Fanart storage mode to: {storage_mode}", level=LOGINFO)
+                return JSONResponse(status_code=200, content={"success": True, "storage_mode": storage_mode})
+            else:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to update configuration database"})
+        except Exception as e:
+            log(f"Error updating Fanart storage mode: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
     @app.post("/api/web/platforms/tmdb/start_auth")
     async def web_tmdb_start_auth_api():
         try:
@@ -1447,10 +1575,11 @@ def app_factory(
                         
                         m_row = movies_cur.fetchone()
                         if m_row:
+                            from resources.lib.formatting_utils import format_image_url
                             item_details.update({
                                 "title": m_row["title"],
                                 "year": m_row["year"],
-                                "poster_path": m_row["poster_path"],
+                                "poster_path": format_image_url(m_row["poster_path"], "w780", app.state.tmdb_handler),
                                 "rating": m_row["rating"] or 0.0,
                                 "overview": m_row["overview"] or ""
                             })
@@ -1472,10 +1601,11 @@ def app_factory(
                         
                         s_row = tvshows_cur.fetchone()
                         if s_row:
+                            from resources.lib.formatting_utils import format_image_url
                             item_details.update({
                                 "title": s_row["title"],
                                 "year": s_row["year"],
-                                "poster_path": s_row["poster_path"],
+                                "poster_path": format_image_url(s_row["poster_path"], "w780", app.state.tmdb_handler),
                                 "rating": s_row["rating"] or 0.0,
                                 "overview": s_row["overview"] or ""
                             })
@@ -2080,6 +2210,58 @@ def app_factory(
             return JSONResponse(status_code=200, content={"success": True, "message": "Fanart latest sync triggered."})
         except Exception as e:
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.get("/assets/images/{media_item}/{filename}")
+    async def serve_asset_image(media_item: str, filename: str):
+        assets_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "images")
+        file_path = os.path.join(assets_dir, media_item, filename)
+
+        # 1. If file exists on disk, serve it immediately
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            return FileResponse(file_path)
+
+        # 2. Attempt on-demand download via Fanart if missing
+        try:
+            parts = media_item.split("_")
+            if len(parts) >= 2:
+                media_type = parts[0]  # "movie" or "show"
+                item_id = int(parts[1])
+                from resources.lib.fanart_client import sync_fanart_for_item
+                await asyncio.to_thread(
+                    sync_fanart_for_item,
+                    item_id,
+                    media_type,
+                    app.state.tmdb_handler,
+                    app.state.config_db_path,
+                    force=True
+                )
+                if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                    return FileResponse(file_path)
+        except Exception as e:
+            log(f"[Orac] Error attempting on-demand fanart download for {media_item}/{filename}: {e}", level=LOGWARNING)
+
+        # 3. Fallback: redirect to TMDB if file is still not on disk
+        try:
+            parts = media_item.split("_")
+            if len(parts) >= 2:
+                media_type = parts[0]
+                item_id = int(parts[1])
+                if app.state.tmdb_handler:
+                    endpoint = f"/movie/{item_id}" if media_type == "movie" else f"/tv/{item_id}"
+                    tmdb_data = await asyncio.to_thread(app.state.tmdb_handler._get, endpoint)
+                    if tmdb_data:
+                        if "poster" in filename:
+                            p_path = tmdb_data.get("poster_path")
+                            if p_path:
+                                return RedirectResponse(f"https://image.tmdb.org/t/p/w780{p_path}")
+                        elif "fanart" in filename or "landscape" in filename:
+                            b_path = tmdb_data.get("backdrop_path")
+                            if b_path:
+                                return RedirectResponse(f"https://image.tmdb.org/t/p/w1280{b_path}")
+        except Exception as e:
+            log(f"[Orac] Error fetching TMDb fallback for {media_item}/{filename}: {e}", level=LOGWARNING)
+
+        raise HTTPException(status_code=404, detail="Asset not found")
 
     # Serve static UI files at /web
     # The directory needs to exist to mount properly
