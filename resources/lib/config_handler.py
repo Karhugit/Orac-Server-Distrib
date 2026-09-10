@@ -157,3 +157,16 @@ def get_fanart_config(config_db_path=None):
         'fanart_api_key': api_key,
         'fanart_storage_mode': storage_mode
     }
+
+
+def get_all_config(config_db_path):
+    """Fetches all key-value pairs from the config database as a dict."""
+    try:
+        with db_connect(config_db_path) as conn:
+            _init_config_db(conn)
+            cursor = conn.cursor()
+            cursor.execute("SELECT key, value FROM config")
+            return {row[0]: row[1] for row in cursor.fetchall()}
+    except Exception as e:
+        log(f"Error fetching all config: {e}", LOGERROR)
+        return {}

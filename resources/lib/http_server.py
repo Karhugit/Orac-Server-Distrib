@@ -9,6 +9,7 @@ import os
 from collections import deque
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse, unquote
+from concurrent.futures import ThreadPoolExecutor
 
 import xbmc
 from fastapi import FastAPI, Request, Response, HTTPException, Path, Query
@@ -36,10 +37,11 @@ from .movies_handler import handle_movie_request
 from .discover_handler import handle_discover_request
 from .shows_handler import handle_show_request
 from .search_handler import search_tmdb
-from .config_handler import update_config_values, get_trakt_user, get_config_value, clear_trakt_config
+from .config_handler import update_config_values, get_trakt_user, get_config_value, clear_trakt_config, get_all_config
 from .indexing import add_external_index, del_external_index
 from .internal_indexing import add_internal_index, del_internal_index, get_internal_indexes, get_internal_index_contents, get_available_languages
 from .scrape_handler import handle_scrape_request
+from resources.lib.debrid_resolver import resolve_stream
 from .tags_handler import get_all_tags, get_tags_for_item, add_tag_to_item, remove_tag_from_item, get_items_with_tag
 from .collections_handler import handle_collections_request
 from .providers_handler import init_watch_providers_db, sync_watch_providers, get_watch_providers
@@ -673,7 +675,8 @@ def app_factory(
             app.state.tvshows_static_db_path,
             tmdb_handler=app.state.tmdb_handler,
             results_limit=results_limit,
-            global_loop=asyncio.get_running_loop()
+            global_loop=asyncio.get_running_loop(),
+            config_db_path=app.state.config_db_path
         )
         return send_safe(status, body, content_type)
 
@@ -683,9 +686,31 @@ def app_factory(
         query['results_limit'] = ['4']
         status, body, content_type = await handle_scrape_request(
             query, app.state.scraper_manager, app.state.movies_static_db_path, app.state.tvshows_static_db_path,
-            tmdb_handler=app.state.tmdb_handler, results_limit=4, global_loop=asyncio.get_running_loop()
+            tmdb_handler=app.state.tmdb_handler, results_limit=4, global_loop=asyncio.get_running_loop(),
+            config_db_path=app.state.config_db_path
         )
         return send_safe(status, body, content_type)
+
+    @app.get("/resolve")
+    async def resolve_endpoint(request: Request):
+        query = parse_qs_fastapi(request)
+        provider = query.get("provider", [None])[0] or query.get("debrid", [None])[0]
+        magnet = query.get("magnet", [None])[0] or query.get("url", [None])[0]
+        info_hash = query.get("hash", [None])[0]
+        title = query.get("title", [""])[0]
+        season = query.get("season", [None])[0]
+        episode = query.get("episode", [None])[0]
+        
+        if not provider or not magnet:
+            return JSONResponse(status_code=400, content={"success": False, "error": "provider and magnet are required"})
+            
+        cfg = get_all_config(app.state.config_db_path)
+        stream_url = await asyncio.to_thread(resolve_stream, provider, magnet, info_hash, title, season, episode, cfg)
+        if stream_url:
+            return JSONResponse(status_code=200, content={"success": True, "stream_url": stream_url})
+        else:
+            return JSONResponse(status_code=404, content={"success": False, "error": "Could not resolve stream"})
+
 
     @app.get("/get_genres")
     async def get_genres_handler(request: Request):
@@ -1619,6 +1644,62 @@ def app_factory(
             log(f"Error fetching list items for {list_id}: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
+    @app.get("/api/web/index_items")
+    async def web_index_items_api(index_id: str, item_type: str, index_type: str = "external"):
+        try:
+            items = []
+            if index_type == "external":
+                with db_connect(app.state.ext_indexes_db_path) as conn:
+                    cursor = conn.cursor()
+                    status, body, _ = handle_discover_request(item_type, {'name': [index_id]}, app.state.tmdb_handler, cursor)
+                    if status == 200:
+                        raw_results = json.loads(body)
+                        from resources.lib.formatting_utils import format_image_url
+                        for r in raw_results:
+                            items.append({
+                                "media_type": item_type if item_type != 'tv' else 'tvshow',
+                                "tmdb_id": r.get("tmdb_id") or r.get("id"),
+                                "trakt_id": r.get("trakt_id"),
+                                "title": r.get("title") or r.get("name") or "Unknown",
+                                "year": r.get("year") or (int(r.get("premiered", "0").split("-")[0]) if r.get("premiered") else 0),
+                                "poster_path": format_image_url(r.get("poster_path"), "w780", app.state.tmdb_handler),
+                                "rating": r.get("rating") or r.get("vote_average") or 0.0,
+                                "overview": r.get("overview") or ""
+                            })
+                    else:
+                        return JSONResponse(status_code=status, content={"success": False, "error": f"Discover query failed with status {status}"})
+            elif index_type == "internal":
+                if item_type == 'movie':
+                    static_db = app.state.movies_static_db_path
+                    dynamic_db = app.state.movies_dynamic_db_path
+                elif item_type in ('tvshow', 'show', 'episode'):
+                    static_db = app.state.tvshows_static_db_path
+                    dynamic_db = app.state.tvshows_dynamic_db_path
+                else:
+                    static_db = app.state.movies_static_db_path
+                    dynamic_db = app.state.movies_dynamic_db_path
+                user = await get_t_user(app) or ""
+                results = get_internal_index_contents(
+                    app.state.ext_indexes_db_path, index_id, item_type, static_db, dynamic_db, user=user, tags_db_path=app.state.tags_db_path
+                )
+                from resources.lib.formatting_utils import format_image_url
+                for r in results:
+                    items.append({
+                        "media_type": r.get("media_type") or item_type,
+                        "tmdb_id": r.get("tmdb_id"),
+                        "trakt_id": r.get("trakt_id"),
+                        "title": r.get("title") or "Unknown",
+                        "year": r.get("year") or 0,
+                        "poster_path": format_image_url(r.get("poster_path"), "w780", app.state.tmdb_handler),
+                        "rating": r.get("rating") or 0.0,
+                        "overview": r.get("overview") or ""
+                    })
+
+            return JSONResponse(status_code=200, content={"success": True, "items": items, "index_id": index_id, "index_type": index_type})
+        except Exception as e:
+            log(f"Error executing index items for {index_id} ({index_type}): {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
     @app.post("/api/web/list_items/remove")
     async def web_remove_list_item_api(request: Request):
         try:
@@ -1705,6 +1786,7 @@ def app_factory(
         try:
             diag = {
                 "timestamp": time.time(),
+                "services": [],
                 "connectivity": {},
                 "databases": {},
                 "platforms": {},
@@ -1712,40 +1794,204 @@ def app_factory(
                 "summary": {}
             }
 
-            def check_remote():
-                conn_results = {}
-                # TMDb API
+            # 1. Read config database
+            with db_connect(app.state.config_db_path) as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT key, value FROM config")
+                cfg = {r[0]: r[1] for r in cur.fetchall()}
+
+            # 2. Check each platform authorization status and prepare pings
+            tmdb_k = cfg.get("tmdb_api_key")
+            tmdb_u = cfg.get("tmdb_user") or cfg.get("tmdb.user")
+            is_tmdb_auth = bool(tmdb_k and tmdb_k not in ('empty_setting', ''))
+
+            trakt_u = cfg.get("trakt_user") or cfg.get("trakt.user")
+            trakt_t = cfg.get("trakt_token") or cfg.get("trakt.token")
+            is_trakt_auth = bool(trakt_u and trakt_t and trakt_t not in ('empty_setting', ''))
+
+            simkl_u = cfg.get("simkl.user") or cfg.get("simkl_user")
+            simkl_t = cfg.get("simkl.token") or cfg.get("simkl_token")
+            is_simkl_auth = bool(simkl_t and simkl_t not in ('empty_setting', ''))
+
+            mdb_k = cfg.get("mdblist_api") or cfg.get("mdblist_api_key")
+            is_mdb_auth = bool(mdb_k and mdb_k not in ('empty_setting', ''))
+
+            fanart_k = cfg.get("fanart_api_key")
+            is_fanart_auth = bool(fanart_k and fanart_k not in ('empty_setting', ''))
+
+            ping_tasks = []
+
+            if is_trakt_auth:
+                t_cid = cfg.get("client_id") or "f986871799a140dc20a166adfa637c98c8fa474dc80757aabad8668b99e184de"
+                def ping_trakt():
+                    r = requests.get(
+                        "https://api.trakt.tv/users/me",
+                        headers={"trakt-api-version": "2", "trakt-api-key": t_cid, "Authorization": f"Bearer {trakt_t}"},
+                        timeout=4
+                    )
+                    return r.status_code == 200, f"HTTP {r.status_code}"
+                ping_tasks.append(({
+                    "id": "trakt",
+                    "name": "Trakt",
+                    "authorized": True,
+                    "username": trakt_u or "Authorised"
+                }, ping_trakt))
+
+            if is_tmdb_auth:
+                def ping_tmdb():
+                    r = requests.get(f"https://api.themoviedb.org/3/configuration?api_key={tmdb_k}", timeout=4)
+                    return r.status_code == 200, f"HTTP {r.status_code}"
+                ping_tasks.append(({
+                    "id": "tmdb",
+                    "name": "TMDb",
+                    "authorized": True,
+                    "username": tmdb_u or "API Active"
+                }, ping_tmdb))
+
+            if is_simkl_auth:
+                s_cid = cfg.get("simkl.client") or cfg.get("simkl.client_id") or cfg.get("simkl_client") or "4c920ba05273be800e843c0a2a4c148e1a17adbbba14c441bc3861214088a296"
+                def ping_simkl():
+                    r = requests.get(
+                        "https://api.simkl.com/sync/all-items",
+                        headers={"Content-Type": "application/json", "simkl-api-key": s_cid, "Authorization": f"Bearer {simkl_t}"},
+                        timeout=4
+                    )
+                    return r.status_code == 200, f"HTTP {r.status_code}"
+                ping_tasks.append(({
+                    "id": "simkl",
+                    "name": "Simkl",
+                    "authorized": True,
+                    "username": simkl_u or "Authorised"
+                }, ping_simkl))
+
+            if is_mdb_auth:
+                def ping_mdblist():
+                    r = requests.get(f"https://mdblist.com/api/user?apikey={mdb_k}", timeout=4)
+                    return r.status_code == 200, f"HTTP {r.status_code}"
+                ping_tasks.append(({
+                    "id": "mdblist",
+                    "name": "MDBList",
+                    "authorized": True,
+                    "username": "API Active"
+                }, ping_mdblist))
+
+            if is_fanart_auth:
+                def ping_fanart():
+                    r = requests.get(f"https://webservice.fanart.tv/v3/movies/11?api_key={fanart_k}", timeout=4)
+                    return r.status_code == 200, f"HTTP {r.status_code}"
+                ping_tasks.append(({
+                    "id": "fanart",
+                    "name": "Fanart.tv",
+                    "authorized": True,
+                    "username": "API Active"
+                }, ping_fanart))
+
+            # 3. Check authorized debrid services and prepare pings
+            debrid_svcs = [
+                ("Real-Debrid", "rd.token", "rd.enabled", "rd.priority", 2),
+                ("Premiumize", "pm.token", "pm.enabled", "pm.priority", 3),
+                ("TorBox", "tb.token", "tb.enabled", "tb.priority", 1),
+                ("OffCloud", "oc.token", "oc.enabled", "oc.priority", 5),
+                ("EasyDebrid", "ed.token", "ed.enabled", "ed.priority", 6),
+                ("EasyNews", "easynews_user", "provider.easynews", "en.priority", 7)
+            ]
+
+            debrid_ping_tasks = []
+            for d_name, token_key, enabled_key, prio_key, def_prio in debrid_svcs:
+                tok = cfg.get(token_key)
+                en = cfg.get(enabled_key, "false").lower() in ("true", "1")
+                has_tok = bool(tok and tok != "empty_setting")
                 try:
+                    prio_val = int(cfg.get(prio_key, def_prio))
+                except (ValueError, TypeError):
+                    prio_val = def_prio
+
+                diag["debrid"][d_name] = {
+                    "configured": has_tok,
+                    "enabled": en and has_tok,
+                    "priority": prio_val
+                }
+                if not has_tok:
+                    continue
+
+                if d_name == "Real-Debrid":
+                    def ping_rd(t=tok):
+                        r = requests.get("https://api.real-debrid.com/rest/1.0/user", headers={"Authorization": f"Bearer {t}"}, timeout=4)
+                        return r.status_code == 200, f"HTTP {r.status_code}"
+                    debrid_ping_tasks.append(({"id": "rd", "name": d_name, "enabled": en, "priority": prio_val}, ping_rd))
+                elif d_name == "Premiumize":
+                    def ping_pm(t=tok):
+                        r = requests.get("https://www.premiumize.me/api/account/info", headers={"Authorization": f"Bearer {t}"}, timeout=4)
+                        ok = r.status_code == 200 and r.json().get("status") == "success"
+                        return ok, f"HTTP {r.status_code}"
+                    debrid_ping_tasks.append(({"id": "pm", "name": d_name, "enabled": en, "priority": prio_val}, ping_pm))
+                elif d_name == "TorBox":
+                    def ping_tb(t=tok):
+                        r = requests.get("https://api.torbox.app/v1/api/user/me", headers={"Authorization": f"Bearer {t}"}, timeout=4)
+                        ok = r.status_code == 200 and r.json().get("success") is True
+                        return ok, f"HTTP {r.status_code}"
+                    debrid_ping_tasks.append(({"id": "tb", "name": d_name, "enabled": en, "priority": prio_val}, ping_tb))
+                elif d_name == "OffCloud":
+                    def ping_oc(t=tok):
+                        r = requests.get(f"https://offcloud.com/api/remote/account?key={t}", timeout=4)
+                        return r.status_code == 200, f"HTTP {r.status_code}"
+                    debrid_ping_tasks.append(({"id": "oc", "name": d_name, "enabled": en, "priority": prio_val}, ping_oc))
+                elif d_name == "EasyDebrid":
+                    def ping_ed(t=tok):
+                        r = requests.get("https://easydebrid.com/api/v1/user/details", headers={"Authorization": f"Bearer {t}"}, timeout=4)
+                        return r.status_code == 200, f"HTTP {r.status_code}"
+                    debrid_ping_tasks.append(({"id": "ed", "name": d_name, "enabled": en, "priority": prio_val}, ping_ed))
+                elif d_name == "EasyNews":
+                    pwd = cfg.get("easynews_password")
+                    def ping_en(u=tok, p=pwd):
+                        r = requests.get("https://account.easynews.com/editinfo.php", auth=(u, p), timeout=4)
+                        return r.status_code == 200, f"HTTP {r.status_code}"
+                    debrid_ping_tasks.append(({"id": "easynews", "name": d_name, "enabled": en, "priority": prio_val}, ping_en))
+
+            def run_all_pings():
+                def execute_one(item):
+                    cat, (info, fn) = item
                     t0 = time.perf_counter()
-                    api_key = getattr(app.state.tmdb_handler, 'api_key', None) if hasattr(app.state, 'tmdb_handler') else None
-                    url = f"https://api.themoviedb.org/3/configuration?api_key={api_key}" if api_key else "https://api.themoviedb.org/3/configuration"
-                    r = requests.get(url, timeout=4)
-                    lat = round((time.perf_counter() - t0) * 1000)
-                    conn_results["tmdb"] = {"status": "ok" if r.status_code == 200 else "error", "code": r.status_code, "latency_ms": lat}
-                except Exception as e:
-                    conn_results["tmdb"] = {"status": "unreachable", "error": str(e), "latency_ms": None}
+                    try:
+                        ok, detail = fn()
+                        lat = round((time.perf_counter() - t0) * 1000)
+                        return cat, {
+                            **info,
+                            "online": ok,
+                            "status": "ok" if ok else "error",
+                            "latency_ms": lat,
+                            "detail": detail
+                        }
+                    except Exception as e:
+                        return cat, {
+                            **info,
+                            "online": False,
+                            "status": "unreachable",
+                            "latency_ms": None,
+                            "detail": str(e)
+                        }
 
-                # Trakt API
-                try:
-                    t0 = time.perf_counter()
-                    r = requests.get("https://api.trakt.tv", timeout=4)
-                    lat = round((time.perf_counter() - t0) * 1000)
-                    conn_results["trakt"] = {"status": "ok" if r.status_code < 500 else "error", "code": r.status_code, "latency_ms": lat}
-                except Exception as e:
-                    conn_results["trakt"] = {"status": "unreachable", "error": str(e), "latency_ms": None}
+                tasks = [("service", t) for t in ping_tasks] + [("debrid", t) for t in debrid_ping_tasks]
+                if not tasks:
+                    return [], []
 
-                # Fanart.tv API
-                try:
-                    t0 = time.perf_counter()
-                    r = requests.get("https://webservice.fanart.tv/v3/status", timeout=4)
-                    lat = round((time.perf_counter() - t0) * 1000)
-                    conn_results["fanart"] = {"status": "ok" if r.status_code < 500 else "error", "code": r.status_code, "latency_ms": lat}
-                except Exception as e:
-                    conn_results["fanart"] = {"status": "unreachable", "error": str(e), "latency_ms": None}
+                with ThreadPoolExecutor(max_workers=len(tasks)) as ex:
+                    results = list(ex.map(execute_one, tasks))
 
-                return conn_results
+                srv_res = [r[1] for r in results if r[0] == "service"]
+                deb_res = [r[1] for r in results if r[0] == "debrid"]
+                return srv_res, deb_res
 
-            diag["connectivity"] = await asyncio.to_thread(check_remote)
+            srv_results, deb_results = await asyncio.to_thread(run_all_pings)
+            deb_results.sort(key=lambda x: x.get("priority", 10))
+            diag["services"] = srv_results
+            diag["debrid_services"] = deb_results
+
+            for s in diag["services"]:
+                diag["connectivity"][s["id"]] = {
+                    "status": s["status"],
+                    "latency_ms": s["latency_ms"]
+                }
 
             # Database sizes & health
             db_paths = {
@@ -1809,61 +2055,29 @@ def app_factory(
 
             diag["summary"]["total_db_size_mb"] = round(total_size_bytes / (1024 * 1024), 2)
 
-            # Platform & Token status
-            with db_connect(app.state.config_db_path) as conn:
-                cur = conn.cursor()
-                cur.execute("SELECT key, value FROM config")
-                cfg = {r[0]: r[1] for r in cur.fetchall()}
-
-            # Trakt status
-            trakt_u = cfg.get("trakt_user")
-            trakt_t = cfg.get("trakt_token")
+            # Platform & Token status summary
             trakt_exp = cfg.get("trakt_expires")
             diag["platforms"]["trakt"] = {
-                "authorized": bool(trakt_u and trakt_t and trakt_t != "empty_setting"),
+                "authorized": is_trakt_auth,
                 "username": trakt_u or "Not configured",
                 "expires": trakt_exp if trakt_exp and trakt_exp != "empty_setting" else None
             }
-
-            # Simkl status
-            simkl_u = cfg.get("simkl.user") or cfg.get("simkl_user")
-            simkl_t = cfg.get("simkl.token")
             diag["platforms"]["simkl"] = {
-                "authorized": bool(simkl_u and simkl_t and simkl_t != "empty_setting"),
+                "authorized": is_simkl_auth,
                 "username": simkl_u or "Not configured"
             }
-
-            # TMDb status
-            tmdb_u = cfg.get("tmdb_user") or cfg.get("tmdb.user")
             diag["platforms"]["tmdb"] = {
-                "authorized": bool(tmdb_u and tmdb_u != "empty_setting"),
+                "authorized": is_tmdb_auth,
                 "username": tmdb_u or "API Active"
             }
-
-            # MDBList status
-            mdb_api = cfg.get("mdblist_api")
             diag["platforms"]["mdblist"] = {
-                "authorized": bool(mdb_api and mdb_api != "empty_setting"),
-                "has_api_key": bool(mdb_api and mdb_api != "empty_setting")
+                "authorized": is_mdb_auth,
+                "has_api_key": is_mdb_auth
             }
-
-            # Debrid status
-            debrid_svcs = [
-                ("Real-Debrid", "rd.token", "rd.enabled"),
-                ("Premiumize", "pm.token", "pm.enabled"),
-                ("TorBox", "tb.token", "tb.enabled"),
-                ("OffCloud", "oc.token", "oc.enabled"),
-                ("EasyDebrid", "ed.token", "ed.enabled"),
-                ("EasyNews", "easynews_user", "provider.easynews")
-            ]
-            for d_name, token_key, enabled_key in debrid_svcs:
-                tok = cfg.get(token_key)
-                en = cfg.get(enabled_key, "false").lower() in ("true", "1")
-                has_tok = bool(tok and tok != "empty_setting")
-                diag["debrid"][d_name] = {
-                    "configured": has_tok,
-                    "enabled": en and has_tok
-                }
+            diag["platforms"]["fanart"] = {
+                "authorized": is_fanart_auth,
+                "has_api_key": is_fanart_auth
+            }
 
             # Scraper DB Metrics
             try:
@@ -1877,10 +2091,63 @@ def app_factory(
             except Exception:
                 diag["scrapers"] = {"total": 0, "active": 0, "total_scrapes": 0}
 
+            try:
+                diag["results_sort_order"] = int(cfg.get("results.sort_order", "0"))
+            except (ValueError, TypeError):
+                diag["results_sort_order"] = 0
+
             return JSONResponse(status_code=200, content={"success": True, "diagnostics": diag})
         except Exception as e:
             log(f"Error generating system diagnostics: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/results_sort_order")
+    async def set_results_sort_order(request: Request):
+        try:
+            body = await request.json()
+            sort_order = body.get("sort_order")
+            if sort_order is None:
+                return JSONResponse(status_code=400, content={"status": "error", "error": "sort_order required"})
+            sort_order = int(sort_order)
+            if not (0 <= sort_order <= 5):
+                return JSONResponse(status_code=400, content={"status": "error", "error": "sort_order must be 0-5"})
+            update_config_values({"results.sort_order": str(sort_order)}, app.state.config_db_path)
+            log(f"[ScrapeHandler] Updated results.sort_order to {sort_order}", level=LOGINFO)
+            return JSONResponse(status_code=200, content={"status": "success", "sort_order": sort_order})
+        except Exception as e:
+            log(f"[ScrapeHandler] Error setting results sort order: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"status": "error", "error": str(e)})
+
+    @app.post("/api/web/debrid_priority")
+    async def set_debrid_priority(request: Request):
+        try:
+            body = await request.json()
+            provider = body.get("provider")
+            priority = body.get("priority")
+            if not provider or priority is None:
+                return JSONResponse(status_code=400, content={"status": "error", "error": "provider and priority required"})
+            
+            p_key = {
+                'torbox': 'tb.priority',
+                'real-debrid': 'rd.priority',
+                'realdebrid': 'rd.priority',
+                'premiumize': 'pm.priority',
+                'premiumize.me': 'pm.priority',
+                'alldebrid': 'ad.priority',
+                'offcloud': 'oc.priority',
+                'easydebrid': 'ed.priority',
+                'easynews': 'en.priority'
+            }.get(str(provider).lower().strip())
+            
+            if not p_key:
+                return JSONResponse(status_code=400, content={"status": "error", "error": f"Unknown provider {provider}"})
+                
+            update_config_values({p_key: str(priority)}, app.state.config_db_path)
+            log(f"[DebridResolver] Updated priority for {provider} ({p_key}) to {priority}", level=LOGINFO)
+            return JSONResponse(status_code=200, content={"status": "success", "provider": provider, "priority": priority})
+        except Exception as e:
+            log(f"[DebridResolver] Error setting debrid priority: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"status": "error", "error": str(e)})
 
     @app.post("/api/web/vacuum")
     async def web_vacuum_api():

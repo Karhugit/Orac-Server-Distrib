@@ -6,8 +6,10 @@ import math
 import time
 import re
 from resources.lib.log_utils import log, LOGERROR, LOGINFO, LOGWARNING, LOGDEBUG
+from resources.lib.config_handler import get_all_config
+from resources.lib.debrid_resolver import check_all_debrids_parallel, rank_and_filter_cached_results
 
-async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, tmdb_handler=None, results_limit=0, global_loop=None):
+async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, tmdb_handler=None, results_limit=0, global_loop=None, config_db_path=None):
     """
     Handles a scrape request, enriching metadata if needed and optionally using racing mode.
     """
@@ -18,6 +20,7 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
     strict_dedupe = query.get("strict_dedupe", ["false"])[0].lower() == 'true'
     orac_scraping_pref = query.get("orac_scraping", ["true"])[0].lower() == 'true'
     use_aiostreams_pref = query.get("use_aiostreams", ["true"])[0].lower() == 'true'
+    check_debrid_pref = query.get("check_debrid", ["true"])[0].lower() == 'true'
 
     if not tmdb_id:
         return 400, json.dumps({"success": False, "error": "tmdb_id is required"}), "application/json"
@@ -86,38 +89,49 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
     if not scrape_data.get("title") and not scrape_data.get("tvshowtitle"):
         return 404, json.dumps({"success": False, "error": f"No media data found for tmdb_id {tmdb_id}"}), "application/json"
 
+    cfg = get_all_config(config_db_path) if config_db_path else {}
+    en_enabled = cfg.get('provider.easynews', 'false').lower() in ('true', '1')
+    en_user = cfg.get('easynews_user')
+    en_pwd = cfg.get('easynews_password')
+    run_easynews = en_enabled and en_user and en_pwd and en_user != 'empty_setting' and en_pwd != 'empty_setting'
+
     # 2. Scraper Execution
     if provider:
-        primary_providers = [{"name": provider, "active": 1, "total_scrapes": 0}]
-        background_providers = []
-    else:
-        primary_providers, background_providers = scraper_manager.get_partitioned_providers()
-        
-        # Apply client-specified scraper preferences
-        if not orac_scraping_pref and not use_aiostreams_pref:
-            # Both disabled -> return no results
+        if provider.lower() == 'easynews':
             primary_providers = []
             background_providers = []
-        elif not orac_scraping_pref and use_aiostreams_pref:
-            # Standalone AIOStreams mode: find AIOStreams, force active, and make it the ONLY primary
-            aiostreams_provider = None
-            for p in primary_providers + background_providers:
-                if p["name"] == "aiostreams":
-                    aiostreams_provider = p.copy()
-                    break
-            if not aiostreams_provider:
-                aiostreams_provider = {"name": "aiostreams", "active": 1, "score": 0.0, "total_scrapes": 0}
-            
-            aiostreams_provider["active"] = 1
-            primary_providers = [aiostreams_provider]
+        else:
+            primary_providers = [{"name": provider, "active": 1, "total_scrapes": 0}]
             background_providers = []
-        elif orac_scraping_pref and not use_aiostreams_pref:
-            # Scrapers ON, AIOStreams OFF: Exclude AIOStreams completely
-            primary_providers = [p for p in primary_providers if p["name"] != "aiostreams"]
-            background_providers = [p for p in background_providers if p["name"] != "aiostreams"]
+    else:
+        # Get all scrapers ordered by score desc from DB
+        all_scrapers = scraper_manager.db.get_all_scrapers()
+        
+        # Filter candidate scrapers according to client preferences
+        candidate_scrapers = []
+        for s in all_scrapers:
+            if s.get('active', 1) != 1:
+                continue
+            if s['name'] == 'aiostreams':
+                if not use_aiostreams_pref:
+                    continue
+            elif not orac_scraping_pref:
+                continue
+            candidate_scrapers.append(s)
+
+        # Strictly select top 2 scrapers for primary execution
+        primary_providers = candidate_scrapers[:2]
+        background_providers = candidate_scrapers[2:] + [s for s in all_scrapers if s.get('active', 1) == 0]
     
+    # Launch concurrent Easynews search task if enabled
+    easynews_task = None
+    if run_easynews and (not provider or provider.lower() == 'easynews'):
+        from resources.lib.easynews_client import search_easynews
+        easynews_task = asyncio.create_task(asyncio.to_thread(search_easynews, scrape_data, cfg, 5.0))
+
     # Extract names for the stats keys
     primary_names = [p['name'] for p in primary_providers]
+    log(f"[ScrapeHandler] Primary scrapers (top {len(primary_names)}): {primary_names}", level=LOGINFO)
     
     # phase 1: Primary (Exploit) - results returned to user
     results = []
@@ -128,33 +142,76 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
             log(f"[ScrapeHandler] Racing primary providers (limit {results_limit}): {primary_names}", level=LOGINFO)
             await asyncio.wait_for(
                 _run_scrapers_racing_shared(scraper_manager, primary_providers, scrape_data, search_type, results_limit, query, results, primary_stats),
-                timeout=25.0
+                timeout=15.0
             )
-        else:
+        elif primary_providers:
             log(f"[ScrapeHandler] Standard primary providers: {primary_names}", level=LOGINFO)
             await asyncio.wait_for(
                 _run_scrapers_standard_shared(scraper_manager, primary_providers, scrape_data, search_type, query, results, primary_stats),
-                timeout=25.0
+                timeout=10.0
             )
     except asyncio.TimeoutError:
-        log(f"[ScrapeHandler] Global scrape timeout reached (25s). Found {len(results)} results so far.", level=LOGWARNING)
+        log(f"[ScrapeHandler] Primary scrape timeout reached (10s). Found {len(results)} results so far.", level=LOGWARNING)
 
     # Update scores for primary providers (if we have any stats)
     if primary_stats:
         _update_scraper_scores(scraper_manager.db, primary_stats, is_primary_batch=True)
 
-    # Phase 2: Background (Explore) - run remaining scrapers for score updates
+    # Phase 2: Background (Explore) - fire and forget strictly in background to train scores
     if background_providers:
-        if not results:
-            log(f"[ScrapeHandler] No results from primary. Running background scrapers synchronously: {[p['name'] for p in background_providers]}", level=LOGINFO)
-            await _run_exploration(scraper_manager, background_providers, scrape_data, search_type, query, shared_results=results)
-        else:
-            log(f"[ScrapeHandler] Starting background exploration for: {[p['name'] for p in background_providers]}", level=LOGDEBUG)
-            # Fire and forget
-            asyncio.create_task(_run_exploration(scraper_manager, background_providers, scrape_data, search_type, query))
+        log(f"[ScrapeHandler] Starting fire-and-forget background exploration for: {[p['name'] for p in background_providers]}", level=LOGDEBUG)
+        asyncio.create_task(_run_exploration(scraper_manager, background_providers, scrape_data, search_type, query))
+
+    # Await concurrent Easynews results if task was launched
+    easynews_results = []
+    if easynews_task:
+        try:
+            easynews_results = await easynews_task
+        except Exception as e:
+            log(f"[ScrapeHandler] Error in Easynews scraping: {e}", level=LOGERROR)
 
     # 3. Post-processing (Deduplicate and Sort)
     final_results = _process_results(results, strict_dedupe)
+
+    debrid_checked = False
+    if config_db_path and check_debrid_pref:
+        try:
+            debrid_keys = ['tb.token', 'pm.token', 'rd.token', 'oc.token', 'ed.token', 'ad.token']
+            has_debrid = any(cfg.get(k) and cfg.get(k) != 'empty_setting' for k in debrid_keys)
+            
+            cache_map = {}
+            if has_debrid and final_results:
+                log(f"[ScrapeHandler] Checking debrid cache for {len(final_results)} scraped results...", level=LOGINFO)
+                hashes = [item.get('hash') for item in final_results if item.get('hash')]
+                if hashes:
+                    cache_map = await asyncio.to_thread(check_all_debrids_parallel, hashes, cfg)
+                    debrid_checked = True
+
+            # Rank and filter cached torrents and merge with direct Easynews results
+            if cache_map or easynews_results:
+                final_results = await asyncio.to_thread(
+                    rank_and_filter_cached_results,
+                    final_results,
+                    cache_map,
+                    cfg,
+                    search_info=scrape_data,
+                    extra_direct_results=easynews_results,
+                    pre_resolve_top=True
+                )
+                debrid_checked = True
+                log(f"[ScrapeHandler] Cache & provider merge completed. {len(final_results)} playable streams available.", level=LOGINFO)
+        except Exception as e:
+            log(f"[ScrapeHandler] Error in debrid cache/resolve check: {e}", level=LOGERROR)
+    elif easynews_results:
+        final_results = await asyncio.to_thread(
+            rank_and_filter_cached_results,
+            final_results,
+            {},
+            cfg,
+            search_info=scrape_data,
+            extra_direct_results=easynews_results,
+            pre_resolve_top=True
+        )
     
     if results_limit > 0:
         final_results = final_results[:results_limit]
@@ -163,7 +220,8 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
         "success": True, 
         "results": final_results, 
         "count": len(final_results),
-        "enriched": bool(tmdb_id and not query.get("name"))
+        "enriched": bool(tmdb_id and not query.get("name")),
+        "debrid_checked": debrid_checked
     }
     return 200, json.dumps(response_payload), "application/json"
 

@@ -1768,7 +1768,6 @@
                     <div class="loading-shimmer" style="height: 150px;"></div>
                     <div class="loading-shimmer" style="height: 150px;"></div>
                     <div class="loading-shimmer" style="height: 150px;"></div>
-                    <div class="loading-shimmer" style="height: 150px;"></div>
                 </div>
 
                 <!-- Database Metrics Table -->
@@ -3789,7 +3788,7 @@ Orac Server Port: 8000 (default)</div>
                         Library Sync: <strong>${isLib ? 'Enabled' : 'Disabled'}</strong>
                     </div>
                     <div class="index-actions">
-                        ${currentIndexTypeTab === 'external' ? `<button class="action-btn details" onclick="loadIndexInDiscover('${escapeJs(idx.id)}', '${idx.media_type}', '${escapeJs(JSON.stringify(paramsObj))}')">▶ Run</button>` : ''}
+                        <button class="action-btn details" onclick="openIndexItems('${escapeJs(idx.id)}', '${idx.media_type}', '${currentIndexTypeTab}')">▶ Run</button>
                         <button class="action-btn index" onclick="openEditIndexModal('${escapeJs(idx.id)}', '${idx.media_type}', '${escapeJs(JSON.stringify(paramsObj))}', ${isLib})">✎ Edit</button>
                         <button class="action-btn remove" onclick="deleteIndex('${escapeJs(idx.id)}', '${idx.media_type}')">🗑 Delete</button>
                     </div>
@@ -3963,77 +3962,101 @@ Orac Server Port: 8000 (default)</div>
             const container = document.getElementById('diag-cards-container');
             container.innerHTML = '';
 
-            // Card 1: TMDb Health
-            const tmdbConn = diag.connectivity.tmdb || {};
-            const tmdbCard = document.createElement('div');
-            tmdbCard.className = 'status-card';
-            tmdbCard.innerHTML = `
+            // Card 1: Services Status (Authorized Services Health & Latency)
+            const services = diag.services || [];
+            const onlineCount = services.filter(s => s.online).length;
+            const allOnline = services.length > 0 && onlineCount === services.length;
+
+            const servicesCard = document.createElement('div');
+            servicesCard.className = 'status-card';
+            servicesCard.innerHTML = `
                 <div class="status-card-header">
-                    <span class="status-card-title">🌐 TMDb API Connection</span>
-                    <span class="status-indicator ${tmdbConn.status === 'ok' ? 'ok' : 'err'}"></span>
+                    <span class="status-card-title">📡 Services Status</span>
+                    <span class="badge ${services.length === 0 ? 'neutral' : (allOnline ? 'active' : 'inactive')}">
+                        ${services.length === 0 ? 'No Services' : `${onlineCount}/${services.length} Online`}
+                    </span>
                 </div>
-                <div class="diag-stat-row">
-                    <span>Status</span>
-                    <span class="diag-stat-val" style="color: ${tmdbConn.status === 'ok' ? '#34d399' : '#f87171'}">${(tmdbConn.status || 'Unknown').toUpperCase()}</span>
-                </div>
-                <div class="diag-stat-row">
-                    <span>Latency</span>
-                    <span class="diag-stat-val">${tmdbConn.latency_ms !== null && tmdbConn.latency_ms !== undefined ? tmdbConn.latency_ms + ' ms' : 'N/A'}</span>
-                </div>
-                <div class="diag-stat-row">
-                    <span>Account / Key</span>
-                    <span class="diag-stat-val">${diag.platforms.tmdb?.username || 'Active'}</span>
+                <div class="list-container-scroll" style="max-height: 180px; padding-right: 0.25rem;">
+                    ${services.length === 0 ? `
+                        <div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 2rem 0.5rem; font-style: italic;">
+                            No authorized platforms configured.
+                        </div>
+                    ` : services.map(s => `
+                        <div class="diag-stat-row" style="align-items: center; padding: 0.45rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                            <div style="display: flex; align-items: center; gap: 0.55rem; min-width: 0;">
+                                <span class="status-indicator ${s.online ? 'ok' : 'err'}" title="${s.online ? 'Online' : 'Offline / Error'}"></span>
+                                <div style="display: flex; flex-direction: column; min-width: 0;">
+                                    <span style="font-weight: 600; font-size: 0.88rem; color: var(--text-main); line-height: 1.2;">${escapeHtml(s.name)}</span>
+                                    <span style="font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                        ${escapeHtml(s.username || 'Authorized')}
+                                    </span>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
+                                <span style="font-family: 'Fira Code', monospace; font-size: 0.8rem; font-weight: 600; color: ${s.online ? '#34d399' : '#f87171'};">
+                                    ${s.latency_ms !== null && s.latency_ms !== undefined ? `${s.latency_ms} ms` : 'Timeout'}
+                                </span>
+                                <span class="badge ${s.online ? 'active' : 'inactive'}" style="font-size: 0.65rem; padding: 0.15rem 0.45rem;">
+                                    ${s.online ? 'Online' : 'Offline'}
+                                </span>
+                            </div>
+                        </div>
+                    `).join('')}
                 </div>
             `;
-            container.appendChild(tmdbCard);
+            container.appendChild(servicesCard);
 
-            // Card 2: Trakt Health
-            const traktConn = diag.connectivity.trakt || {};
-            const traktPlat = diag.platforms.trakt || {};
-            const traktCard = document.createElement('div');
-            traktCard.className = 'status-card';
-            traktCard.innerHTML = `
-                <div class="status-card-header">
-                    <span class="status-card-title">📺 Trakt OAuth & API</span>
-                    <span class="status-indicator ${traktPlat.authorized && traktConn.status === 'ok' ? 'ok' : 'warn'}"></span>
-                </div>
-                <div class="diag-stat-row">
-                    <span>Authorized User</span>
-                    <span class="diag-stat-val">${traktPlat.username || 'Not configured'}</span>
-                </div>
-                <div class="diag-stat-row">
-                    <span>API Reachability</span>
-                    <span class="diag-stat-val">${traktConn.latency_ms ? traktConn.latency_ms + ' ms' : (traktConn.status || 'N/A')}</span>
-                </div>
-                <div class="diag-stat-row">
-                    <span>Token Status</span>
-                    <span class="diag-stat-val" style="color: ${traktPlat.authorized ? '#34d399' : '#fbbf24'}">${traktPlat.authorized ? 'Valid' : 'Unauthenticated'}</span>
-                </div>
-            `;
-            container.appendChild(traktCard);
+            // Card 2: Debrid Resolvers (Authorized Debrid Health & Latency)
+            const debridList = diag.debrid_services || [];
+            const debridOnlineCount = debridList.filter(d => d.online).length;
+            const allDebridOnline = debridList.length > 0 && debridOnlineCount === debridList.length;
 
-            // Card 3: Debrid Providers Summary
             const debridCard = document.createElement('div');
             debridCard.className = 'status-card';
-            const debridEntries = Object.entries(diag.debrid || {});
-            const enabledCount = debridEntries.filter(([_, v]) => v.enabled).length;
             debridCard.innerHTML = `
                 <div class="status-card-header">
                     <span class="status-card-title">⚡ Debrid Resolvers</span>
-                    <span class="badge active">${enabledCount} Active</span>
+                    <span class="badge ${debridList.length === 0 ? 'neutral' : (allDebridOnline ? 'active' : 'inactive')}">
+                        ${debridList.length === 0 ? 'No Resolvers' : `${debridOnlineCount}/${debridList.length} Online`}
+                    </span>
                 </div>
-                ${debridEntries.map(([name, info]) => `
-                    <div class="diag-stat-row">
-                        <span>${name}</span>
-                        <span class="diag-stat-val" style="color: ${info.enabled ? '#34d399' : (info.configured ? '#818cf8' : 'var(--text-dim)')}">
-                            ${info.enabled ? 'Enabled' : (info.configured ? 'Configured' : 'Disabled')}
-                        </span>
-                    </div>
-                `).join('')}
+                <div class="list-container-scroll" style="max-height: 180px; padding-right: 0.25rem;">
+                    ${debridList.length === 0 ? `
+                        <div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 2rem 0.5rem; font-style: italic;">
+                            No authorized debrid resolvers configured.
+                        </div>
+                    ` : debridList.map(d => `
+                        <div class="diag-stat-row" style="align-items: center; padding: 0.45rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                            <div style="display: flex; align-items: center; gap: 0.55rem; min-width: 0;">
+                                <span class="status-indicator ${d.online ? 'ok' : 'err'}" title="${d.online ? 'Online' : 'Offline / Error'}"></span>
+                                <div style="display: flex; flex-direction: column; min-width: 0;">
+                                    <span style="font-weight: 600; font-size: 0.88rem; color: var(--text-main); line-height: 1.2;">${escapeHtml(d.name)}</span>
+                                    <span style="font-size: 0.72rem; color: ${d.enabled ? '#818cf8' : 'var(--text-muted)'}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                        ${d.enabled ? 'Enabled' : 'Disabled'}
+                                    </span>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
+                                <div style="display: flex; align-items: center; gap: 0.25rem;" title="Debrid selection priority (1 = highest)">
+                                    <span style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">Prio:</span>
+                                    <select onchange="updateDebridPriority('${escapeHtml(d.name)}', this.value)" style="background: rgba(255,255,255,0.08); color: var(--text-main); border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 1px 4px; font-size: 0.72rem; cursor: pointer;">
+                                        ${[1,2,3,4,5,6,7].map(num => `<option value="${num}" ${(d.priority || 10) == num ? 'selected' : ''}>${num}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <span style="font-family: 'Fira Code', monospace; font-size: 0.8rem; font-weight: 600; color: ${d.online ? '#34d399' : '#f87171'};">
+                                    ${d.latency_ms !== null && d.latency_ms !== undefined ? `${d.latency_ms} ms` : 'Timeout'}
+                                </span>
+                                <span class="badge ${d.online ? 'active' : 'inactive'}" style="font-size: 0.65rem; padding: 0.15rem 0.45rem;">
+                                    ${d.online ? 'Online' : 'Offline'}
+                                </span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
             `;
             container.appendChild(debridCard);
 
-            // Card 4: Scrapers & Cache Storage
+            // Card 3: Scrapers & Cache Storage
             const scraperCard = document.createElement('div');
             scraperCard.className = 'status-card';
             scraperCard.innerHTML = `
@@ -4050,8 +4073,19 @@ Orac Server Port: 8000 (default)</div>
                     <span class="diag-stat-val">${diag.scrapers?.total_scrapes || 0}</span>
                 </div>
                 <div class="diag-stat-row">
-                    <span>Fanart.tv Latency</span>
-                    <span class="diag-stat-val">${diag.connectivity.fanart?.latency_ms ? diag.connectivity.fanart.latency_ms + ' ms' : 'Online'}</span>
+                    <span>Database Status</span>
+                    <span class="diag-stat-val" style="color: #34d399;">Healthy</span>
+                </div>
+                <div class="diag-stat-row" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-color, #334155); display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-weight: 500;">Sorting Order</span>
+                    <select id="results-sort-order-select" onchange="updateResultsSortOrder(this.value)" style="background: var(--bg-card, #1e293b); color: var(--text-main, #f8fafc); border: 1px solid var(--border-color, #334155); border-radius: 4px; padding: 3px 6px; font-size: 0.8rem; outline: none; cursor: pointer;">
+                        <option value="0" ${diag.results_sort_order === 0 ? 'selected' : ''}>Quality, Provider, Size</option>
+                        <option value="1" ${diag.results_sort_order === 1 ? 'selected' : ''}>Quality, Size, Provider</option>
+                        <option value="2" ${diag.results_sort_order === 2 ? 'selected' : ''}>Provider, Quality, Size</option>
+                        <option value="3" ${diag.results_sort_order === 3 ? 'selected' : ''}>Provider, Size, Quality</option>
+                        <option value="4" ${diag.results_sort_order === 4 ? 'selected' : ''}>Size, Quality, Provider</option>
+                        <option value="5" ${diag.results_sort_order === 5 ? 'selected' : ''}>Size, Provider, Quality</option>
+                    </select>
                 </div>
             `;
             container.appendChild(scraperCard);
@@ -4099,6 +4133,41 @@ Orac Server Port: 8000 (default)</div>
             }
         }
 
+        async function updateResultsSortOrder(sortOrder) {
+            try {
+                const res = await fetch('/api/web/results_sort_order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sort_order: parseInt(sortOrder, 10) })
+                });
+                const data = await res.json();
+                if (data.status !== 'success') {
+                    alert(`Failed to update sort order: ${data.error || 'Unknown error'}`);
+                }
+            } catch (err) {
+                alert(`Error updating sort order: ${err.message}`);
+            }
+        }
+
+        async function updateDebridPriority(provider, priority) {
+            try {
+                const res = await fetch('/api/web/debrid_priority', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider: provider, priority: parseInt(priority, 10) })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    fetchDiagnostics();
+                } else {
+                    alert(`Failed to update priority: ${data.error || 'Unknown error'}`);
+                }
+            } catch (err) {
+                alert(`Error updating priority: ${err.message}`);
+            }
+        }
+
+
         // -------------------------------------------------------------
         // HELP CENTER / KNOWLEDGE BASE
         // -------------------------------------------------------------
@@ -4135,6 +4204,7 @@ Orac Server Port: 8000 (default)</div>
 
         let currentModalListId = '';
         let currentModalItems = [];
+        let isCurrentModalIndex = false;
 
         // -------------------------------------------------------------
         // LIST ITEMS, SCRAPING & DETAILS MODALS
@@ -4142,6 +4212,7 @@ Orac Server Port: 8000 (default)</div>
         async function openListItems(listId, listName) {
             currentModalListId = listId;
             currentModalItems = [];
+            isCurrentModalIndex = false;
             
             document.getElementById('modal-list-title').textContent = listName;
             const searchInput = document.getElementById('modal-items-search');
@@ -4162,7 +4233,7 @@ Orac Server Port: 8000 (default)</div>
                 const data = await response.json();
                 if (data.success) {
                     currentModalItems = data.items || [];
-                    renderModalItems(listId, currentModalItems);
+                    renderModalItems(listId, currentModalItems, false);
                 } else {
                     container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--log-error);">Failed to load items: ${data.error || 'Unknown error'}</div>`;
                 }
@@ -4172,11 +4243,46 @@ Orac Server Port: 8000 (default)</div>
             }
         }
 
+        async function openIndexItems(indexId, mediaType, indexType) {
+            currentModalListId = indexId;
+            currentModalItems = [];
+            isCurrentModalIndex = true;
+            
+            const typeLabel = indexType === 'external' ? 'External Index' : 'Internal Index';
+            document.getElementById('modal-list-title').textContent = `${indexId} (${typeLabel})`;
+            const searchInput = document.getElementById('modal-items-search');
+            if (searchInput) searchInput.value = '';
+            
+            toggleListItemsModal(true);
+            
+            const container = document.getElementById('modal-items-container');
+            container.innerHTML = `
+                <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; color: var(--text-muted); gap: 1rem;">
+                    <div class="scrape-spinner" style="margin: 0;"></div>
+                    <span style="font-size: 0.9rem;">Running index query...</span>
+                </div>
+            `;
+            
+            try {
+                const response = await fetch(`/api/web/index_items?index_id=${encodeURIComponent(indexId)}&item_type=${encodeURIComponent(mediaType)}&index_type=${encodeURIComponent(indexType)}`);
+                const data = await response.json();
+                if (data.success) {
+                    currentModalItems = data.items || [];
+                    renderModalItems(indexId, currentModalItems, true);
+                } else {
+                    container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--log-error);">Failed to execute index: ${data.error || 'Unknown error'}</div>`;
+                }
+            } catch (error) {
+                console.error('Failed to run index query', error);
+                container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--log-error);">Error running index: ${error.message || error}</div>`;
+            }
+        }
+
         function filterModalItems(query) {
             if (!currentModalItems) return;
             const q = (query || '').toLowerCase().trim();
             if (!q) {
-                renderModalItems(currentModalListId, currentModalItems);
+                renderModalItems(currentModalListId, currentModalItems, isCurrentModalIndex);
                 return;
             }
             const filtered = currentModalItems.filter(item => {
@@ -4185,7 +4291,7 @@ Orac Server Port: 8000 (default)</div>
                 const year = String(item.year || '');
                 return title.includes(q) || overview.includes(q) || year.includes(q);
             });
-            renderModalItems(currentModalListId, filtered);
+            renderModalItems(currentModalListId, filtered, isCurrentModalIndex);
         }
 
         function toggleListItemsModal(show) {
@@ -4200,7 +4306,7 @@ Orac Server Port: 8000 (default)</div>
             }
         }
 
-        function renderModalItems(listId, items) {
+        function renderModalItems(listId, items, isIndex = false) {
             const container = document.getElementById('modal-items-container');
             container.innerHTML = '';
             
@@ -4241,7 +4347,7 @@ Orac Server Port: 8000 (default)</div>
                         <div class="media-card-actions">
                             <button class="action-btn details" onclick="handleDetailsClick(event)">Details</button>
                             <button class="action-btn scrape" onclick="handleScrapeClick(event)">Scrape</button>
-                            <button class="action-btn remove" onclick="handleRemoveClick(event)">Remove</button>
+                            ${!isIndex ? `<button class="action-btn remove" onclick="handleRemoveClick(event)">Remove</button>` : ''}
                         </div>
                     </div>
                     <div class="media-info">
