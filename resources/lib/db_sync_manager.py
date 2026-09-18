@@ -305,12 +305,18 @@ async def sync_lists_and_items(trakt_handler, tmdb_handler, movies_static_db_pat
             trakt_update_queue_path
         )
         
-        # Dual-Provider Watch History reconciliation
+        # Multi-Provider Watch History reconciliation
         try:
             from resources.lib.sync_engine import sync_providers
-            await sync_providers(movies_dynamic_db_path, tvshows_dynamic_db_path, trakt_handler, config_db_path)
+            await sync_providers(
+                movies_dynamic_db_path,
+                tvshows_dynamic_db_path,
+                trakt_handler,
+                config_db_path,
+                tvshows_static_db=tvshows_static_db_path
+            )
         except Exception as e:
-            log(f"[Orac] Error running dual-provider history sync: {e}", level=LOGERROR)
+            log(f"[Orac] Error running multi-provider history sync: {e}", level=LOGERROR)
             
     finally:
         if trakt_queue_worker:

@@ -19,7 +19,6 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
     search_type = query.get("search_type", ["sources"])[0]
     strict_dedupe = query.get("strict_dedupe", ["false"])[0].lower() == 'true'
     orac_scraping_pref = query.get("orac_scraping", ["true"])[0].lower() == 'true'
-    use_aiostreams_pref = query.get("use_aiostreams", ["true"])[0].lower() == 'true'
     check_debrid_pref = query.get("check_debrid", ["true"])[0].lower() == 'true'
 
     if not tmdb_id:
@@ -112,10 +111,7 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
         for s in all_scrapers:
             if s.get('active', 1) != 1:
                 continue
-            if s['name'] == 'aiostreams':
-                if not use_aiostreams_pref:
-                    continue
-            elif not orac_scraping_pref:
+            if not orac_scraping_pref:
                 continue
             candidate_scrapers.append(s)
 

@@ -261,6 +261,40 @@
             box-sizing: border-box;
         }
 
+        .library-panel-container {
+            height: 75vh;
+            min-height: 0;
+            min-width: 0;
+            overflow: hidden;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Services Tab Grid */
+        .services-panel-container {
+            min-height: 75vh;
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 1.5rem;
+            box-sizing: border-box;
+        }
+
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 1.25rem;
+            align-items: stretch;
+            flex: 1;
+            min-height: 0;
+        }
+
+        @media (min-width: 1200px) {
+            .services-grid {
+                grid-template-columns: 1.15fr 1fr 1.15fr;
+            }
+        }
+
         @media (max-width: 1200px) {
             .dashboard-grid {
                 grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -272,7 +306,7 @@
             .scraper-panel-container {
                 height: 52vh;
             }
-            .column-stack {
+            .library-panel-container, .column-stack {
                 height: 52vh;
             }
         }
@@ -298,7 +332,7 @@
             .scraper-panel-container {
                 height: 45vh;
             }
-            .column-stack {
+            .library-panel-container, .column-stack {
                 height: auto;
                 max-height: 55vh;
             }
@@ -1446,6 +1480,10 @@
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                     Dashboard
                 </button>
+                <button class="nav-tab" id="nav-services" onclick="switchTab('tab-services')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+                    Services
+                </button>
                 <button class="nav-tab" id="nav-discover" onclick="switchTab('tab-discover')">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
                     Discover Studio
@@ -1510,20 +1548,71 @@
                     </div>
                 </div>
 
-                <!-- Right Column Stack -->
-                <div class="column-stack">
-                    <!-- Platforms Box -->
-                    <div class="glass-panel" style="flex: 1;">
-                        <div class="panel-title">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                            Authorised Platforms
+                <!-- Right Column: Library Lists Box -->
+                <div class="glass-panel library-panel-container">
+                    <div class="panel-title">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                        Library Lists
+                    </div>
+                    <div class="table-header-sm">
+                        <div>Source</div>
+                        <div>List Name</div>
+                    </div>
+                    <div class="list-container-scroll" id="lists-container">
+                        <div class="platform-row">
+                            <div class="loading-shimmer" style="width: 30%;"></div>
+                            <div class="loading-shimmer" style="width: 60%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Row: Up Next Carousel -->
+            <div class="glass-panel" style="margin-top: 1.5rem; padding-bottom: 0.75rem;">
+                <div class="panel-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    Up Next to Watch
+                </div>
+                <div class="episodes-carousel" id="next-episodes-container">
+                    <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                    <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                    <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                    <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- =====================================================================
+             TAB 2: SERVICES
+        ===================================================================== -->
+        <section id="tab-services" class="tab-pane">
+            <div class="glass-panel services-panel-container">
+                <div class="panel-title" style="justify-content: space-between; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 0.6rem;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+                        <span>Services & Providers</span>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn-primary" onclick="fetchPlatforms(); fetchDiagnostics();" style="padding: 0.45rem 1rem; font-size: 0.85rem;" id="services-refresh-btn">🔄 Refresh Services</button>
+                    </div>
+                </div>
+
+                <!-- 3-Column Services Grid -->
+                <div class="services-grid">
+                    <!-- Column 1: Authorised Platforms -->
+                    <div class="status-card" style="display: flex; flex-direction: column; height: 100%; box-sizing: border-box;">
+                        <div class="status-card-header">
+                            <span class="status-card-title">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                                Authorised Platforms
+                            </span>
                         </div>
                         <div class="table-header-platform">
                             <div>Service</div>
                             <div>Account / Status</div>
                             <div style="text-align: right;">Action</div>
                         </div>
-                        <div class="list-container-scroll" id="platforms-container">
+                        <div class="list-container-scroll" id="platforms-container" style="flex: 1; min-height: 380px; max-height: calc(75vh - 170px); overflow-y: auto;">
                             <div class="platform-row">
                                 <div class="loading-shimmer" style="width: 50%;"></div>
                                 <div class="loading-shimmer" style="width: 70%;"></div>
@@ -1554,43 +1643,31 @@
                         </div>
                     </div>
 
-                    <!-- Library Lists Box -->
-                    <div class="glass-panel" style="flex: 1;">
-                        <div class="panel-title">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-                            Library Lists
-                        </div>
-                        <div class="table-header-sm">
-                            <div>Source</div>
-                            <div>List Name</div>
-                        </div>
-                        <div class="list-container-scroll" id="lists-container">
-                            <div class="platform-row">
-                                <div class="loading-shimmer" style="width: 30%;"></div>
-                                <div class="loading-shimmer" style="width: 60%;"></div>
+                    <!-- Column 2: Services Status -->
+                    <div id="services-status-card-container" style="display: flex; flex-direction: column; height: 100%;">
+                        <div class="status-card" style="display: flex; flex-direction: column; height: 100%; box-sizing: border-box;">
+                            <div class="status-card-header">
+                                <span class="status-card-title">📡 Services Status</span>
                             </div>
+                            <div class="loading-shimmer" style="flex: 1; min-height: 380px; border-radius: 0.5rem;"></div>
                         </div>
                     </div>
-                </div>
-            </div>
 
-            <!-- Bottom Row: Up Next Carousel -->
-            <div class="glass-panel" style="margin-top: 1.5rem; padding-bottom: 0.75rem;">
-                <div class="panel-title">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                    Up Next to Watch
-                </div>
-                <div class="episodes-carousel" id="next-episodes-container">
-                    <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
-                    <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
-                    <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
-                    <div class="episode-card"><div class="loading-shimmer" style="height: 210px; width: 140px; border-radius: 0.6rem;"></div></div>
+                    <!-- Column 3: Debrid Resolvers -->
+                    <div id="debrid-resolvers-card-container" style="display: flex; flex-direction: column; height: 100%;">
+                        <div class="status-card" style="display: flex; flex-direction: column; height: 100%; box-sizing: border-box;">
+                            <div class="status-card-header">
+                                <span class="status-card-title">⚡ Debrid Resolvers</span>
+                            </div>
+                            <div class="loading-shimmer" style="flex: 1; min-height: 380px; border-radius: 0.5rem;"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
 
         <!-- =====================================================================
-             TAB 2: DISCOVER STUDIO
+             TAB 3: DISCOVER STUDIO
         ===================================================================== -->
         <section id="tab-discover" class="tab-pane">
             <div class="glass-panel" style="margin-bottom: 1.5rem;">
@@ -1763,10 +1840,8 @@
                     </div>
                 </div>
 
-                <!-- Health Grid -->
-                <div class="diag-grid" id="diag-cards-container">
-                    <div class="loading-shimmer" style="height: 150px;"></div>
-                    <div class="loading-shimmer" style="height: 150px;"></div>
+                <!-- Storage & Scrapers Status Card -->
+                <div class="diag-grid" id="diag-cards-container" style="max-width: 520px;">
                     <div class="loading-shimmer" style="height: 150px;"></div>
                 </div>
 
@@ -2156,6 +2231,127 @@ Orac Server Port: 8000 (default)</div>
         </div>
     </div>
 
+    <!-- AIOStreams Authorisation Modal -->
+    <div id="aiostreams-auth-modal" class="modal-overlay" onclick="closeAiostreamsAuthModal(event)" style="z-index: 1200;">
+        <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>Authorise AIOStreams</h2>
+                <button class="modal-close-btn" onclick="toggleAiostreamsAuthModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            
+            <form id="aiostreams-auth-form" onsubmit="handleAiostreamsAuthSubmit(event)" style="display: flex; flex-direction: column; gap: 1.15rem;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
+                    Configure your AIOStreams instance and account credentials to scrape external stream sources.
+                </p>
+                
+                <div class="filter-group">
+                    <label class="filter-label">Instance Selection</label>
+                    <select id="modal-aio-instance" class="form-input" onchange="handleAiostreamsUrlChange(this.value)" style="width: 100%; font-size: 0.85rem; cursor: pointer;">
+                        <option value="0">https://aiostreams.stremio.ru</option>
+                        <option value="1">Custom URL</option>
+                        <option value="2">https://aiostreams.viren070.me</option>
+                        <option value="3">https://aiostreams.fortheweak.cloud</option>
+                        <option value="4">https://aiostreamsfortheweebsstable.midnightignite.me</option>
+                    </select>
+                </div>
+
+                <div class="filter-group" id="modal-aio-custom-url-group" style="display: none;">
+                    <label class="filter-label">Custom URL</label>
+                    <input type="url" id="modal-aio-custom-url" class="form-input" placeholder="https://your-custom-instance.com" style="width: 100%; font-family: 'Fira Code', monospace; font-size: 0.85rem;">
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Username</label>
+                    <input type="text" id="modal-aio-username" class="form-input" required placeholder="AIOStreams Username" style="width: 100%; font-size: 0.85rem;">
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Password</label>
+                    <input type="text" id="modal-aio-password" class="form-input" required placeholder="AIOStreams Password" autocomplete="off" spellcheck="false" style="width: 100%; font-size: 0.85rem;">
+                </div>
+
+                <div id="modal-aio-msg" style="display: none; font-size: 0.82rem; padding: 0.5rem 0.75rem; border-radius: 0.4rem;"></div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+                    <button type="button" class="btn-secondary" onclick="toggleAiostreamsAuthModal(false)">Cancel</button>
+                    <button type="submit" id="modal-aio-submit-btn" class="btn-primary">Save & Authorise</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Premiumize Authorisation Modal -->
+    <div id="premiumize-auth-modal" class="modal-overlay" onclick="closePremiumizeAuthModal(event)" style="z-index: 1200;">
+        <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="justify-content: space-between;">
+                <h2>Authorise Premiumize</h2>
+                <button class="modal-close-btn" onclick="togglePremiumizeAuthModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+
+            <!-- Tab Switcher (PIN Code vs API Key) -->
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1.15rem; background: rgba(0,0,0,0.25); padding: 0.25rem; border-radius: 0.5rem;">
+                <button type="button" id="pm-tab-btn-pin" class="btn-secondary" style="flex: 1; padding: 0.35rem 0.5rem; font-size: 0.8rem; background: var(--color-primary); color: white;" onclick="switchPmAuthTab('pin')">PIN Code</button>
+                <button type="button" id="pm-tab-btn-key" class="btn-secondary" style="flex: 1; padding: 0.35rem 0.5rem; font-size: 0.8rem;" onclick="switchPmAuthTab('key')">API Key / PIN</button>
+            </div>
+
+            <!-- Tab 1: PIN Code / Device Flow -->
+            <div id="pm-auth-pin-tab" style="display: flex; flex-direction: column; gap: 1.15rem; align-items: center; text-align: center;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
+                    Approve Orac on Premiumize using the PIN code below or scan the QR code.
+                </p>
+
+                <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-glass); border-radius: 0.75rem; padding: 0.75rem 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; width: 100%; box-sizing: border-box;">
+                    <span style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted);">Your Premiumize PIN Code</span>
+                    <span id="pm-user-code" style="font-family: 'Fira Code', monospace; font-size: 1.8rem; font-weight: 700; letter-spacing: 4px; color: #38bdf8;">----</span>
+                </div>
+
+                <div id="pm-qr-container" style="background: white; padding: 0.5rem; border-radius: 0.5rem; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+                    <img id="pm-qr-img" src="" alt="Premiumize QR Code" style="width: 140px; height: 140px; display: block; border-radius: 0.25rem;">
+                </div>
+
+                <a id="pm-browser-link" href="https://www.premiumize.me/device" target="_blank" rel="noopener noreferrer" class="btn-primary" style="padding: 0.6rem 1.4rem; font-size: 0.9rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;">
+                    <span>Open Premiumize Activation</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                </a>
+
+                <div id="pm-auth-status" style="font-size: 0.85rem; padding: 0.5rem 0.75rem; border-radius: 0.4rem; width: 100%; box-sizing: border-box; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                        <span class="loading-spinner-sm" style="display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(129, 140, 248, 0.3); border-top-color: #818cf8; border-radius: 50%; animation: spin 1s linear infinite;"></span>
+                        <span id="pm-status-text">Waiting for approval on Premiumize...</span>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; width: 100%;">
+                    <button type="button" class="btn-secondary" onclick="togglePremiumizeAuthModal(false)">Cancel</button>
+                    <button type="button" class="btn-primary" onclick="checkPremiumizeAuthOnce()">Check Status</button>
+                </div>
+            </div>
+
+            <!-- Tab 2: Direct API Key / PIN Entry -->
+            <form id="pm-auth-key-tab" onsubmit="handlePmTokenSubmit(event)" style="display: none; flex-direction: column; gap: 1.15rem;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
+                    Alternatively, paste your Premiumize API Key / PIN from your Premiumize Account page.
+                </p>
+
+                <div class="filter-group">
+                    <label class="filter-label">API Key / PIN</label>
+                    <input type="text" id="pm-token-input" class="form-input" required placeholder="Paste Premiumize API Key / PIN" autocomplete="off" spellcheck="false" style="width: 100%; font-size: 0.85rem;">
+                </div>
+
+                <div id="pm-key-msg" style="display: none; font-size: 0.82rem; padding: 0.5rem 0.75rem; border-radius: 0.4rem;"></div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+                    <button type="button" class="btn-secondary" onclick="togglePremiumizeAuthModal(false)">Cancel</button>
+                    <button type="submit" id="pm-key-submit-btn" class="btn-primary">Save API Key</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- TMDb Authorisation Modal -->
     <div id="tmdb-auth-modal" class="modal-overlay" onclick="closeTmdbAuthModal(event)" style="z-index: 1200;">
         <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem; text-align: center;" onclick="event.stopPropagation()">
@@ -2442,6 +2638,7 @@ Orac Server Port: 8000 (default)</div>
             fetchLibraryLists();
             fetchNextEpisodes();
             fetchLogs();
+            fetchDiagnostics();
             loadGenresAndProviders();
             
             // Poll logs every 3 seconds
@@ -2468,6 +2665,9 @@ Orac Server Port: 8000 (default)</div>
 
             if (tabId === 'tab-indexes') {
                 fetchIndexesList();
+            } else if (tabId === 'tab-services') {
+                fetchPlatforms();
+                fetchDiagnostics();
             } else if (tabId === 'tab-help') {
                 fetchDiagnostics();
             }
@@ -2647,6 +2847,13 @@ Orac Server Port: 8000 (default)</div>
                         actionBtnHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokeTraktAuth()">Revoke</button>`;
                     } else {
                         actionBtnHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openTraktAuthModal()">Authorise</button>`;
+                    }
+                } else if (platform.id === 'aiostreams' || platform.name.toLowerCase() === 'aiostreams') {
+                    currentAiostreamsData = platform;
+                    if (isAuth) {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokeAiostreamsAuth()">Revoke</button>`;
+                    } else {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openAiostreamsAuthModal()">Authorise</button>`;
                     }
                 }
 
@@ -2932,6 +3139,391 @@ Orac Server Port: 8000 (default)</div>
             } catch (err) {
                 console.error('Error updating Fanart storage mode', err);
                 alert('Network error updating Fanart storage mode.');
+            }
+        }
+
+        let currentAiostreamsData = null;
+
+        function toggleAiostreamsAuthModal(show) {
+            const modal = document.getElementById('aiostreams-auth-modal');
+            if (show) {
+                modal.classList.add('visible');
+                const instanceSelect = document.getElementById('modal-aio-instance');
+                const customUrlInput = document.getElementById('modal-aio-custom-url');
+                const usernameInput = document.getElementById('modal-aio-username');
+                const passwordInput = document.getElementById('modal-aio-password');
+                const msg = document.getElementById('modal-aio-msg');
+
+                msg.style.display = 'none';
+                msg.textContent = '';
+
+                if (currentAiostreamsData) {
+                    instanceSelect.value = currentAiostreamsData.instance || "0";
+                    customUrlInput.value = currentAiostreamsData.custom_url || "";
+                    usernameInput.value = currentAiostreamsData.username || "";
+                    passwordInput.value = currentAiostreamsData.password || "";
+                } else {
+                    instanceSelect.value = "0";
+                    customUrlInput.value = "";
+                    usernameInput.value = "";
+                    passwordInput.value = "";
+                }
+                handleAiostreamsUrlChange(instanceSelect.value);
+                setTimeout(() => usernameInput.focus(), 50);
+            } else {
+                modal.classList.remove('visible');
+            }
+        }
+
+        function openAiostreamsAuthModal() {
+            toggleAiostreamsAuthModal(true);
+        }
+
+        function closeAiostreamsAuthModal(e) {
+            if (e.target.id === 'aiostreams-auth-modal') {
+                toggleAiostreamsAuthModal(false);
+            }
+        }
+
+        function handleAiostreamsUrlChange(val) {
+            const customUrlGroup = document.getElementById('modal-aio-custom-url-group');
+            const customUrlInput = document.getElementById('modal-aio-custom-url');
+            if (val === '1') {
+                customUrlGroup.style.display = 'block';
+                customUrlInput.required = true;
+            } else {
+                customUrlGroup.style.display = 'none';
+                customUrlInput.required = false;
+            }
+        }
+
+        async function handleAiostreamsAuthSubmit(e) {
+            e.preventDefault();
+            const instance = document.getElementById('modal-aio-instance').value;
+            const customUrl = (document.getElementById('modal-aio-custom-url').value || '').trim();
+            const username = (document.getElementById('modal-aio-username').value || '').trim();
+            const password = (document.getElementById('modal-aio-password').value || '').trim();
+            const msgEl = document.getElementById('modal-aio-msg');
+            const submitBtn = document.getElementById('modal-aio-submit-btn');
+
+            if (!username) {
+                msgEl.style.display = 'block';
+                msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                msgEl.style.color = '#fb7185';
+                msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                msgEl.textContent = 'Please enter a username.';
+                return;
+            }
+            if (!password) {
+                msgEl.style.display = 'block';
+                msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                msgEl.style.color = '#fb7185';
+                msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                msgEl.textContent = 'Please enter a password.';
+                return;
+            }
+            if (instance === '1' && !customUrl) {
+                msgEl.style.display = 'block';
+                msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                msgEl.style.color = '#fb7185';
+                msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                msgEl.textContent = 'Please enter a Custom URL.';
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Validating...';
+            msgEl.style.display = 'block';
+            msgEl.style.background = 'rgba(99, 102, 241, 0.15)';
+            msgEl.style.color = '#818cf8';
+            msgEl.style.border = '1px solid rgba(99, 102, 241, 0.3)';
+            msgEl.textContent = 'Connecting to AIOStreams instance...';
+
+            try {
+                const resp = await fetch('/api/web/platforms/aiostreams/auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        instance: instance,
+                        custom_url: customUrl,
+                        username: username,
+                        password: password
+                    })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    msgEl.style.background = 'rgba(16, 185, 129, 0.15)';
+                    msgEl.style.color = '#34d399';
+                    msgEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                    msgEl.textContent = `Successfully authorised as ${data.username || 'user'}!`;
+                    setTimeout(() => {
+                        toggleAiostreamsAuthModal(false);
+                        fetchPlatforms();
+                        fetchDiagnostics();
+                    }, 900);
+                } else {
+                    msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                    msgEl.style.color = '#fb7185';
+                    msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                    msgEl.textContent = data.error || 'Failed to authorise AIOStreams';
+                }
+            } catch (err) {
+                msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                msgEl.style.color = '#fb7185';
+                msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                msgEl.textContent = `Network error: ${err.message}`;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Save & Authorise';
+            }
+        }
+
+        async function revokeAiostreamsAuth() {
+            if (!confirm('Are you sure you want to revoke AIOStreams authorisation?')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/web/platforms/aiostreams/revoke', {
+                    method: 'POST'
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    fetchPlatforms();
+                    fetchDiagnostics();
+                } else {
+                    alert('Error revoking AIOStreams: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert(`Error revoking AIOStreams: ${err.message}`);
+            }
+        }
+
+        // -------------------------------------------------------------
+        // PREMIUMIZE AUTH LOGIC
+        // -------------------------------------------------------------
+        let pmPollInterval = null;
+        let currentPmDeviceCode = null;
+
+        function togglePremiumizeAuthModal(show) {
+            const modal = document.getElementById('premiumize-auth-modal');
+            if (show) {
+                modal.classList.add('visible');
+                switchPmAuthTab('pin');
+                startPremiumizeAuth();
+            } else {
+                modal.classList.remove('visible');
+                if (pmPollInterval) {
+                    clearInterval(pmPollInterval);
+                    pmPollInterval = null;
+                }
+                currentPmDeviceCode = null;
+            }
+        }
+
+        function openPremiumizeAuthModal() {
+            togglePremiumizeAuthModal(true);
+        }
+
+        function closePremiumizeAuthModal(e) {
+            if (e.target.id === 'premiumize-auth-modal') {
+                togglePremiumizeAuthModal(false);
+            }
+        }
+
+        function switchPmAuthTab(mode) {
+            const pinTab = document.getElementById('pm-auth-pin-tab');
+            const keyTab = document.getElementById('pm-auth-key-tab');
+            const pinBtn = document.getElementById('pm-tab-btn-pin');
+            const keyBtn = document.getElementById('pm-tab-btn-key');
+
+            if (mode === 'pin') {
+                pinTab.style.display = 'flex';
+                keyTab.style.display = 'none';
+                pinBtn.style.background = 'var(--color-primary)';
+                pinBtn.style.color = 'white';
+                keyBtn.style.background = 'transparent';
+                keyBtn.style.color = 'var(--text-main)';
+            } else {
+                pinTab.style.display = 'none';
+                keyTab.style.display = 'flex';
+                keyBtn.style.background = 'var(--color-primary)';
+                keyBtn.style.color = 'white';
+                pinBtn.style.background = 'transparent';
+                pinBtn.style.color = 'var(--text-main)';
+                setTimeout(() => document.getElementById('pm-token-input').focus(), 50);
+            }
+        }
+
+        async function startPremiumizeAuth() {
+            const statusText = document.getElementById('pm-status-text');
+            const statusBox = document.getElementById('pm-auth-status');
+            const qrImg = document.getElementById('pm-qr-img');
+            const browserLink = document.getElementById('pm-browser-link');
+            const codeDisplay = document.getElementById('pm-user-code');
+
+            statusBox.style.background = 'rgba(99, 102, 241, 0.15)';
+            statusBox.style.color = '#818cf8';
+            statusBox.style.border = '1px solid rgba(99, 102, 241, 0.3)';
+            statusText.textContent = 'Requesting Premiumize PIN code...';
+            codeDisplay.textContent = '----';
+            browserLink.style.pointerEvents = 'none';
+            browserLink.style.opacity = '0.5';
+
+            try {
+                const resp = await fetch('/api/web/debrid/premiumize/start_auth', { method: 'POST' });
+                const data = await resp.json();
+                if (data.success && data.device_code) {
+                    currentPmDeviceCode = data.device_code;
+                    codeDisplay.textContent = data.user_code;
+                    const verUrl = data.verification_url || 'https://www.premiumize.me/device';
+                    browserLink.href = verUrl;
+                    browserLink.style.pointerEvents = 'auto';
+                    browserLink.style.opacity = '1';
+
+                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(verUrl)}`;
+                    qrImg.src = qrUrl;
+
+                    statusText.textContent = 'Waiting for approval on Premiumize...';
+
+                    if (pmPollInterval) clearInterval(pmPollInterval);
+                    let pollSeconds = data.interval || 5;
+                    let attempts = 0;
+                    let maxAttempts = Math.floor((data.expires_in || 600) / pollSeconds);
+                    pmPollInterval = setInterval(async () => {
+                        attempts++;
+                        if (attempts > maxAttempts) {
+                            clearInterval(pmPollInterval);
+                            statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                            statusBox.style.color = '#fb7185';
+                            statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                            statusText.textContent = 'Device code expired. Please restart authorization.';
+                            return;
+                        }
+                        await pollPremiumizeAuth();
+                    }, pollSeconds * 1000);
+                } else {
+                    statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                    statusBox.style.color = '#fb7185';
+                    statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                    statusText.textContent = data.error || 'Failed to start Premiumize auth';
+                }
+            } catch (err) {
+                statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                statusBox.style.color = '#fb7185';
+                statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                statusText.textContent = `Network error: ${err.message}`;
+            }
+        }
+
+        async function pollPremiumizeAuth() {
+            if (!currentPmDeviceCode) return;
+            try {
+                const resp = await fetch('/api/web/debrid/premiumize/poll_auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ device_code: currentPmDeviceCode })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    if (pmPollInterval) {
+                        clearInterval(pmPollInterval);
+                        pmPollInterval = null;
+                    }
+                    const statusBox = document.getElementById('pm-auth-status');
+                    const statusText = document.getElementById('pm-status-text');
+                    statusBox.style.background = 'rgba(16, 185, 129, 0.15)';
+                    statusBox.style.color = '#34d399';
+                    statusBox.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                    statusText.textContent = `Successfully authorised Premiumize (Account: ${data.customer_id || 'Active'})!`;
+                    setTimeout(() => {
+                        togglePremiumizeAuthModal(false);
+                        fetchDiagnostics();
+                    }, 1000);
+                }
+            } catch (err) {
+                console.error('Error polling Premiumize auth:', err);
+            }
+        }
+
+        async function checkPremiumizeAuthOnce() {
+            const statusText = document.getElementById('pm-status-text');
+            statusText.textContent = 'Checking authorization status...';
+            await pollPremiumizeAuth();
+        }
+
+        async function handlePmTokenSubmit(e) {
+            e.preventDefault();
+            const tokenInput = document.getElementById('pm-token-input');
+            const token = (tokenInput.value || '').trim();
+            const msgEl = document.getElementById('pm-key-msg');
+            const submitBtn = document.getElementById('pm-key-submit-btn');
+
+            if (!token) {
+                msgEl.style.display = 'block';
+                msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                msgEl.style.color = '#fb7185';
+                msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                msgEl.textContent = 'Please enter an API Key / PIN.';
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Validating...';
+            msgEl.style.display = 'block';
+            msgEl.style.background = 'rgba(99, 102, 241, 0.15)';
+            msgEl.style.color = '#818cf8';
+            msgEl.style.border = '1px solid rgba(99, 102, 241, 0.3)';
+            msgEl.textContent = 'Validating with Premiumize...';
+
+            try {
+                const resp = await fetch('/api/web/debrid/premiumize/auth_token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: token })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    msgEl.style.background = 'rgba(16, 185, 129, 0.15)';
+                    msgEl.style.color = '#34d399';
+                    msgEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                    msgEl.textContent = `Successfully authorised (Account: ${data.customer_id || 'Active'})!`;
+                    setTimeout(() => {
+                        togglePremiumizeAuthModal(false);
+                        fetchDiagnostics();
+                    }, 1000);
+                } else {
+                    msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                    msgEl.style.color = '#fb7185';
+                    msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                    msgEl.textContent = data.error || 'Failed to validate API Key';
+                }
+            } catch (err) {
+                msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                msgEl.style.color = '#fb7185';
+                msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                msgEl.textContent = `Network error: ${err.message}`;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Save API Key';
+            }
+        }
+
+        async function revokePremiumizeAuth() {
+            if (!confirm('Are you sure you want to revoke Premiumize authorisation?')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/web/debrid/premiumize/revoke', {
+                    method: 'POST'
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    fetchDiagnostics();
+                } else {
+                    alert('Error revoking Premiumize: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert(`Error revoking Premiumize: ${err.message}`);
             }
         }
 
@@ -3939,28 +4531,48 @@ Orac Server Port: 8000 (default)</div>
         // -------------------------------------------------------------
         async function fetchDiagnostics() {
             const btn = document.getElementById('diag-refresh-btn');
-            btn.textContent = 'Checking...';
-            btn.disabled = true;
+            const servicesBtn = document.getElementById('services-refresh-btn');
+            if (btn) {
+                btn.textContent = 'Checking...';
+                btn.disabled = true;
+            }
+            if (servicesBtn) {
+                servicesBtn.textContent = 'Checking...';
+                servicesBtn.disabled = true;
+            }
 
             try {
                 const res = await fetch('/api/web/diagnostics');
                 const data = await res.json();
-                btn.textContent = '🔄 Run Health Check';
-                btn.disabled = false;
+                if (btn) {
+                    btn.textContent = '🔄 Run Health Check';
+                    btn.disabled = false;
+                }
+                if (servicesBtn) {
+                    servicesBtn.textContent = '🔄 Refresh Services';
+                    servicesBtn.disabled = false;
+                }
 
                 if (data.success && data.diagnostics) {
                     renderDiagnostics(data.diagnostics);
                 }
             } catch (err) {
-                btn.textContent = '🔄 Run Health Check';
-                btn.disabled = false;
+                if (btn) {
+                    btn.textContent = '🔄 Run Health Check';
+                    btn.disabled = false;
+                }
+                if (servicesBtn) {
+                    servicesBtn.textContent = '🔄 Refresh Services';
+                    servicesBtn.disabled = false;
+                }
                 console.error('Diagnostics error:', err);
             }
         }
 
         function renderDiagnostics(diag) {
-            const container = document.getElementById('diag-cards-container');
-            container.innerHTML = '';
+            const servicesContainer = document.getElementById('services-status-card-container');
+            const debridContainer = document.getElementById('debrid-resolvers-card-container');
+            const diagContainer = document.getElementById('diag-cards-container');
 
             // Card 1: Services Status (Authorized Services Health & Latency)
             const services = diag.services || [];
@@ -3969,6 +4581,7 @@ Orac Server Port: 8000 (default)</div>
 
             const servicesCard = document.createElement('div');
             servicesCard.className = 'status-card';
+            servicesCard.style.cssText = 'display: flex; flex-direction: column; height: 100%; box-sizing: border-box;';
             servicesCard.innerHTML = `
                 <div class="status-card-header">
                     <span class="status-card-title">📡 Services Status</span>
@@ -3976,7 +4589,7 @@ Orac Server Port: 8000 (default)</div>
                         ${services.length === 0 ? 'No Services' : `${onlineCount}/${services.length} Online`}
                     </span>
                 </div>
-                <div class="list-container-scroll" style="max-height: 180px; padding-right: 0.25rem;">
+                <div class="list-container-scroll" style="flex: 1; min-height: 380px; max-height: calc(75vh - 170px); overflow-y: auto; padding-right: 0.25rem;">
                     ${services.length === 0 ? `
                         <div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 2rem 0.5rem; font-style: italic;">
                             No authorized platforms configured.
@@ -4004,7 +4617,10 @@ Orac Server Port: 8000 (default)</div>
                     `).join('')}
                 </div>
             `;
-            container.appendChild(servicesCard);
+            if (servicesContainer) {
+                servicesContainer.innerHTML = '';
+                servicesContainer.appendChild(servicesCard);
+            }
 
             // Card 2: Debrid Resolvers (Authorized Debrid Health & Latency)
             const debridList = diag.debrid_services || [];
@@ -4013,6 +4629,7 @@ Orac Server Port: 8000 (default)</div>
 
             const debridCard = document.createElement('div');
             debridCard.className = 'status-card';
+            debridCard.style.cssText = 'display: flex; flex-direction: column; height: 100%; box-sizing: border-box;';
             debridCard.innerHTML = `
                 <div class="status-card-header">
                     <span class="status-card-title">⚡ Debrid Resolvers</span>
@@ -4020,41 +4637,70 @@ Orac Server Port: 8000 (default)</div>
                         ${debridList.length === 0 ? 'No Resolvers' : `${debridOnlineCount}/${debridList.length} Online`}
                     </span>
                 </div>
-                <div class="list-container-scroll" style="max-height: 180px; padding-right: 0.25rem;">
+                <div class="table-header-platform" style="padding-bottom: 0.5rem; margin-bottom: 0.25rem;">
+                    <div>Resolver</div>
+                    <div style="text-align: center;">Priority / Latency</div>
+                    <div style="text-align: right;">Action</div>
+                </div>
+                <div class="list-container-scroll" style="flex: 1; min-height: 380px; max-height: calc(75vh - 170px); overflow-y: auto; padding-right: 0.25rem;">
                     ${debridList.length === 0 ? `
                         <div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 2rem 0.5rem; font-style: italic;">
                             No authorized debrid resolvers configured.
                         </div>
-                    ` : debridList.map(d => `
-                        <div class="diag-stat-row" style="align-items: center; padding: 0.45rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);">
+                    ` : debridList.map(d => {
+                        const isPm = (d.id === 'pm' || d.id === 'premiumize' || (d.name && d.name.toLowerCase() === 'premiumize'));
+                        let debridActionHtml = '';
+                        if (isPm) {
+                            if (d.configured) {
+                                debridActionHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokePremiumizeAuth()">Revoke</button>`;
+                            } else {
+                                debridActionHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openPremiumizeAuthModal()">Authorise</button>`;
+                            }
+                        }
+                        const isConfigured = d.configured !== false;
+                        const statusDotClass = isConfigured ? (d.online ? 'ok' : 'err') : 'neutral';
+                        const dotTitle = !isConfigured ? 'Not authorised' : (d.online ? 'Online' : 'Offline / Error');
+                        const statusSubtext = !isConfigured 
+                            ? 'Not authorised' 
+                            : (d.account_id ? escapeHtml(d.account_id) : (d.enabled ? 'Enabled' : 'Disabled'));
+
+                        return `
+                        <div class="platform-row" style="padding: 0.45rem 0.75rem; margin-top: 0.15rem; border-bottom: 1px solid rgba(255,255,255,0.04);">
                             <div style="display: flex; align-items: center; gap: 0.55rem; min-width: 0;">
-                                <span class="status-indicator ${d.online ? 'ok' : 'err'}" title="${d.online ? 'Online' : 'Offline / Error'}"></span>
+                                <span class="status-indicator ${statusDotClass}" title="${dotTitle}"></span>
                                 <div style="display: flex; flex-direction: column; min-width: 0;">
                                     <span style="font-weight: 600; font-size: 0.88rem; color: var(--text-main); line-height: 1.2;">${escapeHtml(d.name)}</span>
-                                    <span style="font-size: 0.72rem; color: ${d.enabled ? '#818cf8' : 'var(--text-muted)'}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                        ${d.enabled ? 'Enabled' : 'Disabled'}
+                                    <span style="font-size: 0.72rem; color: ${isConfigured ? (d.enabled ? '#818cf8' : 'var(--text-muted)') : 'var(--text-dim)'}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                        ${statusSubtext}
                                     </span>
                                 </div>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
-                                <div style="display: flex; align-items: center; gap: 0.25rem;" title="Debrid selection priority (1 = highest)">
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 0.45rem; min-width: 0;">
+                                <div style="display: flex; align-items: center; gap: 0.2rem;" title="Debrid selection priority (1 = highest)">
                                     <span style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">Prio:</span>
-                                    <select onchange="updateDebridPriority('${escapeHtml(d.name)}', this.value)" style="background: rgba(255,255,255,0.08); color: var(--text-main); border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 1px 4px; font-size: 0.72rem; cursor: pointer;">
+                                    <select onchange="updateDebridPriority('${escapeHtml(d.name)}', this.value)" style="background: rgba(255,255,255,0.08); color: var(--text-main); border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 1px 3px; font-size: 0.72rem; cursor: pointer;">
                                         ${[1,2,3,4,5,6,7].map(num => `<option value="${num}" ${(d.priority || 10) == num ? 'selected' : ''}>${num}</option>`).join('')}
                                     </select>
                                 </div>
-                                <span style="font-family: 'Fira Code', monospace; font-size: 0.8rem; font-weight: 600; color: ${d.online ? '#34d399' : '#f87171'};">
-                                    ${d.latency_ms !== null && d.latency_ms !== undefined ? `${d.latency_ms} ms` : 'Timeout'}
+                                <span style="font-family: 'Fira Code', monospace; font-size: 0.78rem; font-weight: 600; color: ${isConfigured ? (d.online ? '#34d399' : '#f87171') : 'var(--text-dim)'}; min-width: 46px; text-align: right;">
+                                    ${!isConfigured ? '-' : (d.latency_ms !== null && d.latency_ms !== undefined ? `${d.latency_ms} ms` : 'Timeout')}
                                 </span>
-                                <span class="badge ${d.online ? 'active' : 'inactive'}" style="font-size: 0.65rem; padding: 0.15rem 0.45rem;">
-                                    ${d.online ? 'Online' : 'Offline'}
+                                <span class="badge ${isConfigured ? (d.online ? 'active' : 'inactive') : 'neutral'}" style="font-size: 0.65rem; padding: 0.15rem 0.4rem;">
+                                    ${!isConfigured ? 'Unlinked' : (d.online ? 'Online' : 'Offline')}
                                 </span>
                             </div>
+                            <div style="text-align: right;">
+                                ${debridActionHtml}
+                            </div>
                         </div>
-                    `).join('')}
+                        `;
+                    }).join('')}
                 </div>
             `;
-            container.appendChild(debridCard);
+            if (debridContainer) {
+                debridContainer.innerHTML = '';
+                debridContainer.appendChild(debridCard);
+            }
 
             // Card 3: Scrapers & Cache Storage
             const scraperCard = document.createElement('div');
@@ -4088,7 +4734,10 @@ Orac Server Port: 8000 (default)</div>
                     </select>
                 </div>
             `;
-            container.appendChild(scraperCard);
+            if (diagContainer) {
+                diagContainer.innerHTML = '';
+                diagContainer.appendChild(scraperCard);
+            }
 
             // Render Databases Table
             const dbTable = document.getElementById('diag-db-table');

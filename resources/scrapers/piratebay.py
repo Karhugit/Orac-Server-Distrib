@@ -165,14 +165,14 @@ class source(ConcurrentScraperBase):
         
         try:
             self.search_series = search_series
-            self.total_seasons = total_seasons
+            self.total_seasons = total_seasons or data.get('total_seasons')
             self.bypass_filter = bypass_filter
 
             self.title = data['tvshowtitle'].replace('&', 'and').replace('Special Victims Unit', 'SVU').replace('/', ' ').replace('$', 's')
-            self.aliases = data['aliases']
+            self.aliases = data.get('aliases') or []
             self.imdb = data.get('imdb') or data.get('imdb_id')
-            self.year = data['year']
-            self.season_x = data['season']
+            self.year = str(data['year'])
+            self.season_x = str(data['season'])
             self.season_xx = self.season_x.zfill(2)
             self.undesirables = source_utils.get_undesirables()
             self.check_foreign_audio = source_utils.check_foreign_audio()
@@ -300,15 +300,17 @@ class PirateBayService(ConcurrentScraperBase):
     """
     Wrapper class for PirateBay compatible with ScraperManager.
     """
+    pack_capable = True
+
     def __init__(self):
         super().__init__('piratebay')
         self.scraper = source()
 
     def scrape_sources(self, data):
-        return self.scraper.sources(data, hostDict={})
+        return source().sources(data, hostDict={})
 
     def scrape_packs(self, data, search_series=False, total_seasons=None, bypass_filter=False):
-        return self.scraper.sources_packs(
+        return source().sources_packs(
             data,
             hostDict={},
             search_series=search_series,

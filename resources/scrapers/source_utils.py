@@ -287,7 +287,7 @@ def filter_season_pack(show_title, aliases, year, season, release_title):
 
 # remove single episodes ONLY (returned in single ep scrape), keep episode ranges as season packs
 		episode_regex = (
-				r's\d{1,3}e\d{1,3}[-.](?!\d{2,3}[-.])(?!e\d{1,3})(?!\d{2}gb)',
+				r's\d{1,3}[.-]?e\d{1,3}[-.](?!\d{2,3}[-.])(?!e\d{1,3})(?!\d{2}gb)',
 				r'season[.-]?\d{1,3}[.-]?ep[.-]?\d{1,3}[-.](?!\d{2,3}[-.])(?!e\d{1,3})(?!\d{2}gb)',
 				r'season[.-]?\d{1,3}[.-]?episode[.-]?\d{1,3}[-.](?!\d{2,3}[-.])(?!e\d{1,3})(?!\d{2}gb)')
 		for item in episode_regex:

@@ -6,6 +6,21 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.3.5] — 2026-09-18
+
+### Added
+- **Dedicated Services Tab** — consolidated Authorized Platforms, Debrid Resolvers, and Service Diagnostics into a unified, responsive Services management tab in the Command Centre web dashboard.
+- **AIOStreams Integration** — added full AIOStreams credential management and live connectivity diagnostics directly to the Authorised Platforms pane.
+- **Centralized Premiumize Authorization & Live Cloud Storage** — migrated Premiumize.me OAuth device authorization and revocation to the web dashboard, with custom client credentials and live un-cached cloud file operations.
+- **Multi-Provider Watched Synchronization** — established the local database (`watched_history`) as the single source of truth for watched data with bidirectional synchronization across Trakt, Simkl, and MDBList. Uses provider activity endpoints (`/sync/last_activities` and `/sync/activities`) for efficient delta syncing.
+- **Season & Series Pack Scraping for TV Episodes** — added concurrent season pack and show pack scraping support for TV episodes, expanding source results and debrid cached resolution.
+- **On-Demand Watched Sync Endpoint** — added `GET /sync_watched` to trigger immediate background multi-provider watched synchronization.
+
+### Fixed
+- **Debrid Resolvers Table Alignment** — center-justified Priority and Latency columns under their respective headers.
+- **Simkl Episode History Ingestion** — resolved issue where Simkl episode items were omitted from sync queries due to missing extended parameter and status field mismatch.
+- **MDBList Watched History Parsing** — updated payload parser to match MDBList sync response schema for movies and episodes.
+
 ## [1.3.4] — 2026-08-25
 
 ### Added

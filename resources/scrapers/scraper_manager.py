@@ -99,41 +99,116 @@ class ScraperManager:
         scraper_service = self.scrapers[provider]
         loop = asyncio.get_running_loop()
         
-        if search_type == "sources":
-            # Call the service's sync method via executor
+        def _run_single():
+            if hasattr(scraper_service, 'scraper') and hasattr(scraper_service.scraper, 'sources'):
+                try:
+                    return scraper_service.scraper.__class__().sources(data, {})
+                except Exception:
+                    pass
             if hasattr(scraper_service, 'scrape_sources'):
-                return await loop.run_in_executor(self.executor, scraper_service.scrape_sources, data)
+                return scraper_service.scrape_sources(data)
             elif hasattr(scraper_service, 'scraper') and hasattr(scraper_service.scraper, 'sources'):
-                # Fallback to the underlying scraper's sources method if standardized scraper attribute exists
-                return await loop.run_in_executor(self.executor, scraper_service.scraper.sources, data, {})
+                return scraper_service.scraper.sources(data, {})
             else:
-                # Last resort: try any attribute that might be the scraper
                 scraper_obj = next((getattr(scraper_service, attr) for attr in dir(scraper_service) 
                                   if not attr.startswith('__') and hasattr(getattr(scraper_service, attr), 'sources')), None)
                 if scraper_obj:
-                    return await loop.run_in_executor(self.executor, scraper_obj.sources, data, {})
-                
-                # If all else fails, log error and return empty
+                    return scraper_obj.sources(data, {})
                 log(f"ScraperManager: Provider '{provider}' has no valid synchronous 'sources' method", LOGERROR)
                 return []
-                
-        elif search_type in ["packs", "series_packs"]:
-            search_series = (search_type == "series_packs")
-            total_seasons = kwargs.get('total_seasons')
+
+        def _run_packs(search_series):
+            total_seasons = kwargs.get('total_seasons') or data.get('total_seasons')
             bypass_filter = kwargs.get('bypass_filter', False)
-            
+            if hasattr(scraper_service, 'scraper') and hasattr(scraper_service.scraper, 'sources_packs'):
+                try:
+                    return scraper_service.scraper.__class__().sources_packs(
+                        data, {}, search_series=search_series, total_seasons=total_seasons, bypass_filter=bypass_filter
+                    )
+                except Exception:
+                    pass
             if hasattr(scraper_service, 'scrape_packs'):
-                return await loop.run_in_executor(self.executor, scraper_service.scrape_packs, data, search_series, total_seasons, bypass_filter)
+                return scraper_service.scrape_packs(data, search_series=search_series, total_seasons=total_seasons, bypass_filter=bypass_filter)
             elif hasattr(scraper_service, 'scraper') and hasattr(scraper_service.scraper, 'sources_packs'):
-                return await loop.run_in_executor(self.executor, scraper_service.scraper.sources_packs, data, {}, search_series, total_seasons, bypass_filter)
+                return scraper_service.scraper.sources_packs(data, {}, search_series=search_series, total_seasons=total_seasons, bypass_filter=bypass_filter)
             else:
                 scraper_obj = next((getattr(scraper_service, attr) for attr in dir(scraper_service) 
                                   if not attr.startswith('__') and hasattr(getattr(scraper_service, attr), 'sources_packs')), None)
                 if scraper_obj:
-                    return await loop.run_in_executor(self.executor, scraper_obj.sources_packs, data, {}, search_series, total_seasons, bypass_filter)
-                
+                    return scraper_obj.sources_packs(data, {}, search_series=search_series, total_seasons=total_seasons, bypass_filter=bypass_filter)
                 log(f"ScraperManager: Provider '{provider}' has no valid synchronous 'sources_packs' method", LOGERROR)
                 return []
+
+        if search_type == "sources":
+            is_episode = bool(data.get('season') and data.get('episode')) or bool(data.get('tvshowtitle') and data.get('season'))
+            is_pack_capable = (
+                getattr(scraper_service, 'pack_capable', False) or 
+                getattr(getattr(scraper_service, 'scraper', None), 'pack_capable', False)
+            )
+
+            if not is_episode or not is_pack_capable:
+                return await loop.run_in_executor(self.executor, _run_single)
+
+            # Concurrent execution of single sources, season packs, and series packs
+            tasks = [
+                loop.run_in_executor(self.executor, _run_single),
+                loop.run_in_executor(self.executor, _run_packs, False),
+                loop.run_in_executor(self.executor, _run_packs, True)
+            ]
+
+            results_list = await asyncio.gather(*tasks, return_exceptions=True)
+
+            all_results = []
+            try:
+                target_season = int(data.get('season', 1))
+            except (ValueError, TypeError):
+                target_season = 1
+            try:
+                target_episode = int(data.get('episode', 1))
+            except (ValueError, TypeError):
+                target_episode = 1
+
+            # 1. Single sources
+            if isinstance(results_list[0], list):
+                all_results.extend(results_list[0])
+            elif isinstance(results_list[0], Exception):
+                log(f"ScraperManager: '{provider}' single sources error: {results_list[0]}", LOGERROR)
+
+            # 2. Season packs
+            if isinstance(results_list[1], list):
+                for item in results_list[1]:
+                    if not isinstance(item, dict):
+                        continue
+                    if 'episode_start' in item and 'episode_end' in item:
+                        try:
+                            if not (int(item['episode_start']) <= target_episode <= int(item['episode_end'])):
+                                continue
+                        except (ValueError, TypeError):
+                            pass
+                    all_results.append(item)
+            elif isinstance(results_list[1], Exception):
+                log(f"ScraperManager: '{provider}' season packs error: {results_list[1]}", LOGERROR)
+
+            # 3. Series/Show packs
+            if isinstance(results_list[2], list):
+                for item in results_list[2]:
+                    if not isinstance(item, dict):
+                        continue
+                    if 'last_season' in item:
+                        try:
+                            if int(item['last_season']) < target_season:
+                                continue
+                        except (ValueError, TypeError):
+                            pass
+                    all_results.append(item)
+            elif isinstance(results_list[2], Exception):
+                log(f"ScraperManager: '{provider}' series packs error: {results_list[2]}", LOGERROR)
+
+            return all_results
+
+        elif search_type in ["packs", "series_packs"]:
+            search_series = (search_type == "series_packs")
+            return await loop.run_in_executor(self.executor, _run_packs, search_series)
         else:
             raise ValueError(f"Unknown search_type: {search_type}")
     

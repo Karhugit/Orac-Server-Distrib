@@ -1,4 +1,5 @@
 import asyncio
+from typing import Optional
 import time
 import requests
 from resources.lib.db_utils import db_connect
@@ -821,6 +822,31 @@ def app_factory(
         ))
         return JSONResponse(status_code=200, content={"status": "started", "message": "Force sync started"})
 
+    @app.get("/sync_watched")
+    async def sync_watched_route(request: Request):
+        from resources.lib.sync_engine import sync_providers, bulk_sync_history
+        async def _run_watched_sync():
+            try:
+                await sync_providers(
+                    app.state.movies_dynamic_db_path,
+                    app.state.tvshows_dynamic_db_path,
+                    app.state.trakt_handler,
+                    app.state.config_db_path,
+                    tvshows_static_db=app.state.tvshows_static_db_path,
+                    force=True
+                )
+                bulk_sync_history(
+                    app.state.movies_dynamic_db_path,
+                    app.state.tvshows_dynamic_db_path,
+                    app.state.trakt_handler,
+                    app.state.config_db_path,
+                    tvshows_static_db=app.state.tvshows_static_db_path
+                )
+            except Exception as e:
+                log(f"[Orac] Error running manual watched sync: {e}", level=LOGERROR)
+        asyncio.create_task(_run_watched_sync())
+        return JSONResponse(status_code=200, content={"status": "started", "message": "Watched synchronization started"})
+
     @app.get("/tags")
     async def get_tags_h(request: Request):
         query = parse_qs_fastapi(request)
@@ -957,7 +983,7 @@ def app_factory(
         try:
             with db_connect(app.state.config_db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT key, value FROM config WHERE key IN ('trakt_user', 'trakt.user', 'trakt_token', 'trakt.token', 'simkl_user', 'simkl.user', 'simkl.token', 'simkl_token', 'tmdb_user', 'tmdb.user', 'mdblist.user', 'mdblist_user', 'mdblist_api', 'trakt_to_mdblist_sync', 'fanart_api_key', 'fanart_enabled', 'fanart_storage_mode')")
+                cursor.execute("SELECT key, value FROM config")
                 rows = cursor.fetchall()
                 
                 # Normalize keys slightly in case of duplicates or variants
@@ -1024,6 +1050,28 @@ def app_factory(
                     "username": ("Authorised" if is_fanart_auth else ""),
                     "authenticated": is_fanart_auth,
                     "storage_mode": fanart_storage_mode,
+                    "can_auth": True
+                })
+
+                aio_user = data.get('aio.username')
+                aio_pass = data.get('aio.password')
+                aio_instance = data.get('aiostreams_instance') or "0"
+                aio_custom_url = data.get('aio.custom_url')
+                is_aio_auth = bool(
+                    aio_user and aio_user not in ('empty_setting', '') and
+                    aio_pass and aio_pass not in ('empty_setting', '') and
+                    (aio_instance != "1" or (aio_custom_url and aio_custom_url not in ('empty_setting', '')))
+                )
+                
+                # AIOStreams is static - always present in the platforms list
+                platforms.append({
+                    "name": "AIOStreams",
+                    "id": "aiostreams",
+                    "username": (aio_user if is_aio_auth else ""),
+                    "password": (aio_pass if (is_aio_auth and aio_pass != 'empty_setting') else ""),
+                    "authenticated": is_aio_auth,
+                    "instance": aio_instance,
+                    "custom_url": aio_custom_url if (aio_custom_url and aio_custom_url != 'empty_setting') else '',
                     "can_auth": True
                 })
                 
@@ -1427,6 +1475,331 @@ def app_factory(
         except Exception as e:
             log(f"Error updating Fanart storage mode: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/aiostreams/auth")
+    async def web_aiostreams_auth_api(request: Request):
+        try:
+            body = await request.json()
+            instance = str(body.get("instance", "0")).strip()
+            custom_url = (body.get("custom_url") or "").strip()
+            username = (body.get("username") or "").strip()
+            password = (body.get("password") or "").strip()
+
+            if not username or username == "empty_setting":
+                return JSONResponse(status_code=400, content={"success": False, "error": "Username cannot be empty"})
+            if not password or password == "empty_setting":
+                return JSONResponse(status_code=400, content={"success": False, "error": "Password cannot be empty"})
+            if instance == "1" and (not custom_url or custom_url == "empty_setting"):
+                return JSONResponse(status_code=400, content={"success": False, "error": "Custom URL cannot be empty when Custom URL is selected"})
+
+            public_instances = {
+                "0": "https://aiostreams.stremio.ru",
+                "2": "https://aiostreams.viren070.me",
+                "3": "https://aiostreams.fortheweak.cloud",
+                "4": "https://aiostreamsfortheweebsstable.midnightignite.me"
+            }
+            base_link = custom_url.rstrip('/') if instance == "1" else public_instances.get(instance, "https://aiostreams.stremio.ru")
+
+            # Validate credentials against instance
+            try:
+                resp = requests.get(f"{base_link}/api/v1/search", auth=(username, password), timeout=6)
+                if resp.status_code == 401:
+                    return JSONResponse(status_code=400, content={"success": False, "error": "Invalid credentials (401 Unauthorized)"})
+            except requests.RequestException as net_err:
+                log(f"[AIOStreams Auth] Warning: could not reach {base_link}: {net_err}", level=LOGWARNING)
+
+            # Update config DB
+            success = update_config_values({
+                "aio.username": username,
+                "aio.password": password,
+                "aiostreams_instance": instance,
+                "aio.custom_url": custom_url if instance == "1" else "empty_setting"
+            }, app.state.config_db_path)
+
+            if success:
+                try:
+                    scraper_db = ScraperDB('scrapers.db')
+                    scraper_db.set_active_status('aiostreams', True)
+                except Exception as s_err:
+                    log(f"Error activating aiostreams in scraper db: {s_err}", level=LOGERROR)
+
+                log(f"[AIOStreams] Successfully authorised as user: {username}", level=LOGINFO)
+                return JSONResponse(status_code=200, content={"success": True, "username": username})
+            else:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to update configuration database"})
+        except Exception as e:
+            log(f"Error authenticating AIOStreams: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/aiostreams/revoke")
+    async def web_aiostreams_revoke_api():
+        try:
+            success = update_config_values({
+                "aio.username": "empty_setting",
+                "aio.password": "empty_setting",
+                "aiostreams_instance": "0",
+                "aio.custom_url": "empty_setting"
+            }, app.state.config_db_path)
+
+            if success:
+                try:
+                    scraper_db = ScraperDB('scrapers.db')
+                    scraper_db.set_active_status('aiostreams', False)
+                except Exception as s_err:
+                    log(f"Error setting aiostreams inactive in scraper db: {s_err}", level=LOGERROR)
+
+                log(f"[AIOStreams] Successfully revoked AIOStreams authorisation", level=LOGINFO)
+                return JSONResponse(status_code=200, content={"success": True})
+            else:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to clear AIOStreams configuration values"})
+        except Exception as e:
+            log(f"Error revoking AIOStreams authorisation: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    # =========================================================================
+    # PREMIUMIZE DEBRID WEB & CLOUD ENDPOINTS
+    # =========================================================================
+    @app.post("/api/web/debrid/premiumize/start_auth")
+    async def web_premiumize_start_auth_api():
+        try:
+            client_id = "230973825"
+            url = "https://www.premiumize.me/token"
+            data = {"response_type": "device_code", "client_id": client_id}
+            resp = requests.post(url, data=data, timeout=10)
+            if resp.status_code == 200:
+                res_data = resp.json()
+                return JSONResponse(status_code=200, content={
+                    "success": True,
+                    "device_code": res_data.get("device_code"),
+                    "user_code": res_data.get("user_code"),
+                    "verification_url": res_data.get("verification_uri", "https://www.premiumize.me/device"),
+                    "expires_in": res_data.get("expires_in", 900),
+                    "interval": res_data.get("interval", 5)
+                })
+            else:
+                return JSONResponse(status_code=400, content={"success": False, "error": f"Premiumize error: {resp.text}"})
+        except Exception as e:
+            log(f"Error starting Premiumize auth: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/debrid/premiumize/poll_auth")
+    async def web_premiumize_poll_auth_api(request: Request):
+        try:
+            body = await request.json()
+            device_code = body.get("device_code")
+            if not device_code:
+                return JSONResponse(status_code=400, content={"success": False, "error": "Missing device_code"})
+
+            client_id = "230973825"
+            client_secret = "qeac5k2pj3jbxmmuds"
+            poll_url = "https://www.premiumize.me/token"
+            data = {
+                "grant_type": "device_code",
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "code": device_code
+            }
+            resp = requests.post(poll_url, data=data, timeout=10)
+            res_data = resp.json()
+
+            if "error" in res_data:
+                err_val = res_data.get("error")
+                return JSONResponse(status_code=200, content={
+                    "success": False,
+                    "error": err_val,
+                    "pending": err_val in ("authorization_pending", "slow_down")
+                })
+
+            access_token = res_data.get("access_token")
+            if access_token:
+                customer_id = "empty_setting"
+                try:
+                    info_res = requests.get(
+                        "https://www.premiumize.me/api/account/info",
+                        headers={"Authorization": f"Bearer {access_token}"},
+                        timeout=8
+                    )
+                    if info_res.status_code == 200:
+                        info_data = info_res.json()
+                        if info_data.get("status") == "success":
+                            customer_id = str(info_data.get("customer_id") or "empty_setting")
+                except Exception as acc_err:
+                    log(f"Error fetching Premiumize account info after auth: {acc_err}", level=LOGWARNING)
+
+                update_config_values({
+                    "pm.token": str(access_token),
+                    "pm.enabled": "true",
+                    "pm.account_id": str(customer_id)
+                }, app.state.config_db_path)
+
+                log(f"[Premiumize] Successfully authorised account: {customer_id}", level=LOGINFO)
+                return JSONResponse(status_code=200, content={"success": True, "customer_id": customer_id})
+
+            return JSONResponse(status_code=400, content={"success": False, "error": "No access token returned"})
+        except Exception as e:
+            log(f"Error polling Premiumize auth: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/debrid/premiumize/auth_token")
+    async def web_premiumize_auth_token_api(request: Request):
+        try:
+            body = await request.json()
+            token = (body.get("token") or "").strip()
+            if not token or token == "empty_setting":
+                return JSONResponse(status_code=400, content={"success": False, "error": "API Key / PIN cannot be empty"})
+
+            info_res = requests.get(
+                "https://www.premiumize.me/api/account/info",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=8
+            )
+            if info_res.status_code != 200:
+                return JSONResponse(status_code=400, content={"success": False, "error": f"Failed to validate token (HTTP {info_res.status_code})"})
+
+            info_data = info_res.json()
+            if info_data.get("status") != "success":
+                return JSONResponse(status_code=400, content={"success": False, "error": info_data.get("message", "Invalid Premiumize token")})
+
+            customer_id = str(info_data.get("customer_id") or "empty_setting")
+            update_config_values({
+                "pm.token": token,
+                "pm.enabled": "true",
+                "pm.account_id": customer_id
+            }, app.state.config_db_path)
+
+            log(f"[Premiumize] Successfully authorised via token for account: {customer_id}", level=LOGINFO)
+            return JSONResponse(status_code=200, content={"success": True, "customer_id": customer_id})
+        except Exception as e:
+            log(f"Error authorising Premiumize via token: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/debrid/premiumize/revoke")
+    async def web_premiumize_revoke_api():
+        try:
+            update_config_values({
+                "pm.token": "empty_setting",
+                "pm.enabled": "false",
+                "pm.account_id": "empty_setting"
+            }, app.state.config_db_path)
+            log("[Premiumize] Successfully revoked Premiumize authorisation", level=LOGINFO)
+            return JSONResponse(status_code=200, content={"success": True})
+        except Exception as e:
+            log(f"Error revoking Premiumize: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    # Premiumize Cloud Storage Operations (Live Fetch, No Caching)
+    def _get_pm_token():
+        tok = get_config_value("pm.token", app.state.config_db_path)
+        if not tok or tok == "empty_setting":
+            return None
+        return tok
+
+    @app.get("/api/debrid/premiumize/cloud")
+    async def pm_cloud_api(folder_id: Optional[str] = None):
+        tok = _get_pm_token()
+        if not tok:
+            return JSONResponse(status_code=401, content={"status": "error", "message": "Premiumize not authorised"})
+        url = "https://www.premiumize.me/api/folder/list"
+        params = {"id": folder_id} if folder_id else {}
+        headers = {"Authorization": f"Bearer {tok}", "User-Agent": "Liberator-Orac"}
+        try:
+            resp = await asyncio.to_thread(requests.get, url, params=params, headers=headers, timeout=20)
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
+        except Exception as e:
+            log(f"[Premiumize Cloud] Error fetching folder/list: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+    @app.get("/api/debrid/premiumize/transfers")
+    async def pm_transfers_api():
+        tok = _get_pm_token()
+        if not tok:
+            return JSONResponse(status_code=401, content={"status": "error", "message": "Premiumize not authorised"})
+        url = "https://www.premiumize.me/api/transfer/list"
+        headers = {"Authorization": f"Bearer {tok}", "User-Agent": "Liberator-Orac"}
+        try:
+            resp = await asyncio.to_thread(requests.get, url, headers=headers, timeout=20)
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
+        except Exception as e:
+            log(f"[Premiumize Cloud] Error fetching transfer/list: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+    @app.get("/api/debrid/premiumize/account_info")
+    async def pm_account_info_api():
+        tok = _get_pm_token()
+        if not tok:
+            return JSONResponse(status_code=401, content={"status": "error", "message": "Premiumize not authorised"})
+        url = "https://www.premiumize.me/api/account/info"
+        headers = {"Authorization": f"Bearer {tok}", "User-Agent": "Liberator-Orac"}
+        try:
+            resp = await asyncio.to_thread(requests.get, url, headers=headers, timeout=20)
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
+        except Exception as e:
+            log(f"[Premiumize Cloud] Error fetching account/info: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+    @app.post("/api/debrid/premiumize/rename")
+    async def pm_rename_api(request: Request):
+        tok = _get_pm_token()
+        if not tok:
+            return JSONResponse(status_code=401, content={"status": "error", "message": "Premiumize not authorised"})
+        try:
+            body = await request.json()
+            file_type = body.get("file_type", "item")
+            endpoint = "folder/rename" if file_type == "folder" else "item/rename"
+            url = f"https://www.premiumize.me/api/{endpoint}"
+            data = {"id": body.get("id"), "name": body.get("name")}
+            headers = {"Authorization": f"Bearer {tok}", "User-Agent": "Liberator-Orac"}
+            resp = await asyncio.to_thread(requests.post, url, data=data, headers=headers, timeout=20)
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
+        except Exception as e:
+            log(f"[Premiumize Cloud] Error renaming {file_type}: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+    @app.post("/api/debrid/premiumize/delete")
+    async def pm_delete_api(request: Request):
+        tok = _get_pm_token()
+        if not tok:
+            return JSONResponse(status_code=401, content={"status": "error", "message": "Premiumize not authorised"})
+        try:
+            body = await request.json()
+            file_type = body.get("file_type", "item")
+            endpoint = "folder/delete" if file_type == "folder" else "item/delete"
+            url = f"https://www.premiumize.me/api/{endpoint}"
+            data = {"id": body.get("id")}
+            headers = {"Authorization": f"Bearer {tok}", "User-Agent": "Liberator-Orac"}
+            resp = await asyncio.to_thread(requests.post, url, data=data, headers=headers, timeout=20)
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
+        except Exception as e:
+            log(f"[Premiumize Cloud] Error deleting {file_type}: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+    @app.get("/api/debrid/premiumize/item_details")
+    async def pm_item_details_api(id: str):
+        tok = _get_pm_token()
+        if not tok:
+            return JSONResponse(status_code=401, content={"status": "error", "message": "Premiumize not authorised"})
+        url = "https://www.premiumize.me/api/item/details"
+        headers = {"Authorization": f"Bearer {tok}", "User-Agent": "Liberator-Orac"}
+        try:
+            resp = await asyncio.to_thread(requests.post, url, data={"id": id}, headers=headers, timeout=20)
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
+        except Exception as e:
+            log(f"[Premiumize Cloud] Error fetching item details: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+    @app.get("/api/debrid/premiumize/cloud_all")
+    async def pm_cloud_all_api():
+        tok = _get_pm_token()
+        if not tok:
+            return JSONResponse(status_code=401, content={"status": "error", "message": "Premiumize not authorised"})
+        url = "https://www.premiumize.me/api/item/listall"
+        headers = {"Authorization": f"Bearer {tok}", "User-Agent": "Liberator-Orac"}
+        try:
+            resp = await asyncio.to_thread(requests.get, url, headers=headers, timeout=20)
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
+        except Exception as e:
+            log(f"[Premiumize Cloud] Error fetching item/listall: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
     @app.post("/api/web/platforms/tmdb/start_auth")
     async def web_tmdb_start_auth_api():
@@ -1886,18 +2259,49 @@ def app_factory(
                     "username": "API Active"
                 }, ping_fanart))
 
+            aio_u = cfg.get("aio.username")
+            aio_p = cfg.get("aio.password")
+            aio_inst = cfg.get("aiostreams_instance") or "0"
+            aio_c_url = cfg.get("aio.custom_url")
+            is_aio_auth = bool(
+                aio_u and aio_u not in ('empty_setting', '') and
+                aio_p and aio_p not in ('empty_setting', '') and
+                (aio_inst != "1" or (aio_c_url and aio_c_url not in ('empty_setting', '')))
+            )
+            if is_aio_auth:
+                inst_map = {
+                    "0": "https://aiostreams.stremio.ru",
+                    "2": "https://aiostreams.viren070.me",
+                    "3": "https://aiostreams.fortheweak.cloud",
+                    "4": "https://aiostreamsfortheweebsstable.midnightignite.me"
+                }
+                aio_base = aio_c_url.rstrip('/') if aio_inst == "1" and aio_c_url else inst_map.get(aio_inst, "https://aiostreams.stremio.ru")
+                def ping_aiostreams():
+                    try:
+                        r = requests.get(f"{aio_base}/api/v1/search", auth=(aio_u, aio_p), timeout=4)
+                        return r.status_code in (200, 400), f"HTTP {r.status_code}"
+                    except Exception as err:
+                        return False, str(err)
+                ping_tasks.append(({
+                    "id": "aiostreams",
+                    "name": "AIOStreams",
+                    "authorized": True,
+                    "username": aio_u or "Authorised"
+                }, ping_aiostreams))
+
             # 3. Check authorized debrid services and prepare pings
             debrid_svcs = [
-                ("Real-Debrid", "rd.token", "rd.enabled", "rd.priority", 2),
-                ("Premiumize", "pm.token", "pm.enabled", "pm.priority", 3),
-                ("TorBox", "tb.token", "tb.enabled", "tb.priority", 1),
-                ("OffCloud", "oc.token", "oc.enabled", "oc.priority", 5),
-                ("EasyDebrid", "ed.token", "ed.enabled", "ed.priority", 6),
-                ("EasyNews", "easynews_user", "provider.easynews", "en.priority", 7)
+                ("Real-Debrid", "rd.token", "rd.enabled", "rd.priority", 2, "rd"),
+                ("Premiumize", "pm.token", "pm.enabled", "pm.priority", 3, "pm"),
+                ("TorBox", "tb.token", "tb.enabled", "tb.priority", 1, "tb"),
+                ("OffCloud", "oc.token", "oc.enabled", "oc.priority", 5, "oc"),
+                ("EasyDebrid", "ed.token", "ed.enabled", "ed.priority", 6, "ed"),
+                ("EasyNews", "easynews_user", "provider.easynews", "en.priority", 7, "easynews")
             ]
 
             debrid_ping_tasks = []
-            for d_name, token_key, enabled_key, prio_key, def_prio in debrid_svcs:
+            unconfigured_debrids = []
+            for d_name, token_key, enabled_key, prio_key, def_prio, d_id in debrid_svcs:
                 tok = cfg.get(token_key)
                 en = cfg.get(enabled_key, "false").lower() in ("true", "1")
                 has_tok = bool(tok and tok != "empty_setting")
@@ -1911,42 +2315,69 @@ def app_factory(
                     "enabled": en and has_tok,
                     "priority": prio_val
                 }
+
+                acct_id = None
+                if d_id == "pm":
+                    acct_id = cfg.get("pm.account_id")
+                    if acct_id == "empty_setting":
+                        acct_id = None
+                elif d_id == "rd":
+                    acct_id = cfg.get("rd.account_id")
+                    if acct_id == "empty_setting":
+                        acct_id = None
+
+                svc_info = {
+                    "id": d_id,
+                    "name": d_name,
+                    "enabled": en and has_tok,
+                    "priority": prio_val,
+                    "configured": has_tok,
+                    "account_id": acct_id
+                }
+
                 if not has_tok:
+                    unconfigured_debrids.append({
+                        **svc_info,
+                        "online": False,
+                        "status": "not_configured",
+                        "latency_ms": None,
+                        "detail": "Not authorised"
+                    })
                     continue
 
                 if d_name == "Real-Debrid":
-                    def ping_rd(t=tok):
+                    def ping_rd(t=tok, info=svc_info):
                         r = requests.get("https://api.real-debrid.com/rest/1.0/user", headers={"Authorization": f"Bearer {t}"}, timeout=4)
                         return r.status_code == 200, f"HTTP {r.status_code}"
-                    debrid_ping_tasks.append(({"id": "rd", "name": d_name, "enabled": en, "priority": prio_val}, ping_rd))
+                    debrid_ping_tasks.append((svc_info, ping_rd))
                 elif d_name == "Premiumize":
-                    def ping_pm(t=tok):
+                    def ping_pm(t=tok, info=svc_info):
                         r = requests.get("https://www.premiumize.me/api/account/info", headers={"Authorization": f"Bearer {t}"}, timeout=4)
                         ok = r.status_code == 200 and r.json().get("status") == "success"
                         return ok, f"HTTP {r.status_code}"
-                    debrid_ping_tasks.append(({"id": "pm", "name": d_name, "enabled": en, "priority": prio_val}, ping_pm))
+                    debrid_ping_tasks.append((svc_info, ping_pm))
                 elif d_name == "TorBox":
-                    def ping_tb(t=tok):
+                    def ping_tb(t=tok, info=svc_info):
                         r = requests.get("https://api.torbox.app/v1/api/user/me", headers={"Authorization": f"Bearer {t}"}, timeout=4)
                         ok = r.status_code == 200 and r.json().get("success") is True
                         return ok, f"HTTP {r.status_code}"
-                    debrid_ping_tasks.append(({"id": "tb", "name": d_name, "enabled": en, "priority": prio_val}, ping_tb))
+                    debrid_ping_tasks.append((svc_info, ping_tb))
                 elif d_name == "OffCloud":
-                    def ping_oc(t=tok):
+                    def ping_oc(t=tok, info=svc_info):
                         r = requests.get(f"https://offcloud.com/api/remote/account?key={t}", timeout=4)
                         return r.status_code == 200, f"HTTP {r.status_code}"
-                    debrid_ping_tasks.append(({"id": "oc", "name": d_name, "enabled": en, "priority": prio_val}, ping_oc))
+                    debrid_ping_tasks.append((svc_info, ping_oc))
                 elif d_name == "EasyDebrid":
-                    def ping_ed(t=tok):
+                    def ping_ed(t=tok, info=svc_info):
                         r = requests.get("https://easydebrid.com/api/v1/user/details", headers={"Authorization": f"Bearer {t}"}, timeout=4)
                         return r.status_code == 200, f"HTTP {r.status_code}"
-                    debrid_ping_tasks.append(({"id": "ed", "name": d_name, "enabled": en, "priority": prio_val}, ping_ed))
+                    debrid_ping_tasks.append((svc_info, ping_ed))
                 elif d_name == "EasyNews":
                     pwd = cfg.get("easynews_password")
-                    def ping_en(u=tok, p=pwd):
+                    def ping_en(u=tok, p=pwd, info=svc_info):
                         r = requests.get("https://account.easynews.com/editinfo.php", auth=(u, p), timeout=4)
                         return r.status_code == 200, f"HTTP {r.status_code}"
-                    debrid_ping_tasks.append(({"id": "easynews", "name": d_name, "enabled": en, "priority": prio_val}, ping_en))
+                    debrid_ping_tasks.append((svc_info, ping_en))
 
             def run_all_pings():
                 def execute_one(item):
@@ -1983,9 +2414,10 @@ def app_factory(
                 return srv_res, deb_res
 
             srv_results, deb_results = await asyncio.to_thread(run_all_pings)
-            deb_results.sort(key=lambda x: x.get("priority", 10))
+            all_debrid = deb_results + unconfigured_debrids
+            all_debrid.sort(key=lambda x: x.get("priority", 10))
             diag["services"] = srv_results
-            diag["debrid_services"] = deb_results
+            diag["debrid_services"] = all_debrid
 
             for s in diag["services"]:
                 diag["connectivity"][s["id"]] = {
@@ -2077,6 +2509,10 @@ def app_factory(
             diag["platforms"]["fanart"] = {
                 "authorized": is_fanart_auth,
                 "has_api_key": is_fanart_auth
+            }
+            diag["platforms"]["aiostreams"] = {
+                "authorized": is_aio_auth,
+                "username": aio_u if is_aio_auth else "Not configured"
             }
 
             # Scraper DB Metrics

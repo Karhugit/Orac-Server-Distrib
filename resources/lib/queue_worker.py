@@ -56,7 +56,18 @@ class UpdateQueueWorker:
 
     def process_queue_once(self):
         if self.movies_dynamic_db_path and self.tvshows_dynamic_db_path:
-             from resources.lib.sync_engine import bulk_sync_history
+             from resources.lib.sync_engine import sync_providers_sync, bulk_sync_history
+             try:
+                 sync_providers_sync(
+                     self.movies_dynamic_db_path,
+                     self.tvshows_dynamic_db_path,
+                     self.trakt_auth,
+                     self.config_db_path,
+                     tvshows_static_db=self.tvshows_static_db,
+                     force=False
+                 )
+             except Exception as e:
+                 log(f"[Queue] Error running provider sync in processor: {e}", level=LOGERROR)
              try:
                  bulk_sync_history(self.movies_dynamic_db_path, self.tvshows_dynamic_db_path, self.trakt_auth, self.config_db_path, self.tvshows_static_db)
              except Exception as e:
@@ -76,6 +87,8 @@ class UpdateQueueWorker:
         def handle_row(row_data):
             row = dict(row_data)
             row['payload'] = json.loads(row['payload']) if row['payload'] else {}
+            provider = (row.get('provider') or row['payload'].get('source') or 'trakt').lower()
+            update_type = row.get('update_type') or row['payload'].get('update_type')
 
             if row['status'] == 'retry':
                 number_of_attempts = row.get('attempts', 0) + 1
