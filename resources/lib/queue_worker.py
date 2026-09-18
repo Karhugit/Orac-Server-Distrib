@@ -56,7 +56,7 @@ class UpdateQueueWorker:
 
     def process_queue_once(self):
         if self.movies_dynamic_db_path and self.tvshows_dynamic_db_path:
-             from resources.lib.sync_engine import sync_providers_sync, bulk_sync_history
+             from resources.lib.sync_engine import sync_providers_sync, bulk_sync_history, bulk_sync_dropped
              try:
                  sync_providers_sync(
                      self.movies_dynamic_db_path,
@@ -72,6 +72,10 @@ class UpdateQueueWorker:
                  bulk_sync_history(self.movies_dynamic_db_path, self.tvshows_dynamic_db_path, self.trakt_auth, self.config_db_path, self.tvshows_static_db)
              except Exception as e:
                  log(f"[Queue] Error running bulk status sync in processor: {e}", level=LOGERROR)
+             try:
+                 bulk_sync_dropped(self.tvshows_static_db, self.trakt_auth, self.config_db_path)
+             except Exception as e:
+                 log(f"[Queue] Error running bulk dropped sync in processor: {e}", level=LOGERROR)
                  
         conn = self.db_manager.get_connection(self.db)
         conn.row_factory = sqlite3.Row
@@ -366,65 +370,16 @@ class UpdateQueueWorker:
 
 
     def drop_show(self, row):
-        # The payload contains {"shows": [{"ids": {"trakt": 12345, "tmdb": 67890}}]}
-        # Note: We need the TMDB id for Simkl ideally, but we can try to extract it from the local DB if needed.
-        # Let's extract what we have
-        shows = row['payload'].get('shows', [])
-        if not shows:
-            return
-
-        # 1. Update Trakt
-        # Trakt endpoint: POST /users/hidden/dropped
-        # Payload format is the same: {"shows": [{"ids": {"trakt": id}}]}
-        log(f"[Queue] Marking show as dropped on Trakt: {row['payload']}")
-        response = self.trakt_auth.post("/users/hidden/dropped", json={"shows": shows})
-        if response.status_code not in (200, 201):
-            log(f"[Queue] Failed to mark show as dropped on Trakt: {response.status_code}")
-            # we do not fail the whole row if Simkl succeeds or fails, just log it.
-        else:
-            log("[Queue] Successfully marked show as dropped on Trakt")
-            
-        # 2. Update Simkl
-        # To get the tmdb id we might need to query the database since `watched.py` only queued the Trakt ID.
-        # But wait, we can just look up the TMDB id if it's not in the payload.
-        # We can extract the Trakt ID and look up its TMDB ID in the shows table.
-        show_trakt_id = shows[0].get("ids", {}).get("trakt")
-        if show_trakt_id:
-            show_tmdb_id = None
-            with db_connect(self.tvshows_static_db) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT tmdb_id FROM shows WHERE show_trakt_id = ?", (show_trakt_id,))
-                row_db = cursor.fetchone()
-                if row_db:
-                    show_tmdb_id = row_db[0]
-            
-            if show_tmdb_id:
-                simkl_token = get_config_value("simkl.token", self.config_db_path)
-                simkl_client = get_config_value("simkl.client", self.config_db_path)
-                if simkl_token and simkl_client:
-                    headers = {
-                        'Content-Type': 'application/json',
-                        'simkl-api-key': simkl_client,
-                        'Authorization': f'Bearer {simkl_token}'
-                    }
-                    simkl_payload = {
-                        "shows": [
-                            {
-                                "ids": {"tmdb": show_tmdb_id},
-                                "status": "dropped"
-                            }
-                        ]
-                    }
-                    log(f"[Queue] Marking show {show_tmdb_id} as dropped on Simkl")
-                    import requests
-                    try:
-                        resp = requests.post("https://api.simkl.com/sync/add-items", json=simkl_payload, headers=headers, timeout=20)
-                        if resp.status_code not in (200, 201):
-                            log(f"[Queue] Failed to drop show on Simkl: {resp.status_code} - {resp.text}", level=LOGERROR)
-                        else:
-                            log("[Queue] Successfully dropped show on Simkl")
-                    except Exception as e:
-                        log(f"[Queue] Simkl drop request failed: {e}", level=LOGERROR)
+        # The payload contains {"shows": [{"ids": {"trakt": 12345}}]}
+        # bulk_sync_dropped handles pushing to all authorized providers using local DB
+        # This queue entry may exist for legacy compatibility — just run bulk_sync_dropped to ensure sync
+        log(f"[Queue] Processing drop_show queue entry: {row.get('payload', {})}")
+        try:
+            from resources.lib.sync_engine import bulk_sync_dropped
+            bulk_sync_dropped(self.tvshows_static_db, self.trakt_auth, self.config_db_path)
+        except Exception as e:
+            log(f"[Queue] Error running bulk_sync_dropped for drop_show: {e}", level=LOGERROR)
+            raise
 
 
     # Slugs that map to Trakt's dedicated /sync/collection endpoint.

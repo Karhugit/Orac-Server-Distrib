@@ -532,6 +532,21 @@ def sync_providers_sync(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, co
             except Exception as e:
                 log(f"[Sync Engine] Failed to persist activities timestamps: {e}", level=LOGWARNING)
 
+        # 7. Fetch dropped shows from each authorized provider
+        if tvshows_static_db:
+            try:
+                from resources.lib.config_handler import get_authorized_watched_providers
+                authed_providers = get_authorized_watched_providers(config_db_path) if config_db_path else []
+                log("[Sync Engine] Checking for dropped show changes across providers...", level=LOGINFO)
+                trakt_dropped = fetch_trakt_dropped(trakt_handler, config_db_path, force=force) if has_trakt else set()
+                simkl_dropped = fetch_simkl_dropped(config_db_path, force=force) if 'simkl' in authed_providers else set()
+                mdblist_dropped = fetch_mdblist_dropped(config_db_path) if 'mdblist' in authed_providers else set()
+
+                reconcile_dropped_shows(tvshows_static_db, trakt_dropped, simkl_dropped, mdblist_dropped, config_db_path)
+                bulk_sync_dropped(tvshows_static_db, trakt_handler, config_db_path)
+            except Exception as e:
+                log(f"[Sync Engine] Error in dropped show sync cycle: {e}", level=LOGERROR)
+
     finally:
         _sync_engine_lock.release()
 
@@ -813,4 +828,377 @@ def send_batch_to_mdblist(config_db_path, payload):
         log(f"[Sync Engine] MDBList batch error: {resp.status_code} - {resp.text}", level=LOGERROR)
     except Exception as e:
         log(f"[Sync Engine] MDBList batch exception: {e}", level=LOGERROR)
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Dropped-show sync helpers
+# ---------------------------------------------------------------------------
+
+def _ensure_dropped_sync_columns(tvshows_static_db):
+    """Add per-provider dropped-sync timestamp columns if they don't exist."""
+    cols = [
+        "trakt_dropped_synced_at",
+        "simkl_dropped_synced_at",
+        "mdblist_dropped_synced_at",
+    ]
+    try:
+        with db_connect(tvshows_static_db) as conn:
+            for col in cols:
+                try:
+                    conn.execute(f"ALTER TABLE shows ADD COLUMN {col} TEXT")
+                except Exception:
+                    pass  # Column already exists
+            conn.commit()
+    except Exception as e:
+        log(f"[Sync Engine] Could not ensure dropped sync columns: {e}", level=LOGWARNING)
+
+
+def fetch_trakt_dropped(trakt_handler, config_db_path, force=False):
+    """
+    Fetch shows the user has marked as dropped on Trakt.
+    Returns a set of TMDB IDs (integers).
+    """
+    from resources.lib.config_handler import get_trakt_access_token, get_trakt_client_id, get_config_value, update_config_values
+    if not trakt_handler:
+        return set()
+    token = get_trakt_access_token(config_db_path) if config_db_path else None
+    client = get_trakt_client_id(config_db_path) if config_db_path else None
+    if not token or not client or token == "empty_setting":
+        return set()
+
+    dropped_tmdb_ids = set()
+    PAGE_SIZE = 250
+    try:
+        # Activity-based change detection
+        if not force and config_db_path:
+            la_resp = trakt_handler._get("/sync/last_activities", authenticated=True)
+            if la_resp and la_resp.status_code == 200:
+                la_data = la_resp.json()
+                remote_dropped_at = la_data.get("shows", {}).get("hidden_at", "")
+                local_dropped_at = get_config_value("trakt_shows_dropped_synced_at", config_db_path, "")
+                if remote_dropped_at and local_dropped_at and remote_dropped_at <= local_dropped_at:
+                    log("[Sync Engine] Trakt dropped shows unchanged — skipping fetch.", level=LOGINFO)
+                    return set()
+
+        page = 1
+        while True:
+            resp = trakt_handler._get(
+                f"/users/hidden/dropped?type=shows&limit={PAGE_SIZE}&page={page}",
+                authenticated=True
+            )
+            if not resp or resp.status_code != 200:
+                log(f"[Sync Engine] Trakt dropped shows page {page} failed: "
+                    f"{resp.status_code if resp else 'no response'}", level=LOGWARNING)
+                break
+            items = resp.json()
+            for item in items:
+                tmdb_id = item.get("show", {}).get("ids", {}).get("tmdb")
+                if tmdb_id:
+                    dropped_tmdb_ids.add(int(tmdb_id))
+            total_pages = int(resp.headers.get("X-Pagination-Page-Count", 1))
+            if page >= total_pages:
+                break
+            page += 1
+
+        log(f"[Sync Engine] Trakt dropped shows fetched: {len(dropped_tmdb_ids)}", level=LOGINFO)
+    except Exception as e:
+        log(f"[Sync Engine] Error fetching Trakt dropped shows: {e}", level=LOGERROR)
+    return dropped_tmdb_ids
+
+
+def fetch_simkl_dropped(config_db_path, force=False):
+    """
+    Fetch shows the user has marked as dropped on Simkl.
+    Returns a set of TMDB IDs (integers).
+    """
+    from resources.lib.config_handler import get_config_value
+    token = get_config_value("simkl.token", config_db_path)
+    client_id = get_config_value("simkl.client", config_db_path)
+    if not token or not client_id or token == "empty_setting" or client_id == "empty_setting":
+        return set()
+
+    headers = {
+        'Content-Type': 'application/json',
+        'simkl-api-key': client_id,
+        'Authorization': f'Bearer {token}'
+    }
+
+    # Activity-based change detection
+    if not force and config_db_path:
+        try:
+            act_resp = requests.get('https://api.simkl.com/sync/activities', headers=headers, timeout=15)
+            if act_resp.status_code == 200:
+                act_data = act_resp.json()
+                remote_dropped_at = act_data.get("tv_shows", {}).get("dropped", "") or ""
+                local_dropped_at = get_config_value("simkl_tv_dropped_synced_at", config_db_path, "")
+                if remote_dropped_at and local_dropped_at and remote_dropped_at <= local_dropped_at:
+                    log("[Sync Engine] Simkl dropped shows unchanged — skipping fetch.", level=LOGINFO)
+                    return set()
+        except Exception as e:
+            log(f"[Sync Engine] Simkl activities check for dropped failed: {e}", level=LOGWARNING)
+
+    dropped_tmdb_ids = set()
+    try:
+        resp = requests.get('https://api.simkl.com/sync/all-items?extended=full', headers=headers, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        for show in data.get('shows', []):
+            if show.get('status') == 'dropped':
+                tmdb_id = show.get('show', {}).get('ids', {}).get('tmdb')
+                if tmdb_id:
+                    dropped_tmdb_ids.add(int(tmdb_id))
+        log(f"[Sync Engine] Simkl dropped shows fetched: {len(dropped_tmdb_ids)}", level=LOGINFO)
+    except Exception as e:
+        log(f"[Sync Engine] Error fetching Simkl dropped shows: {e}", level=LOGERROR)
+    return dropped_tmdb_ids
+
+
+def fetch_mdblist_dropped(config_db_path):
+    """
+    Fetch shows the user has marked as dropped on MDBList.
+    Returns a set of TMDB IDs (integers).
+    """
+    from resources.lib.config_handler import get_config_value
+    api_key = get_config_value("mdblist_api", config_db_path)
+    if not api_key or api_key == "empty_setting":
+        return set()
+
+    dropped_tmdb_ids = set()
+    try:
+        url = f"https://api.mdblist.com/sync/dropped?apikey={api_key}"
+        resp = requests.get(url, timeout=20)
+        if resp.status_code == 200:
+            data = resp.json()
+            for item in data.get('shows', []) if isinstance(data, dict) else (data if isinstance(data, list) else []):
+                # MDBList may return list of items or dict with 'shows' key
+                show_obj = item.get('show', item) if isinstance(item, dict) else {}
+                tmdb_id = show_obj.get('ids', {}).get('tmdb') if show_obj else None
+                if tmdb_id:
+                    dropped_tmdb_ids.add(int(tmdb_id))
+            log(f"[Sync Engine] MDBList dropped shows fetched: {len(dropped_tmdb_ids)}", level=LOGINFO)
+        elif resp.status_code == 404:
+            log("[Sync Engine] MDBList dropped endpoint not found (beta) — skipping.", level=LOGDEBUG)
+        else:
+            log(f"[Sync Engine] MDBList dropped fetch failed: {resp.status_code}", level=LOGWARNING)
+    except Exception as e:
+        log(f"[Sync Engine] Error fetching MDBList dropped shows: {e}", level=LOGERROR)
+    return dropped_tmdb_ids
+
+
+def reconcile_dropped_shows(tvshows_static_db, trakt_dropped, simkl_dropped, mdblist_dropped, config_db_path=None):
+    """
+    Reconciles dropped show status from all providers into the local static DB.
+    - Sets dropped=1 for any show that is dropped on any authorized provider
+    - Clears dropped sync timestamps so bulk_sync_dropped will push to remaining providers
+    Returns the set of show_tmdb_ids newly marked as dropped (for immediate push).
+    """
+    from resources.lib.config_handler import get_authorized_watched_providers
+    authed = get_authorized_watched_providers(config_db_path) if config_db_path else []
+
+    all_provider_dropped = set()
+    if 'trakt' in authed:
+        all_provider_dropped |= trakt_dropped
+    if 'simkl' in authed:
+        all_provider_dropped |= simkl_dropped
+    if 'mdblist' in authed:
+        all_provider_dropped |= mdblist_dropped
+
+    if not all_provider_dropped:
+        log("[Sync Engine] No dropped shows from providers to reconcile.", level=LOGDEBUG)
+        return set()
+
+    newly_dropped = set()
+    try:
+        _ensure_dropped_sync_columns(tvshows_static_db)
+        with db_connect(tvshows_static_db) as conn:
+            cursor = conn.cursor()
+            # Fetch current dropped state for shows that are provider-dropped
+            placeholders = ','.join(['?'] * len(all_provider_dropped))
+            cursor.execute(
+                f"SELECT show_tmdb_id, dropped, trakt_dropped_synced_at, simkl_dropped_synced_at, mdblist_dropped_synced_at "
+                f"FROM shows WHERE show_tmdb_id IN ({placeholders})",
+                list(all_provider_dropped)
+            )
+            existing = {r[0]: r for r in cursor.fetchall()}
+
+            now_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+            for tmdb_id in all_provider_dropped:
+                row = existing.get(tmdb_id)
+                if row is None:
+                    # Show not in local DB yet — skip (will be reconciled when it's added)
+                    continue
+                was_dropped = row[1]
+                if not was_dropped:
+                    # Newly dropped from a provider — mark locally
+                    newly_dropped.add(tmdb_id)
+                    # Set dropped=1 and clear sync timestamps for providers that didn't report the drop
+                    # so bulk_sync_dropped will push to them
+                    trakt_ts = now_str if tmdb_id in trakt_dropped else None
+                    simkl_ts = now_str if tmdb_id in simkl_dropped else None
+                    mdblist_ts = now_str if tmdb_id in mdblist_dropped else None
+                    conn.execute(
+                        "UPDATE shows SET dropped = 1, trakt_dropped_synced_at = ?, simkl_dropped_synced_at = ?, mdblist_dropped_synced_at = ? "
+                        "WHERE show_tmdb_id = ?",
+                        (trakt_ts, simkl_ts, mdblist_ts, tmdb_id)
+                    )
+                    log(f"[Sync Engine] Show {tmdb_id} marked as dropped from provider (trakt={tmdb_id in trakt_dropped}, simkl={tmdb_id in simkl_dropped}, mdblist={tmdb_id in mdblist_dropped})", level=LOGINFO)
+
+            conn.commit()
+
+        log(f"[Sync Engine] Dropped show reconciliation complete: {len(newly_dropped)} newly dropped.", level=LOGINFO)
+    except Exception as e:
+        log(f"[Sync Engine] Error reconciling dropped shows: {e}", level=LOGERROR)
+    return newly_dropped
+
+
+def bulk_sync_dropped(tvshows_static_db, trakt_handler, config_db_path):
+    """
+    Pushes any locally dropped shows to providers that haven't been synced yet.
+    Reads shows where dropped=1 and *_dropped_synced_at IS NULL for each provider.
+    """
+    from resources.lib.config_handler import get_authorized_watched_providers, update_config_values
+    authed = get_authorized_watched_providers(config_db_path) if config_db_path else []
+    has_trakt = 'trakt' in authed and bool(trakt_handler)
+    has_simkl = 'simkl' in authed
+    has_mdblist = 'mdblist' in authed
+
+    if not (has_trakt or has_simkl or has_mdblist):
+        return
+
+    _ensure_dropped_sync_columns(tvshows_static_db)
+
+    try:
+        with db_connect(tvshows_static_db) as conn:
+            cursor = conn.cursor()
+            now_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+            # --- Trakt ---
+            if has_trakt:
+                cursor.execute(
+                    "SELECT show_tmdb_id, show_trakt_id FROM shows WHERE dropped = 1 AND (trakt_dropped_synced_at IS NULL OR trakt_dropped_synced_at = '')"
+                )
+                trakt_rows = cursor.fetchall()
+                if trakt_rows:
+                    shows_payload = [{"ids": {"tmdb": r[0], "trakt": r[1]}} for r in trakt_rows if r[1]]
+                    no_trakt_id = [r[0] for r in trakt_rows if not r[1]]
+                    if no_trakt_id:
+                        log(f"[Sync Engine] {len(no_trakt_id)} dropped shows have no Trakt ID, will try TMDB-only", level=LOGDEBUG)
+                        shows_payload += [{"ids": {"tmdb": sid}} for sid in no_trakt_id]
+                    if shows_payload and send_drop_to_trakt(trakt_handler, shows_payload):
+                        synced_ids = [r[0] for r in trakt_rows]
+                        conn.executemany(
+                            "UPDATE shows SET trakt_dropped_synced_at = ? WHERE show_tmdb_id = ?",
+                            [(now_str, sid) for sid in synced_ids]
+                        )
+                        log(f"[Sync Engine] Pushed {len(synced_ids)} dropped shows to Trakt.", level=LOGINFO)
+
+            # --- Simkl ---
+            if has_simkl:
+                cursor.execute(
+                    "SELECT show_tmdb_id FROM shows WHERE dropped = 1 AND (simkl_dropped_synced_at IS NULL OR simkl_dropped_synced_at = '')"
+                )
+                simkl_rows = cursor.fetchall()
+                if simkl_rows:
+                    shows_payload = [{"ids": {"tmdb": r[0]}, "status": "dropped"} for r in simkl_rows]
+                    if send_drop_to_simkl(config_db_path, shows_payload):
+                        conn.executemany(
+                            "UPDATE shows SET simkl_dropped_synced_at = ? WHERE show_tmdb_id = ?",
+                            [(now_str, r[0]) for r in simkl_rows]
+                        )
+                        log(f"[Sync Engine] Pushed {len(simkl_rows)} dropped shows to Simkl.", level=LOGINFO)
+
+            # --- MDBList ---
+            if has_mdblist:
+                cursor.execute(
+                    "SELECT show_tmdb_id FROM shows WHERE dropped = 1 AND (mdblist_dropped_synced_at IS NULL OR mdblist_dropped_synced_at = '')"
+                )
+                mdblist_rows = cursor.fetchall()
+                if mdblist_rows:
+                    shows_payload = [{"ids": {"tmdb": r[0]}} for r in mdblist_rows]
+                    if send_drop_to_mdblist_dropped(config_db_path, shows_payload):
+                        conn.executemany(
+                            "UPDATE shows SET mdblist_dropped_synced_at = ? WHERE show_tmdb_id = ?",
+                            [(now_str, r[0]) for r in mdblist_rows]
+                        )
+                        log(f"[Sync Engine] Pushed {len(mdblist_rows)} dropped shows to MDBList.", level=LOGINFO)
+
+            conn.commit()
+
+    except Exception as e:
+        log(f"[Sync Engine] Error in bulk_sync_dropped: {e}", level=LOGERROR)
+
+
+def send_drop_to_trakt(trakt_handler, show_items):
+    """
+    Push a list of shows as dropped to Trakt.
+    show_items: list of {"ids": {"tmdb": ..., "trakt": ...}} dicts.
+    Returns True on success.
+    """
+    if not trakt_handler or not show_items:
+        return False
+    payload = {"shows": show_items}
+    log(f"[Sync Engine] Pushing {len(show_items)} dropped show(s) to Trakt.", level=LOGINFO)
+    try:
+        resp = trakt_handler.post("/users/hidden/dropped", json=payload)
+        if resp and resp.status_code in (200, 201, 204):
+            return True
+        log(f"[Sync Engine] Trakt drop push failed: {resp.status_code if resp else 'no response'} - {resp.text if resp else ''}", level=LOGERROR)
+    except Exception as e:
+        log(f"[Sync Engine] Trakt drop push exception: {e}", level=LOGERROR)
+    return False
+
+
+def send_drop_to_simkl(config_db_path, show_items):
+    """
+    Push a list of shows as dropped to Simkl via POST /sync/add-items.
+    show_items: list of {"ids": {"tmdb": ...}, "status": "dropped"} dicts.
+    Returns True on success.
+    """
+    from resources.lib.config_handler import get_config_value
+    token = get_config_value("simkl.token", config_db_path)
+    client_id = get_config_value("simkl.client", config_db_path)
+    if not token or not client_id or not show_items:
+        return False
+    headers = {
+        'Content-Type': 'application/json',
+        'simkl-api-key': client_id,
+        'Authorization': f'Bearer {token}'
+    }
+    payload = {"shows": show_items}
+    log(f"[Sync Engine] Pushing {len(show_items)} dropped show(s) to Simkl.", level=LOGINFO)
+    try:
+        resp = requests.post('https://api.simkl.com/sync/add-items', headers=headers, json=payload, timeout=20)
+        if resp.status_code in (200, 201, 204):
+            return True
+        log(f"[Sync Engine] Simkl drop push failed: {resp.status_code} - {resp.text}", level=LOGERROR)
+    except Exception as e:
+        log(f"[Sync Engine] Simkl drop push exception: {e}", level=LOGERROR)
+    return False
+
+
+def send_drop_to_mdblist_dropped(config_db_path, show_items):
+    """
+    Push a list of shows as dropped to MDBList via POST /sync/dropped (beta).
+    show_items: list of {"ids": {"tmdb": ...}} dicts.
+    Returns True on success.
+    """
+    from resources.lib.config_handler import get_config_value
+    api_key = get_config_value("mdblist_api", config_db_path)
+    if not api_key or api_key == "empty_setting" or not show_items:
+        return False
+    payload = {"shows": show_items}
+    log(f"[Sync Engine] Pushing {len(show_items)} dropped show(s) to MDBList.", level=LOGINFO)
+    try:
+        url = f"https://api.mdblist.com/sync/dropped?apikey={api_key}"
+        resp = requests.post(url, json=payload, timeout=20)
+        if resp.status_code in (200, 201, 204):
+            return True
+        if resp.status_code == 404:
+            log("[Sync Engine] MDBList dropped endpoint not found (beta feature) — skipping.", level=LOGDEBUG)
+            return True  # Don't block sync if endpoint not available
+        log(f"[Sync Engine] MDBList drop push failed: {resp.status_code} - {resp.text}", level=LOGERROR)
+    except Exception as e:
+        log(f"[Sync Engine] MDBList drop push exception: {e}", level=LOGERROR)
     return False

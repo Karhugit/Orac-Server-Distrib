@@ -855,56 +855,56 @@ def mark_tvshow_watched(static_db_path, dynamic_db_path, trakt_queue_path, trakt
         log(f"[Orac] Error in mark_tvshow_watched: {e}", level=LOGERROR)
         return False
 
-def drop_tvshow(static_db_path, dynamic_db_path, trakt_queue_path, trakt_handler, show_tmdb_id, username):
+def drop_tvshow(static_db_path, dynamic_db_path, trakt_queue_path, trakt_handler, show_tmdb_id, username, config_db_path=None):
     """
     Mark a TV show as dropped.
-    1. Updates local database to set dropped=1
-    2. Queues a request to Trakt to add it to hidden/dropped items
-    3. Simkl bulk sync or list sync should handle dropped status, but we will add an immediate job for Simkl or Trakt if Orac supports it.
+    1. Updates local database to set dropped=1 and clears per-provider sync timestamps
+    2. Immediately pushes the dropped status to all authorized providers via bulk_sync_dropped
     """
     try:
-        with db_connect(static_db_path) as static_conn, \
-             db_connect(trakt_queue_path) as trakt_queue_conn:
-            
+        with db_connect(static_db_path) as static_conn:
             static_cursor = static_conn.cursor()
-            trakt_queue_cursor = trakt_queue_conn.cursor()
 
-            # Step 1: Find the show's Trakt ID
+            # Step 1: Verify the show exists
             static_cursor.execute("SELECT show_trakt_id FROM shows WHERE show_tmdb_id = ?", (show_tmdb_id,))
             row = static_cursor.fetchone()
             if not row:
                 log(f"[Orac] Could not find TV show {show_tmdb_id} in static database to drop", level=LOGWARNING)
                 return False
-            show_trakt_id = row[0]
 
-            # Step 2: Mark as dropped in the static db
-            try:
-                static_cursor.execute("ALTER TABLE shows ADD COLUMN dropped INTEGER DEFAULT 0")
-            except sqlite3.OperationalError:
-                pass  # Column already exists
-                
-            static_cursor.execute("UPDATE shows SET dropped = 1 WHERE show_tmdb_id = ?", (show_tmdb_id,))
+            # Step 2: Ensure dropped column and new per-provider sync columns exist
+            for col_def in [
+                "dropped INTEGER DEFAULT 0",
+                "trakt_dropped_synced_at TEXT",
+                "simkl_dropped_synced_at TEXT",
+                "mdblist_dropped_synced_at TEXT",
+            ]:
+                try:
+                    static_cursor.execute(f"ALTER TABLE shows ADD COLUMN {col_def}")
+                except Exception:
+                    pass  # Column already exists
+
+            # Step 3: Mark as dropped, clearing all provider sync timestamps so bulk_sync_dropped will push
+            static_cursor.execute(
+                "UPDATE shows SET dropped = 1, trakt_dropped_synced_at = NULL, simkl_dropped_synced_at = NULL, mdblist_dropped_synced_at = NULL "
+                "WHERE show_tmdb_id = ?",
+                (show_tmdb_id,)
+            )
             static_conn.commit()
+            log(f"[Orac] Successfully marked TV show {show_tmdb_id} as dropped in local DB", level=LOGINFO)
 
-            # Step 3: Queue Trakt update
-            if show_trakt_id is not None and (not isinstance(show_trakt_id, int) or show_trakt_id >= 0):
-                payload = {
-                    "update_type": "drop_show",
-                    "shows": [{"ids": {"trakt": show_trakt_id}}]
-                }
-                trakt_queue_cursor.execute("""
-                    INSERT INTO update_queue (trakt_id, update_type, payload, status, media_type)
-                    VALUES (?, ?, ?, 'pending', ?)
-                """, (show_trakt_id, 'drop_show', json.dumps(payload), 'show'))
-                trakt_queue_conn.commit()
-            else:
-                log(f"[Orac] Skipping Trakt drop show sync for show {show_tmdb_id} (no valid Trakt ID available)", level=LOGINFO)
-            log(f"[Orac] Successfully marked TV show {show_tmdb_id} as dropped", level=LOGINFO)
+        # Step 4: Immediately push to all authorized providers
+        if config_db_path:
+            try:
+                from resources.lib.sync_engine import bulk_sync_dropped
+                bulk_sync_dropped(static_db_path, trakt_handler, config_db_path)
+            except Exception as e:
+                log(f"[Orac] Error pushing dropped show {show_tmdb_id} to providers: {e}", level=LOGERROR)
+        else:
+            log(f"[Orac] No config_db_path provided — dropped show {show_tmdb_id} will sync on next queue worker cycle", level=LOGWARNING)
 
-            # Note: The actual API push to Simkl and Trakt happens in the queue worker or sync engine.
-            # Simkl bulk sync will need to be told this is dropped, or we queue a direct Simkl push in `queue_worker.py`.
-            return True
+        return True
 
     except Exception as e:
         log(f"[Orac] Error in drop_tvshow: {e}", level=LOGERROR)
-        return False
+        return False

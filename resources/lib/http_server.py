@@ -2696,7 +2696,7 @@ def app_factory(
         if not watched_tmdb_id:
             return PlainTextResponse("Missing tmdb_id", status_code=400)
         username = await get_t_user(app)
-        drop_tvshow(app.state.tvshows_static_db_path, app.state.tvshows_dynamic_db_path, app.state.trakt_update_queue_path, app.state.trakt_handler, int(watched_tmdb_id), username=username)
+        drop_tvshow(app.state.tvshows_static_db_path, app.state.tvshows_dynamic_db_path, app.state.trakt_update_queue_path, app.state.trakt_handler, int(watched_tmdb_id), username=username, config_db_path=getattr(app.state, 'config_db_path', None))
         return Response(status_code=204)
 
     @app.put("/add_to_list")

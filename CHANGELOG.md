@@ -6,6 +6,16 @@ in-server update checker can compare against the running version.
 
 ---
 
+## [1.3.6] — 2026-09-19
+
+### Added
+- **Bidirectional Dropped Show Synchronization** — Added full bidirectional sync of dropped TV show status across Trakt, Simkl, and MDBList, with the local database (`shows` table in `tvshows_static_cache.db`) serving as the source of truth.
+- **Provider Dropped Status Ingestion** — Added `fetch_trakt_dropped`, `fetch_simkl_dropped`, and `fetch_mdblist_dropped` with delta sync change-detection via provider activity endpoints.
+- **Bulk & Immediate Dropped Sync** — Added `bulk_sync_dropped` to push locally dropped shows to all authorized providers, executed immediately upon marking a show as dropped via `/drop_tvshow` and periodically during the queue worker cycle.
+
+### Fixed
+- **Queue Worker Drop Query Column** — Fixed query in `drop_show` to reference `show_tmdb_id` instead of the non-existent `tmdb_id` column, and delegated drop processing to the multi-provider sync engine.
+
 ## [1.3.5] — 2026-09-18
 
 ### Added
