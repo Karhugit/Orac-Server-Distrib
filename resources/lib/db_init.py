@@ -193,6 +193,8 @@ def init_static_tvshows_db(db_path=None, conn=None):
                 episode_thumbnail_path TEXT,  -- Path to thumbnail image
                 episode_clearlogo_path TEXT,  -- Path to clear logo image
                 episode_landscape_path TEXT,  -- Path to landscape image
+                intro TEXT,  -- Intro segment timestamps (JSON)
+                outro TEXT,  -- Outro segment timestamps (JSON)
                 FOREIGN KEY(show_id) REFERENCES shows(show_tmdb_id)
             );
         """)

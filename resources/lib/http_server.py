@@ -48,6 +48,7 @@ from .collections_handler import handle_collections_request
 from .providers_handler import init_watch_providers_db, sync_watch_providers, get_watch_providers
 from .version import __version__
 from .update_checker import check_for_update, get_update_state
+from .simkl_api import get_simkl_params, get_simkl_headers, simkl_get, simkl_post
 
 def _vacuum_database(db_path, db_manager=None):
     if not db_path:
@@ -847,6 +848,29 @@ def app_factory(
         asyncio.create_task(_run_watched_sync())
         return JSONResponse(status_code=200, content={"status": "started", "message": "Watched synchronization started"})
 
+    @app.get("/sync_introdb")
+    async def sync_introdb_route(request: Request):
+        query = parse_qs_fastapi(request)
+        limit_val = query.get("limit", [500])[0]
+        try:
+            max_episodes = int(limit_val)
+        except (ValueError, TypeError):
+            max_episodes = 500
+        from resources.lib.introdb_client import sync_introdb_segments
+        async def _run_introdb_sync():
+            try:
+                await asyncio.to_thread(
+                    sync_introdb_segments,
+                    app.state.tvshows_static_db_path,
+                    tmdb_handler=app.state.tmdb_handler,
+                    max_episodes=max_episodes,
+                    dynamic_db_path=app.state.tvshows_dynamic_db_path
+                )
+            except Exception as e:
+                log(f"[Orac] Error running on-demand IntroDB sync: {e}", level=LOGERROR)
+        asyncio.create_task(_run_introdb_sync())
+        return JSONResponse(status_code=200, content={"status": "started", "message": f"IntroDB segment sync started (limit={max_episodes})"})
+
     @app.get("/tags")
     async def get_tags_h(request: Request):
         query = parse_qs_fastapi(request)
@@ -1258,7 +1282,7 @@ def app_factory(
                 client_id = "8cdf2298c78dd4ff8cb8039faecd1b9f11cf108fac2b88092abd15c22cfe2cc2"
 
             url = "https://api.simkl.com/oauth/pin"
-            resp = requests.get(url, params={"client_id": client_id}, timeout=10)
+            resp = simkl_get(url, params=get_simkl_params(client_id), headers=get_simkl_headers(), timeout=10)
             if resp.status_code != 200:
                 return JSONResponse(status_code=400, content={"success": False, "error": f"Simkl error ({resp.status_code}): Failed to get device PIN"})
 
@@ -1292,7 +1316,7 @@ def app_factory(
                 client_id = "8cdf2298c78dd4ff8cb8039faecd1b9f11cf108fac2b88092abd15c22cfe2cc2"
 
             url = f"https://api.simkl.com/oauth/pin/{user_code}"
-            resp = requests.get(url, params={"client_id": client_id}, timeout=10)
+            resp = simkl_get(url, params=get_simkl_params(client_id), headers=get_simkl_headers(), timeout=10)
             if resp.status_code != 200:
                 return JSONResponse(status_code=200, content={"success": False, "status": "pending", "error": "Not yet approved on Simkl"})
 
@@ -1304,12 +1328,8 @@ def app_factory(
 
             # Fetch account settings to get username
             settings_url = "https://api.simkl.com/users/settings"
-            headers = {
-                "Content-Type": "application/json",
-                "simkl-api-key": client_id,
-                "Authorization": f"Bearer {access_token}"
-            }
-            user_resp = requests.get(settings_url, headers=headers, timeout=10)
+            headers = get_simkl_headers(token=access_token, client_id=client_id)
+            user_resp = simkl_get(settings_url, params=get_simkl_params(client_id), headers=headers, timeout=10)
             username = "simkl_user"
             if user_resp.status_code == 200:
                 user_data = user_resp.json()
@@ -2224,9 +2244,10 @@ def app_factory(
             if is_simkl_auth:
                 s_cid = cfg.get("simkl.client") or cfg.get("simkl.client_id") or cfg.get("simkl_client") or "4c920ba05273be800e843c0a2a4c148e1a17adbbba14c441bc3861214088a296"
                 def ping_simkl():
-                    r = requests.get(
+                    r = simkl_get(
                         "https://api.simkl.com/sync/all-items",
-                        headers={"Content-Type": "application/json", "simkl-api-key": s_cid, "Authorization": f"Bearer {simkl_t}"},
+                        params=get_simkl_params(s_cid),
+                        headers=get_simkl_headers(token=simkl_t, client_id=s_cid),
                         timeout=4
                     )
                     return r.status_code == 200, f"HTTP {r.status_code}"

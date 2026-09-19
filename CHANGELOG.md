@@ -4,7 +4,16 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
----
+## [1.3.7] — 2026-09-20
+
+### Added
+- **IntroDB Episode Segment Timestamps** — Added migration v3 to store IntroDB intro and outro segment start/end timestamps in `tvshows_static_cache.db`. Added background hourly sync for active TV shows and exposed native `intro` (`{start, end}`) and `outro` dictionaries in `/show`, `/shows`, and `/next_episodes` API responses for player skip support in Liberator.
+- **TMDb External IDs Resolution** — Added `get_show_external_ids` to `TMDbAPI` to robustly resolve and backfill IMDb and TVDB IDs for TV shows lacking them, maximizing IntroDB segment match rates.
+- **Simkl API Conventions & Headers** — Standardized all Simkl API requests with required headers (`User-Agent`, `Content-Type`, `simkl-api-key`, `Authorization`) and query parameters (`client_id`, `app-name`, `app-version`) per official Simkl conventions.
+- **Two-Phase Simkl Continuous Delta Sync** — Implemented Simkl continuous delta sync using `/sync/activities` change-detection and `date_from` timestamp watermarks, downloading only changed delta items rather than full history. Optimized dropped and plan-to-watch sync using scoped `ids_only` endpoints.
+
+### Changed
+- **Provider Sync Frequency Throttled** — Reduced background provider sync (Trakt, Simkl, MDBList inbound history and dropped checks) in `UpdateQueueWorker` from every 5 minutes to once every hour (3600s), while preserving the 5-minute loop for immediate local outbound queue processing.
 
 ## [1.3.6] — 2026-09-19
 

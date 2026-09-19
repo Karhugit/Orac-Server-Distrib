@@ -406,31 +406,66 @@ def insert_episode_combined(cursor, trakt_episode_data, tmdb_episode_data, show_
     updated_at = trakt_episode_data.get("updated_at", "")
     episode_type = trakt_episode_data.get("episode_type", "standard")
 
-    cursor.execute("""
-        INSERT OR REPLACE INTO episodes (
-            episode_trakt_id, show_id, season, episode_number, episode_title, episode_overview, air_date, slug, tmdb_id, imdb_id, tvdb_id, rating, first_aired,
-            updated_at, votes, runtime, episode_type, original_title
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        trakt_id,
-        show_tmdb_id,
-        season_number,
-        episode_number,
-        title,
-        overview,
-        air_date,
-        slug,
-        tmdb_id,
-        imdb_id,
-        tvdb_id,
-        rating,
-        first_aired,
-        updated_at,
-        votes,
-        runtime,
-        episode_type,
-        original_title
-    ))
+    try:
+        cursor.execute("""
+            INSERT OR REPLACE INTO episodes (
+                episode_trakt_id, show_id, season, episode_number, episode_title, episode_overview, air_date, slug, tmdb_id, imdb_id, tvdb_id, rating, first_aired,
+                updated_at, votes, runtime, episode_type, original_title,
+                intro, outro
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                (SELECT intro FROM episodes WHERE tmdb_id = ?),
+                (SELECT outro FROM episodes WHERE tmdb_id = ?)
+            )
+        """, (
+            trakt_id,
+            show_tmdb_id,
+            season_number,
+            episode_number,
+            title,
+            overview,
+            air_date,
+            slug,
+            tmdb_id,
+            imdb_id,
+            tvdb_id,
+            rating,
+            first_aired,
+            updated_at,
+            votes,
+            runtime,
+            episode_type,
+            original_title,
+            tmdb_id,
+            tmdb_id
+        ))
+    except sqlite3.OperationalError:
+        # Fallback if intro/outro columns do not exist yet
+        cursor.execute("""
+            INSERT OR REPLACE INTO episodes (
+                episode_trakt_id, show_id, season, episode_number, episode_title, episode_overview, air_date, slug, tmdb_id, imdb_id, tvdb_id, rating, first_aired,
+                updated_at, votes, runtime, episode_type, original_title
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            trakt_id,
+            show_tmdb_id,
+            season_number,
+            episode_number,
+            title,
+            overview,
+            air_date,
+            slug,
+            tmdb_id,
+            imdb_id,
+            tvdb_id,
+            rating,
+            first_aired,
+            updated_at,
+            votes,
+            runtime,
+            episode_type,
+            original_title
+        ))
 
 def get_discover_params_from_db(cursor, query_name, media_type=None):
     """

@@ -94,11 +94,35 @@ def migration_2_refactor_fanart_columns(static_db_path, dynamic_db_path):
         log(f"[Orac] Finished dropping deprecated columns from '{table}' table.", level=LOGINFO)
 
 
+def migration_3_add_introdb_columns(static_db_path, dynamic_db_path):
+    """
+    Migration v3: Adds intro and outro columns to the episodes table in tvshows_static_cache.db.
+    """
+    with db_connect(static_db_path) as static_conn:
+        cursor = static_conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='episodes'")
+        if not cursor.fetchone():
+            return
+
+        cursor.execute("PRAGMA table_info(episodes)")
+        existing_cols = {row[1] for row in cursor.fetchall()}
+
+        if "intro" not in existing_cols:
+            log(f"[Orac] Adding 'intro' column to episodes table in {static_db_path}...", level=LOGINFO)
+            cursor.execute("ALTER TABLE episodes ADD COLUMN intro TEXT")
+        if "outro" not in existing_cols:
+            log(f"[Orac] Adding 'outro' column to episodes table in {static_db_path}...", level=LOGINFO)
+            cursor.execute("ALTER TABLE episodes ADD COLUMN outro TEXT")
+        static_conn.commit()
+    log("[Orac] Migration v3 completed successfully.", level=LOGINFO)
+
+
 # Map version numbers to migration functions.
 # New migrations should be appended here with incremented version numbers (2, 3, etc.)
 MIGRATIONS = {
     1: migration_1_recalculate_specials,
     2: migration_2_refactor_fanart_columns,
+    3: migration_3_add_introdb_columns,
 }
 
 TARGET_VERSION = max(MIGRATIONS.keys()) if MIGRATIONS else 0

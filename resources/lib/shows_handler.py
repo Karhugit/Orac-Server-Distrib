@@ -143,6 +143,15 @@ def handle_show_request(show_tmdb_id, user, tvshows_static_db_path, tvshows_dyna
             episodes_data = static_cursor.fetchall()
             for episode_row in episodes_data:
                 episode_dict = dict(episode_row)
+                for seg_key in ('intro', 'outro'):
+                    val = episode_dict.get(seg_key)
+                    if val and isinstance(val, str):
+                        try:
+                            episode_dict[seg_key] = json.loads(val)
+                        except Exception:
+                            pass
+                    elif val == '':
+                        episode_dict[seg_key] = None
                 season_number = episode_dict['season']
                 if season_number in seasons_dict:
                     seasons_dict[season_number]['episodes'].append(episode_dict)

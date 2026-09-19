@@ -5,6 +5,7 @@ import asyncio
 from datetime import datetime
 from resources.lib.db_utils import db_connect
 from resources.lib.log_utils import log, LOGERROR, LOGINFO, LOGDEBUG, LOGWARNING
+from resources.lib.simkl_api import get_simkl_params, get_simkl_headers, simkl_get, simkl_post
 
 _sync_engine_lock = threading.Lock()
 
@@ -23,7 +24,8 @@ def _parse_timestamp(ts_str):
 def fetch_simkl_history(config_db_path, tvshows_static_db=None, force=False):
     """
     Fetches watched movies and episodes from Simkl.
-    Uses /sync/activities to skip unchanged data unless force=True.
+    Uses /sync/activities and date_from to perform continuous incremental sync per
+    https://api.simkl.org/guides/sync#phase-2-continuous-sync.
     """
     from resources.lib.config_handler import get_config_value
     token = get_config_value("simkl.token", config_db_path)
@@ -33,24 +35,30 @@ def fetch_simkl_history(config_db_path, tvshows_static_db=None, force=False):
         log("[Sync Engine] Missing Simkl credentials.", level=LOGINFO)
         return {"movies": {}, "shows": {}, "activities": {}}
         
-    headers = {
-        'Content-Type': 'application/json',
-        'simkl-api-key': client_id,
-        'Authorization': f'Bearer {token}'
-    }
+    headers = get_simkl_headers(token=token, client_id=client_id)
+    params = get_simkl_params(client_id)
     
     simkl_data = {"movies": {}, "shows": {}, "activities": {}}
     fetch_movies = True
     fetch_shows = True
     
+    stored_last_sync = get_config_value("simkl_last_sync_at", config_db_path, "")
+    if not stored_last_sync:
+        stored_last_sync = get_config_value("simkl_tv_watching_synced_at", config_db_path, "")
+
     # 1. Activity check
     try:
-        act_resp = requests.get('https://api.simkl.com/sync/activities', headers=headers, timeout=15)
+        act_resp = simkl_get('https://api.simkl.com/sync/activities', params=params, headers=headers, timeout=15)
         if act_resp.status_code == 200:
             act_data = act_resp.json()
             simkl_data["activities"] = act_data
+            act_all = act_data.get("all")
             
-            if not force and config_db_path:
+            if not force and config_db_path and stored_last_sync:
+                if act_all and act_all == stored_last_sync:
+                    log(f"[Sync Engine] Simkl watched history unchanged (watermark {stored_last_sync}) — skipping fetch.", level=LOGINFO)
+                    return simkl_data
+
                 stored_tv_watch = get_config_value("simkl_tv_watching_synced_at", config_db_path, "")
                 stored_tv_comp = get_config_value("simkl_tv_completed_synced_at", config_db_path, "")
                 stored_mov_comp = get_config_value("simkl_movies_completed_synced_at", config_db_path, "")
@@ -68,13 +76,30 @@ def fetch_simkl_history(config_db_path, tvshows_static_db=None, force=False):
                     fetch_movies = False
                     
                 if not fetch_shows and not fetch_movies:
+                    log(f"[Sync Engine] Simkl watched history unchanged — skipping fetch.", level=LOGINFO)
                     return simkl_data
     except Exception as e:
         log(f"[Sync Engine] Simkl activities check failed: {e}", level=LOGWARNING)
         
-    # 2. Full items fetch
+    # 2. Items fetch: Phase 1 Initial Sync vs Phase 2 Continuous Delta Sync
     try:
-        resp = requests.get('https://api.simkl.com/sync/all-items?extended=full', headers=headers, timeout=30)
+        if stored_last_sync and not force:
+            extra_params = {
+                "date_from": stored_last_sync,
+                "extended": "full",
+                "episode_watched_at": "yes"
+            }
+            log(f"[Sync Engine] Simkl continuous sync: fetching delta since {stored_last_sync}...", level=LOGINFO)
+        else:
+            extra_params = {
+                "extended": "full",
+                "episode_watched_at": "yes",
+                "include_all_episodes": "yes"
+            }
+            log("[Sync Engine] Simkl initial/forced sync: fetching full library baseline...", level=LOGINFO)
+
+        full_params = get_simkl_params(client_id, extra_params)
+        resp = simkl_get('https://api.simkl.com/sync/all-items', params=full_params, headers=headers, timeout=30)
         resp.raise_for_status()
         data = resp.json()
         
@@ -516,6 +541,9 @@ def sync_providers_sync(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, co
                     updates["trakt_episodes_watched_synced_at"] = _episodes_watched_at
                     
                 if simkl_act:
+                    s_all = simkl_act.get("all")
+                    if s_all:
+                        updates["simkl_last_sync_at"] = s_all
                     s_tv_watch = simkl_act.get("tv_shows", {}).get("watching")
                     s_tv_comp = simkl_act.get("tv_shows", {}).get("completed")
                     s_mov_comp = simkl_act.get("movies", {}).get("completed")
@@ -793,9 +821,10 @@ def send_batch_to_simkl(config_db_path, payload):
     s_count = len(payload.get('shows', []))
     log(f"[Sync Engine] Sending Simkl batch... Movies:{m_count} Shows:{s_count}", level=LOGINFO)
     
-    headers = {'Content-Type': 'application/json', 'simkl-api-key': client_id, 'Authorization': f'Bearer {token}'}
+    headers = get_simkl_headers(token=token, client_id=client_id)
+    params = get_simkl_params(client_id)
     try:
-        resp = requests.post('https://api.simkl.com/sync/history', headers=headers, json=payload, timeout=30)
+        resp = simkl_post('https://api.simkl.com/sync/history', params=params, headers=headers, json=payload, timeout=30)
         if resp.status_code in [200, 201]:
             resp_data = resp.json() if resp.text else {}
             not_found = resp_data.get("not_found", {})
@@ -918,21 +947,18 @@ def fetch_simkl_dropped(config_db_path, force=False):
     if not token or not client_id or token == "empty_setting" or client_id == "empty_setting":
         return set()
 
-    headers = {
-        'Content-Type': 'application/json',
-        'simkl-api-key': client_id,
-        'Authorization': f'Bearer {token}'
-    }
+    headers = get_simkl_headers(token=token, client_id=client_id)
+    params = get_simkl_params(client_id)
 
     # Activity-based change detection
     if not force and config_db_path:
         try:
-            act_resp = requests.get('https://api.simkl.com/sync/activities', headers=headers, timeout=15)
+            act_resp = simkl_get('https://api.simkl.com/sync/activities', params=params, headers=headers, timeout=15)
             if act_resp.status_code == 200:
                 act_data = act_resp.json()
                 remote_dropped_at = act_data.get("tv_shows", {}).get("dropped", "") or ""
                 local_dropped_at = get_config_value("simkl_tv_dropped_synced_at", config_db_path, "")
-                if remote_dropped_at and local_dropped_at and remote_dropped_at <= local_dropped_at:
+                if not remote_dropped_at or (local_dropped_at and remote_dropped_at <= local_dropped_at):
                     log("[Sync Engine] Simkl dropped shows unchanged — skipping fetch.", level=LOGINFO)
                     return set()
         except Exception as e:
@@ -940,15 +966,18 @@ def fetch_simkl_dropped(config_db_path, force=False):
 
     dropped_tmdb_ids = set()
     try:
-        resp = requests.get('https://api.simkl.com/sync/all-items?extended=full', headers=headers, timeout=30)
+        dropped_params = get_simkl_params(client_id, {"extended": "ids_only"})
+        resp = simkl_get('https://api.simkl.com/sync/all-items/shows/dropped', params=dropped_params, headers=headers, timeout=20)
         resp.raise_for_status()
-        data = resp.json()
+        data = resp.json() if resp.text else {}
         for show in data.get('shows', []):
-            if show.get('status') == 'dropped':
-                tmdb_id = show.get('show', {}).get('ids', {}).get('tmdb')
-                if tmdb_id:
-                    dropped_tmdb_ids.add(int(tmdb_id))
+            tmdb_id = show.get('show', {}).get('ids', {}).get('tmdb')
+            if tmdb_id:
+                dropped_tmdb_ids.add(int(tmdb_id))
         log(f"[Sync Engine] Simkl dropped shows fetched: {len(dropped_tmdb_ids)}", level=LOGINFO)
+        if config_db_path and remote_dropped_at:
+            from resources.lib.config_handler import update_config_values
+            update_config_values({"simkl_tv_dropped_synced_at": remote_dropped_at}, config_db_path)
     except Exception as e:
         log(f"[Sync Engine] Error fetching Simkl dropped shows: {e}", level=LOGERROR)
     return dropped_tmdb_ids
@@ -1161,15 +1190,12 @@ def send_drop_to_simkl(config_db_path, show_items):
     client_id = get_config_value("simkl.client", config_db_path)
     if not token or not client_id or not show_items:
         return False
-    headers = {
-        'Content-Type': 'application/json',
-        'simkl-api-key': client_id,
-        'Authorization': f'Bearer {token}'
-    }
+    headers = get_simkl_headers(token=token, client_id=client_id)
+    params = get_simkl_params(client_id)
     payload = {"shows": show_items}
     log(f"[Sync Engine] Pushing {len(show_items)} dropped show(s) to Simkl.", level=LOGINFO)
     try:
-        resp = requests.post('https://api.simkl.com/sync/add-items', headers=headers, json=payload, timeout=20)
+        resp = simkl_post('https://api.simkl.com/sync/add-items', params=params, headers=headers, json=payload, timeout=20)
         if resp.status_code in (200, 201, 204):
             return True
         log(f"[Sync Engine] Simkl drop push failed: {resp.status_code} - {resp.text}", level=LOGERROR)

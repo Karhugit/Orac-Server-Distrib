@@ -280,6 +280,22 @@ async def sync_lists_and_items(trakt_handler, tmdb_handler, movies_static_db_pat
     )
     log(f"[Orac] Recent TV show updates (TMDB) sync completed in {time() - tmdb_updates_start:.2f} seconds", level=LOGINFO)
 
+    # Sync IntroDB segment timestamps to static DB
+    introdb_start = time()
+    try:
+        from resources.lib.introdb_client import sync_introdb_segments
+        import asyncio
+        await asyncio.to_thread(
+            sync_introdb_segments,
+            tvshows_static_db_path,
+            tmdb_handler=tmdb_handler,
+            max_episodes=500,
+            dynamic_db_path=tvshows_dynamic_db_path
+        )
+    except Exception as e:
+        log(f"[Orac] Error in IntroDB segment sync: {e}", level=LOGERROR)
+    log(f"[Orac] IntroDB segment sync completed in {time() - introdb_start:.2f} seconds", level=LOGINFO)
+
 
     # Stop queue worker just before updating dynamic TV show data
     if trakt_queue_worker:

@@ -108,6 +108,8 @@ def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None
                     e.episode_clearlogo_path,
                     e.episode_landscape_path,
                     e.episode_thumbnail_path,
+                    e.intro,
+                    e.outro,
                     COALESCE(nec.watched_at, we.watched_at) AS last_watched_at,
                     COALESCE(we.percent_watched, 0) AS percent_watched
                 FROM NextEpisodeCandidates nec
@@ -130,9 +132,18 @@ def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None
             log(f"[Orac] Retrieved {len(results)} next episodes (user filter: {repr(user)}) in {time() - starttime:.2f} seconds", level=LOGDEBUG)
 
 
-            # Format show and episode artwork paths using format_image_url
+            # Format show and episode artwork paths and parse segments
             from resources.lib.formatting_utils import format_image_url
             for r in results:
+                for seg_key in ('intro', 'outro'):
+                    val = r.get(seg_key)
+                    if val and isinstance(val, str):
+                        try:
+                            r[seg_key] = json.loads(val)
+                        except Exception:
+                            pass
+                    elif val == '':
+                        r[seg_key] = None
                 # Show artwork
                 r["show_poster_path"] = format_image_url(r.get("show_poster_path"), "w780")
                 r["show_fanart_path"] = format_image_url(r.get("show_fanart_path"), "w1280")

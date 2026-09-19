@@ -442,6 +442,14 @@ class TMDbAPI:
 
         return season_details
 
+    def get_show_external_ids(self, tmdb_id):
+        """
+        Fetches external IDs (imdb_id, tvdb_id, etc.) for a TV show from TMDb.
+        """
+        if not tmdb_id:
+            return {}
+        return self._get(f"/tv/{tmdb_id}/external_ids") or {}
+
     def search(self, item_type, query, page=1):
         """Searches for items by name."""
         params = {"query": query, "include_adult": True, "language": "en-US", "page": page}

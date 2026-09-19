@@ -12,7 +12,7 @@ from resources.lib.config_handler import get_config_value
 
 
 class UpdateQueueWorker:
-    def __init__(self, update_queue_path, tvshows_static_db_path, trakt_auth, tmdb_handler, db_manager, config_db_path, movies_dynamic_db_path=None, tvshows_dynamic_db_path=None, interval=300):
+    def __init__(self, update_queue_path, tvshows_static_db_path, trakt_auth, tmdb_handler, db_manager, config_db_path, movies_dynamic_db_path=None, tvshows_dynamic_db_path=None, interval=300, provider_sync_interval=3600):
         self.db = update_queue_path
         self.tvshows_static_db = tvshows_static_db_path
         self.trakt_auth = trakt_auth
@@ -22,6 +22,8 @@ class UpdateQueueWorker:
         self.movies_dynamic_db_path = movies_dynamic_db_path
         self.tvshows_dynamic_db_path = tvshows_dynamic_db_path
         self.interval = interval  # in seconds
+        self.provider_sync_interval = provider_sync_interval  # in seconds (default: 1 hour)
+        self._last_provider_sync = time.time()
 
         self._stop_event = Event()
         self._pause_event = Event()
@@ -54,20 +56,23 @@ class UpdateQueueWorker:
             self.process_queue_once()
             time.sleep(self.interval)
 
-    def process_queue_once(self):
+    def process_queue_once(self, force_provider_sync=False):
         if self.movies_dynamic_db_path and self.tvshows_dynamic_db_path:
              from resources.lib.sync_engine import sync_providers_sync, bulk_sync_history, bulk_sync_dropped
-             try:
-                 sync_providers_sync(
-                     self.movies_dynamic_db_path,
-                     self.tvshows_dynamic_db_path,
-                     self.trakt_auth,
-                     self.config_db_path,
-                     tvshows_static_db=self.tvshows_static_db,
-                     force=False
-                 )
-             except Exception as e:
-                 log(f"[Queue] Error running provider sync in processor: {e}", level=LOGERROR)
+             now = time.time()
+             if force_provider_sync or (now - self._last_provider_sync >= self.provider_sync_interval):
+                 self._last_provider_sync = now
+                 try:
+                     sync_providers_sync(
+                         self.movies_dynamic_db_path,
+                         self.tvshows_dynamic_db_path,
+                         self.trakt_auth,
+                         self.config_db_path,
+                         tvshows_static_db=self.tvshows_static_db,
+                         force=False
+                     )
+                 except Exception as e:
+                     log(f"[Queue] Error running provider sync in processor: {e}", level=LOGERROR)
              try:
                  bulk_sync_history(self.movies_dynamic_db_path, self.tvshows_dynamic_db_path, self.trakt_auth, self.config_db_path, self.tvshows_static_db)
              except Exception as e:
