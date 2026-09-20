@@ -254,6 +254,13 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
                     if list_name in _tmdb_slugs:
                         source = 'tmdb'
                         log(f"[Orac] List '{list_name}' recognised as TMDB generic list.", level=LOGDEBUG)
+                    else:
+                        from resources.lib.simkl_lists import SIMKL_GENERIC_LISTS
+                        _simkl_slugs = {l['slug'] for l in SIMKL_GENERIC_LISTS}
+                        if list_name in _simkl_slugs:
+                            source = 'simkl'
+                            list_user = 'simkl'
+                            log(f"[Orac] List '{list_name}' recognised as Simkl generic list.", level=LOGDEBUG)
 
         # Step 2: If add_to_library is 1, or source is web/mdblist, fetch from local DB
         # (These sources always have items synced locally, so we serve from DB regardless of add_to_library)
@@ -262,8 +269,8 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
             if source == 'web':
                  log(f"[Orac] List {list_name} is web-sourced. Serving from local database.", level=LOGDEBUG)
             
-            # If list source is in ('web', 'mdblist'), we want to preserve insertion/rank order
-            preserve = source in ('web', 'mdblist')
+            # If list source is in ('web', 'mdblist', 'simkl'), we want to preserve insertion/rank order
+            preserve = source in ('web', 'mdblist', 'simkl')
             
             if item_type in ["movie", "all"]:
                 results.extend(_get_list_movies(list_name, user, movies_static_db_path, movies_dynamic_db_path, lists_db_path, preserve_order=preserve))
@@ -292,6 +299,8 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
                results = await _fetch_tmdb_discover_external(tmdb_handler, slug, item_type, ext_indexes_db_path)
             else:
                results = await _fetch_tmdb_list_external(tmdb_handler, slug, item_type)
+        elif source == 'simkl':
+            results = await _fetch_simkl_list_external(slug, item_type, tmdb_handler, movies_static_db_path, tvshows_static_db_path)
         else:
             log(f"[Orac] Unknown source '{source}' for list {list_name}", level=LOGWARNING)
             results = []
@@ -699,6 +708,81 @@ async def _fetch_tmdb_list_external(tmdb_handler, slug, item_type):
     except Exception as e:
         log(f"[Orac] Error fetching TMDb list {slug} externally: {e}", level=LOGERROR)
         return []
+
+
+async def _fetch_simkl_list_external(slug, item_type, tmdb_handler, movies_static_db_path, tvshows_static_db_path):
+    """Fetches a Simkl generic list (trending/popular) on the fly from Simkl CDN."""
+    try:
+        from resources.lib.simkl_lists import get_simkl_generic_list
+        from resources.lib.simkl_api import get_effective_simkl_client_id, SIMKL_APP_NAME
+        from resources.lib.version import __version__
+        import requests
+
+        list_def = get_simkl_generic_list(slug)
+        if not list_def:
+            log(f"[Orac] Unknown Simkl generic list slug: {slug}", level=LOGWARNING)
+            return []
+
+        client_id = get_effective_simkl_client_id()
+        url = f"https://data.simkl.in/{list_def['endpoint']}?client_id={client_id}&app-name={SIMKL_APP_NAME}&app-version={__version__}"
+        headers = {"User-Agent": f"{SIMKL_APP_NAME}/{__version__}"}
+
+        def _do_fetch():
+            return requests.get(url, headers=headers, timeout=15)
+
+        resp = await asyncio.to_thread(_do_fetch)
+        if resp.status_code != 200:
+            log(f"[Orac] Failed to fetch Simkl list {slug} from CDN: {resp.status_code}", level=LOGWARNING)
+            return []
+
+        raw_items = resp.json()
+        if not isinstance(raw_items, list):
+            return []
+
+        formatted_items = []
+        for raw in raw_items:
+            ids = raw.get("ids", {})
+            tmdb_id = ids.get("tmdb")
+            if not tmdb_id:
+                continue
+
+            import re
+            imdb_id = ids.get("imdb")
+            media_type = list_def["type"]
+            release_date = raw.get("release_date")
+            year_match = re.search(r'\b(19\d\d|20\d\d)\b', str(release_date or ''))
+            year = int(year_match.group(1)) if year_match else None
+
+            if media_type == "movie" and item_type in ["movie", "all"]:
+                formatted_items.append({
+                    "tmdb_id": int(tmdb_id),
+                    "imdb_id": imdb_id,
+                    "title": raw.get("title"),
+                    "year": year,
+                    "released": release_date,
+                    "overview": raw.get("overview"),
+                    "poster_path": None,
+                    "media_type": "movie"
+                })
+            elif media_type == "show" and item_type in ["tvshow", "all"]:
+                formatted_items.append({
+                    "tmdb_id": int(tmdb_id),
+                    "imdb_id": imdb_id,
+                    "title": raw.get("title"),
+                    "year": year,
+                    "premiered": release_date,
+                    "overview": raw.get("overview"),
+                    "poster_path": None,
+                    "media_type": "show"
+                })
+
+        enriched = await _enrich_items_with_metadata(formatted_items, tmdb_handler, movies_static_db_path, tvshows_static_db_path)
+        return [format_movie(item, tmdb_handler) if item.get('media_type') == 'movie' else item for item in enriched]
+
+    except Exception as e:
+        log(f"[Orac] Error fetching Simkl list {slug} externally: {e}", level=LOGERROR)
+        return []
+
 
 
 def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_static_db_path, tvshows_static_db_path, trakt_update_queue_path):

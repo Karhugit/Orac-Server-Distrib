@@ -79,7 +79,8 @@ def get_authorized_watched_providers(config_db_path):
 
     # Check Simkl
     simkl_token = get_config_value("simkl.token", config_db_path)
-    simkl_client = get_config_value("simkl.client", config_db_path)
+    from resources.lib.simkl_api import get_effective_simkl_client_id
+    simkl_client = get_effective_simkl_client_id(config_db_path)
     if simkl_token and simkl_client and simkl_token != "empty_setting" and simkl_client != "empty_setting":
         providers.append('simkl')
 

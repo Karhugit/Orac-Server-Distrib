@@ -28,8 +28,9 @@ def fetch_simkl_history(config_db_path, tvshows_static_db=None, force=False):
     https://api.simkl.org/guides/sync#phase-2-continuous-sync.
     """
     from resources.lib.config_handler import get_config_value
-    token = get_config_value("simkl.token", config_db_path)
-    client_id = get_config_value("simkl.client", config_db_path)
+    from resources.lib.simkl_api import ensure_valid_simkl_token, get_effective_simkl_client_id
+    token = ensure_valid_simkl_token(config_db_path) or get_config_value("simkl.token", config_db_path)
+    client_id = get_effective_simkl_client_id(config_db_path)
     
     if not token or not client_id or token == "empty_setting" or client_id == "empty_setting":
         log("[Sync Engine] Missing Simkl credentials.", level=LOGINFO)
@@ -942,8 +943,9 @@ def fetch_simkl_dropped(config_db_path, force=False):
     Returns a set of TMDB IDs (integers).
     """
     from resources.lib.config_handler import get_config_value
-    token = get_config_value("simkl.token", config_db_path)
-    client_id = get_config_value("simkl.client", config_db_path)
+    from resources.lib.simkl_api import ensure_valid_simkl_token, get_effective_simkl_client_id
+    token = ensure_valid_simkl_token(config_db_path) or get_config_value("simkl.token", config_db_path)
+    client_id = get_effective_simkl_client_id(config_db_path)
     if not token or not client_id or token == "empty_setting" or client_id == "empty_setting":
         return set()
 

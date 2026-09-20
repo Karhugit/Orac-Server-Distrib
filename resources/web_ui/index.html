@@ -3673,6 +3673,7 @@ Orac Server Port: 8000 (default)</div>
 
         let simklPollInterval = null;
         let currentSimklUserCode = null;
+        let currentSimklDeviceCode = null;
 
         function toggleSimklAuthModal(show) {
             const modal = document.getElementById('simkl-auth-modal');
@@ -3686,6 +3687,7 @@ Orac Server Port: 8000 (default)</div>
                     simklPollInterval = null;
                 }
                 currentSimklUserCode = null;
+                currentSimklDeviceCode = null;
             }
         }
 
@@ -3719,6 +3721,7 @@ Orac Server Port: 8000 (default)</div>
                 const data = await resp.json();
                 if (data.success && data.user_code) {
                     currentSimklUserCode = data.user_code;
+                    currentSimklDeviceCode = data.device_code;
                     codeDisplay.textContent = data.user_code;
                     browserLink.href = data.verification_url;
                     browserLink.style.pointerEvents = 'auto';
@@ -3761,7 +3764,7 @@ Orac Server Port: 8000 (default)</div>
         }
 
         async function checkSimklAuthOnce(isAutoPoll = false) {
-            if (!currentSimklUserCode) return;
+            if (!currentSimklUserCode && !currentSimklDeviceCode) return;
 
             const statusText = document.getElementById('simkl-status-text');
             const statusBox = document.getElementById('simkl-auth-status');
@@ -3774,7 +3777,10 @@ Orac Server Port: 8000 (default)</div>
                 const resp = await fetch('/api/web/platforms/simkl/check_auth', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_code: currentSimklUserCode })
+                    body: JSON.stringify({
+                        user_code: currentSimklUserCode,
+                        device_code: currentSimklDeviceCode
+                    })
                 });
                 const data = await resp.json();
                 if (data.success) {

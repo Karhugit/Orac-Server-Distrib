@@ -1277,24 +1277,46 @@ def app_factory(
     @app.post("/api/web/platforms/simkl/start_auth")
     async def web_simkl_start_auth_api():
         try:
-            client_id = get_config_value("simkl.client", app.state.config_db_path) or get_config_value("simkl_client", app.state.config_db_path)
-            if not client_id or client_id in ('empty_setting', ''):
-                client_id = "8cdf2298c78dd4ff8cb8039faecd1b9f11cf108fac2b88092abd15c22cfe2cc2"
+            from resources.lib.simkl_api import (
+                get_effective_simkl_client_id,
+                simkl_post,
+                SIMKL_APP_NAME
+            )
+            from resources.lib.version import __version__
 
-            url = "https://api.simkl.com/oauth/pin"
-            resp = simkl_get(url, params=get_simkl_params(client_id), headers=get_simkl_headers(), timeout=10)
+            client_id = get_effective_simkl_client_id(app.state.config_db_path)
+
+            url = "https://api.simkl.com/oauth2/device"
+            headers = {
+                "User-Agent": f"{SIMKL_APP_NAME}/{__version__}",
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+            data = {
+                "client_id": client_id,
+                "scope": "media:read media:write"
+            }
+            resp = simkl_post(url, headers=headers, data=data, timeout=10)
             if resp.status_code != 200:
-                return JSONResponse(status_code=400, content={"success": False, "error": f"Simkl error ({resp.status_code}): Failed to get device PIN"})
+                err_text = resp.text.strip()
+                log(f"[Simkl] Error starting V2 auth ({resp.status_code}): {err_text}", level=LOGERROR)
+                return JSONResponse(status_code=400, content={"success": False, "error": f"Simkl error ({resp.status_code}): {err_text or 'Failed to get device PIN'}"})
 
             data = resp.json()
+            device_code = data.get("device_code")
             user_code = data.get("user_code")
-            verification_url = data.get("verification_url") or f"https://simkl.com/pin/{user_code}"
+            verification_url = data.get("verification_uri_complete") or f"https://simkl.com/pin?user_code={user_code}"
             expires_in = data.get("expires_in", 900)
             interval = data.get("interval", 5)
+
+            if not hasattr(app.state, "_simkl_device_codes"):
+                app.state._simkl_device_codes = {}
+            if user_code:
+                app.state._simkl_device_codes[user_code] = device_code
 
             return JSONResponse(status_code=200, content={
                 "success": True,
                 "user_code": user_code,
+                "device_code": device_code,
                 "verification_url": verification_url,
                 "expires_in": expires_in,
                 "interval": interval
@@ -1306,50 +1328,99 @@ def app_factory(
     @app.post("/api/web/platforms/simkl/check_auth")
     async def web_simkl_check_auth_api(request: Request):
         try:
+            from resources.lib.simkl_api import (
+                get_effective_simkl_client_id,
+                simkl_post,
+                simkl_get,
+                get_simkl_params,
+                get_simkl_headers,
+                SIMKL_APP_NAME
+            )
+            from resources.lib.version import __version__
+            import time
+
             body = await request.json()
             user_code = (body.get("user_code") or "").strip()
-            if not user_code:
-                return JSONResponse(status_code=400, content={"success": False, "error": "Missing user code"})
+            device_code = (body.get("device_code") or "").strip()
 
-            client_id = get_config_value("simkl.client", app.state.config_db_path) or get_config_value("simkl_client", app.state.config_db_path)
-            if not client_id or client_id in ('empty_setting', ''):
-                client_id = "8cdf2298c78dd4ff8cb8039faecd1b9f11cf108fac2b88092abd15c22cfe2cc2"
+            if not device_code and hasattr(app.state, "_simkl_device_codes"):
+                device_code = app.state._simkl_device_codes.get(user_code, "")
 
-            url = f"https://api.simkl.com/oauth/pin/{user_code}"
-            resp = simkl_get(url, params=get_simkl_params(client_id), headers=get_simkl_headers(), timeout=10)
-            if resp.status_code != 200:
-                return JSONResponse(status_code=200, content={"success": False, "status": "pending", "error": "Not yet approved on Simkl"})
+            if not device_code:
+                return JSONResponse(status_code=400, content={"success": False, "error": "Missing device code"})
 
-            data = resp.json()
-            if data.get("result") != "OK" or "access_token" not in data:
+            client_id = get_effective_simkl_client_id(app.state.config_db_path)
+
+            url = "https://api.simkl.com/oauth2/token"
+            headers = {
+                "User-Agent": f"{SIMKL_APP_NAME}/{__version__}",
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+            data = {
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                "client_id": client_id,
+                "device_code": device_code
+            }
+
+            resp = simkl_post(url, headers=headers, data=data, timeout=10)
+
+            if resp.status_code == 200:
+                token_data = resp.json()
+                access_token = token_data.get("access_token")
+                refresh_token = token_data.get("refresh_token") or ""
+                expires_in = token_data.get("expires_in", 604800)
+                expires_at = time.time() + expires_in
+
+                # Fetch account settings to get username
+                settings_url = "https://api.simkl.com/users/settings"
+                headers_user = get_simkl_headers(token=access_token, client_id=client_id)
+                user_resp = simkl_get(settings_url, params=get_simkl_params(client_id), headers=headers_user, timeout=10)
+                username = "simkl_user"
+                if user_resp.status_code == 200:
+                    user_data = user_resp.json()
+                    if "user" in user_data and "name" in user_data["user"]:
+                        username = str(user_data["user"]["name"])
+
+                # Save in config.db
+                success = update_config_values({
+                    "simkl.user": username,
+                    "simkl_user": username,
+                    "simkl.token": access_token,
+                    "simkl_token": access_token,
+                    "simkl.refresh_token": refresh_token,
+                    "simkl_refresh_token": refresh_token,
+                    "simkl.expires_at": str(expires_at),
+                    "simkl.client": client_id
+                }, app.state.config_db_path)
+
+                if hasattr(app.state, "_simkl_device_codes") and user_code in app.state._simkl_device_codes:
+                    del app.state._simkl_device_codes[user_code]
+
+                if success:
+                    log(f"[Simkl] Successfully authorised as user: {username} (AUTH V2)", level=LOGINFO)
+                    return JSONResponse(status_code=200, content={"success": True, "username": username})
+                else:
+                    return JSONResponse(status_code=500, content={"success": False, "error": "Failed to save Simkl tokens in config database"})
+
+            err_data = {}
+            try:
+                err_data = resp.json()
+            except Exception:
+                pass
+
+            err = err_data.get("error", "")
+            if err == "authorization_pending":
                 return JSONResponse(status_code=200, content={"success": False, "status": "pending", "error": "Approval pending"})
-
-            access_token = data["access_token"]
-
-            # Fetch account settings to get username
-            settings_url = "https://api.simkl.com/users/settings"
-            headers = get_simkl_headers(token=access_token, client_id=client_id)
-            user_resp = simkl_get(settings_url, params=get_simkl_params(client_id), headers=headers, timeout=10)
-            username = "simkl_user"
-            if user_resp.status_code == 200:
-                user_data = user_resp.json()
-                if "user" in user_data and "name" in user_data["user"]:
-                    username = str(user_data["user"]["name"])
-
-            # Save in config.db
-            success = update_config_values({
-                "simkl.user": username,
-                "simkl_user": username,
-                "simkl.token": access_token,
-                "simkl_token": access_token,
-                "simkl.client": client_id
-            }, app.state.config_db_path)
-
-            if success:
-                log(f"[Simkl] Successfully authorised as user: {username}", level=LOGINFO)
-                return JSONResponse(status_code=200, content={"success": True, "username": username})
+            elif err == "slow_down":
+                return JSONResponse(status_code=200, content={"success": False, "status": "slow_down", "error": "Polling too fast", "interval": 10})
+            elif err == "expired_token":
+                log(f"[Simkl] Device code expired during auth check", level=LOGWARNING)
+                return JSONResponse(status_code=200, content={"success": False, "status": "expired", "error": "Device code expired. Please try again."})
             else:
-                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to save Simkl tokens in config database"})
+                err_desc = err_data.get("error_description") or err or f"HTTP {resp.status_code}: {resp.text.strip()}"
+                log(f"[Simkl] Error checking V2 auth ({resp.status_code}): {err_desc}", level=LOGERROR)
+                return JSONResponse(status_code=200, content={"success": False, "status": "error", "error": err_desc})
+
         except Exception as e:
             log(f"Error checking Simkl authentication: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
@@ -1357,11 +1428,36 @@ def app_factory(
     @app.post("/api/web/platforms/simkl/revoke")
     async def web_simkl_revoke_api():
         try:
+            from resources.lib.simkl_api import get_effective_simkl_client_id, simkl_post, SIMKL_APP_NAME
+            from resources.lib.version import __version__
+
+            token = get_config_value("simkl.token", app.state.config_db_path) or get_config_value("simkl_token", app.state.config_db_path)
+            client_id = get_effective_simkl_client_id(app.state.config_db_path)
+
+            if token and token != "empty_setting" and token.startswith("simkl_at_"):
+                # Call Simkl V2 revocation endpoint
+                url = "https://api.simkl.com/oauth2/revoke"
+                headers = {
+                    "User-Agent": f"{SIMKL_APP_NAME}/{__version__}",
+                    "Content-Type": "application/x-www-form-urlencoded"
+                }
+                data = {
+                    "client_id": client_id,
+                    "token": token
+                }
+                try:
+                    simkl_post(url, headers=headers, data=data, timeout=5)
+                except Exception as e_rev:
+                    log(f"[Simkl] Revoke endpoint error (ignored): {e_rev}", level=LOGDEBUG)
+
             success = update_config_values({
                 "simkl.user": "empty_setting",
                 "simkl_user": "empty_setting",
                 "simkl.token": "empty_setting",
-                "simkl_token": "empty_setting"
+                "simkl_token": "empty_setting",
+                "simkl.refresh_token": "empty_setting",
+                "simkl_refresh_token": "empty_setting",
+                "simkl.expires_at": "empty_setting"
             }, app.state.config_db_path)
 
             if success:
@@ -2242,12 +2338,14 @@ def app_factory(
                 }, ping_tmdb))
 
             if is_simkl_auth:
-                s_cid = cfg.get("simkl.client") or cfg.get("simkl.client_id") or cfg.get("simkl_client") or "4c920ba05273be800e843c0a2a4c148e1a17adbbba14c441bc3861214088a296"
+                from resources.lib.simkl_api import get_effective_simkl_client_id, ensure_valid_simkl_token
+                s_cid = get_effective_simkl_client_id(app.state.config_db_path)
+                valid_simkl_t = ensure_valid_simkl_token(app.state.config_db_path) or simkl_t
                 def ping_simkl():
                     r = simkl_get(
-                        "https://api.simkl.com/sync/all-items",
+                        "https://api.simkl.com/sync/activities",
                         params=get_simkl_params(s_cid),
-                        headers=get_simkl_headers(token=simkl_t, client_id=s_cid),
+                        headers=get_simkl_headers(token=valid_simkl_t, client_id=s_cid),
                         timeout=4
                     )
                     return r.status_code == 200, f"HTTP {r.status_code}"
