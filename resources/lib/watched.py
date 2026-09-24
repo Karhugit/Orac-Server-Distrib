@@ -140,13 +140,13 @@ async def update_dynamic_tvshow_data(trakt_handler, tmdb_handler, username, tvsh
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                             """, (username, episode_trakt_id, episode_tmdb_id, season_num, episode_num, watched_at, 100, 2))
 
-                            # Insert into watched_history for dual sync (sets trakt_synced_at so we don't double sync Trakt, resets Simkl/MDBList so they get re-synced)
+                            # Insert into watched_history for dual sync (sets trakt_synced_at so we don't double sync Trakt, resets Simkl/MDBList/PunchPlay so they get re-synced)
                             dynamic_cursor.execute("""
-                                INSERT INTO watched_history (show_tmdb_id, season, episode, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at)
-                                VALUES (?, ?, ?, 1, ?, ?, NULL, NULL)
+                                INSERT INTO watched_history (show_tmdb_id, season, episode, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at, punchplay_synced_at)
+                                VALUES (?, ?, ?, 1, ?, ?, NULL, NULL, NULL)
                                 ON CONFLICT(show_tmdb_id, season, episode) DO UPDATE SET
                                     is_watched = 1, last_watched_at = ?, trakt_synced_at = ?,
-                                    simkl_synced_at = NULL, mdblist_synced_at = NULL
+                                    simkl_synced_at = NULL, mdblist_synced_at = NULL, punchplay_synced_at = NULL
                             """, (show_tmdb_id, season_num, episode_num, watched_at, watched_at, watched_at, watched_at))
 
                             log(f"[Orac] ✔ Synced watched S{season_num}E{episode_num} of {show_title} for {username} at {watched_at}", level=LOGINFO)
@@ -417,11 +417,11 @@ def update_next_episode(
             # Insert into watched_history for multi-provider sync (resets provider synced timestamps so all authorized services get synced)
             if percent_watched >= 90:
                 dynamic_cursor.execute("""
-                    INSERT INTO watched_history (show_tmdb_id, season, episode, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at)
-                    VALUES (?, ?, ?, 1, ?, NULL, NULL, NULL)
+                    INSERT INTO watched_history (show_tmdb_id, season, episode, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at, punchplay_synced_at)
+                    VALUES (?, ?, ?, 1, ?, NULL, NULL, NULL, NULL)
                     ON CONFLICT(show_tmdb_id, season, episode) DO UPDATE SET
                         is_watched = 1, last_watched_at = ?, trakt_synced_at = NULL,
-                        simkl_synced_at = NULL, mdblist_synced_at = NULL
+                        simkl_synced_at = NULL, mdblist_synced_at = NULL, punchplay_synced_at = NULL
                 """, (show_tmdb_id, season, episode, now_str_ms, now_str_ms))
 
             # Update show's parent status
@@ -685,10 +685,10 @@ def mark_movie_watched(static_db_path, dynamic_db_path, trakt_queue_path, trakt_
             # Insert into watched_history for multi-provider sync
             if percent_watched >= 90:
                 dynamic_cursor.execute("""
-                    INSERT INTO watched_history (tmdb_id, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at)
-                    VALUES (?, 1, ?, NULL, NULL, NULL)
+                    INSERT INTO watched_history (tmdb_id, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at, punchplay_synced_at)
+                    VALUES (?, 1, ?, NULL, NULL, NULL, NULL)
                     ON CONFLICT(tmdb_id) DO UPDATE SET
-                        is_watched = 1, last_watched_at = ?, trakt_synced_at = NULL, simkl_synced_at = NULL, mdblist_synced_at = NULL
+                        is_watched = 1, last_watched_at = ?, trakt_synced_at = NULL, simkl_synced_at = NULL, mdblist_synced_at = NULL, punchplay_synced_at = NULL
                 """, (int(movie_tmdb_id), now_str_ms, now_str_ms))
             
                 # Queue update for each authorized watched tracking service
@@ -816,11 +816,11 @@ def mark_tvshow_watched(static_db_path, dynamic_db_path, trakt_queue_path, trakt
 
                 if percent_watched >= 90:
                     dynamic_cursor.execute("""
-                        INSERT INTO watched_history (show_tmdb_id, season, episode, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at)
-                        VALUES (?, ?, ?, 1, ?, NULL, NULL, NULL)
+                        INSERT INTO watched_history (show_tmdb_id, season, episode, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at, punchplay_synced_at)
+                        VALUES (?, ?, ?, 1, ?, NULL, NULL, NULL, NULL)
                         ON CONFLICT(show_tmdb_id, season, episode) DO UPDATE SET
                             is_watched = 1, last_watched_at = ?, trakt_synced_at = NULL,
-                            simkl_synced_at = NULL, mdblist_synced_at = NULL
+                            simkl_synced_at = NULL, mdblist_synced_at = NULL, punchplay_synced_at = NULL
                     """, (show_tmdb_id, season_num, ep_num, watched_at, watched_at))
 
                     for provider in authed_providers:

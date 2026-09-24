@@ -1920,7 +1920,7 @@
                                 <div class="help-topic-icon">🔄</div>
                                 <div class="help-topic-info">
                                     <div class="help-topic-title">Account Synchronization</div>
-                                    <div class="help-topic-desc">Trakt, Simkl & MDBList sync</div>
+                                    <div class="help-topic-desc">Trakt, Simkl, MDBList & PunchPlay sync</div>
                                 </div>
                             </div>
 
@@ -2071,6 +2071,7 @@ Orac Server Port: 8000 (default)</div>
                                     <li><strong>Trakt:</strong> Full two-way synchronization of watched movies, episodes, collection items, and custom lists. Air dates and metadata are enriched with extended detail.</li>
                                     <li><strong>Simkl:</strong> Fast token-based sync for anime, TV shows, and movie watchlists.</li>
                                     <li><strong>MDBList:</strong> Dynamic list synchronization for curated trending and popular media lists.</li>
+                                    <li><strong>PunchPlay:</strong> OAuth device flow integration for personal lists and public trending catalog.</li>
                                 </ul>
 
                                 <div class="help-callout">
@@ -2434,6 +2435,51 @@ Orac Server Port: 8000 (default)</div>
             </div>
         </div>
     </div>
+
+    <!-- PunchPlay Authorisation Modal -->
+    <div id="punchplay-auth-modal" class="modal-overlay" onclick="closePunchPlayAuthModal(event)" style="z-index: 1200;">
+        <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem; text-align: center;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="justify-content: space-between;">
+                <h2>Authorise PunchPlay</h2>
+                <button class="modal-close-btn" onclick="togglePunchPlayAuthModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            
+            <div id="punchplay-auth-body" style="display: flex; flex-direction: column; gap: 1.25rem; align-items: center; width: 100%;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
+                    Click the button below to approve Orac on PunchPlay, or scan the QR code and enter the PIN.
+                </p>
+
+                <div id="punchplay-code-display" style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-glass); border-radius: 0.75rem; padding: 0.75rem 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; width: 100%; box-sizing: border-box;">
+                    <span style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted);">Your PunchPlay PIN Code</span>
+                    <span id="punchplay-user-code" style="font-family: 'Fira Code', monospace; font-size: 1.8rem; font-weight: 700; letter-spacing: 4px; color: #4ade80;">----</span>
+                </div>
+
+                <div id="punchplay-qr-container" style="background: white; padding: 0.5rem; border-radius: 0.5rem; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+                    <img id="punchplay-qr-img" src="" alt="PunchPlay QR Code" style="width: 150px; height: 150px; display: block; border-radius: 0.25rem;">
+                </div>
+
+                <a id="punchplay-browser-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-primary" style="padding: 0.6rem 1.4rem; font-size: 0.9rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;">
+                    <span>Open PunchPlay Authorisation</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                </a>
+
+                <div id="punchplay-auth-status" style="font-size: 0.85rem; padding: 0.5rem 0.75rem; border-radius: 0.4rem; width: 100%; box-sizing: border-box; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                        <span class="loading-spinner-sm" style="display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(129, 140, 248, 0.3); border-top-color: #818cf8; border-radius: 50%; animation: spin 1s linear infinite;"></span>
+                        <span id="punchplay-status-text">Waiting for approval on PunchPlay...</span>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; width: 100%; margin-top: 0.25rem;">
+                    <button type="button" class="btn-secondary" onclick="togglePunchPlayAuthModal(false)">Cancel</button>
+                    <button type="button" class="btn-primary" onclick="checkPunchPlayAuthOnce()">Check Status</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     <!-- Trakt Authorisation Modal -->
     <div id="trakt-auth-modal" class="modal-overlay" onclick="closeTraktAuthModal(event)" style="z-index: 1200;">
@@ -2841,6 +2887,12 @@ Orac Server Port: 8000 (default)</div>
                         actionBtnHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokeSimklAuth()">Revoke</button>`;
                     } else {
                         actionBtnHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openSimklAuthModal()">Authorise</button>`;
+                    }
+                } else if (platform.id === 'punchplay' || platform.name.toLowerCase() === 'punchplay') {
+                    if (isAuth) {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokePunchPlayAuth()">Revoke</button>`;
+                    } else {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openPunchPlayAuthModal()">Authorise</button>`;
                     }
                 } else if (platform.id === 'trakt' || platform.name.toLowerCase() === 'trakt') {
                     if (isAuth) {
@@ -3823,6 +3875,164 @@ Orac Server Port: 8000 (default)</div>
                 }
             } catch (err) {
                 alert('Network error revoking Simkl: ' + err.message);
+            }
+        }
+
+        // -------------------------------------------------------------
+        // PUNCHPLAY AUTH LOGIC
+        // -------------------------------------------------------------
+        let punchplayPollInterval = null;
+        let currentPunchPlayUserCode = null;
+        let currentPunchPlayDeviceCode = null;
+
+        function togglePunchPlayAuthModal(show) {
+            const modal = document.getElementById('punchplay-auth-modal');
+            if (show) {
+                modal.classList.add('visible');
+                startPunchPlayAuth();
+            } else {
+                modal.classList.remove('visible');
+                if (punchplayPollInterval) {
+                    clearInterval(punchplayPollInterval);
+                    punchplayPollInterval = null;
+                }
+                currentPunchPlayUserCode = null;
+                currentPunchPlayDeviceCode = null;
+            }
+        }
+
+        function openPunchPlayAuthModal() {
+            togglePunchPlayAuthModal(true);
+        }
+
+        function closePunchPlayAuthModal(e) {
+            if (e.target.id === 'punchplay-auth-modal') {
+                togglePunchPlayAuthModal(false);
+            }
+        }
+
+        async function startPunchPlayAuth() {
+            const statusText = document.getElementById('punchplay-status-text');
+            const statusBox = document.getElementById('punchplay-auth-status');
+            const qrImg = document.getElementById('punchplay-qr-img');
+            const browserLink = document.getElementById('punchplay-browser-link');
+            const codeDisplay = document.getElementById('punchplay-user-code');
+
+            statusBox.style.background = 'rgba(99, 102, 241, 0.15)';
+            statusBox.style.color = '#818cf8';
+            statusBox.style.border = '1px solid rgba(99, 102, 241, 0.3)';
+            statusText.textContent = 'Requesting PunchPlay PIN code...';
+            codeDisplay.textContent = '----';
+            browserLink.style.pointerEvents = 'none';
+            browserLink.style.opacity = '0.5';
+
+            try {
+                const resp = await fetch('/api/web/platforms/punchplay/start_auth', { method: 'POST' });
+                const data = await resp.json();
+                if (data.success && data.user_code) {
+                    currentPunchPlayUserCode = data.user_code;
+                    currentPunchPlayDeviceCode = data.device_code;
+                    codeDisplay.textContent = data.user_code;
+                    browserLink.href = data.verification_url;
+                    browserLink.style.pointerEvents = 'auto';
+                    browserLink.style.opacity = '1';
+
+                    const qrUrl = data.verification_uri_qr || `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(data.verification_url)}`;
+                    qrImg.src = qrUrl;
+
+                    statusText.textContent = 'Waiting for approval on PunchPlay...';
+
+                    // Start polling
+                    if (punchplayPollInterval) clearInterval(punchplayPollInterval);
+                    let pollSeconds = data.interval || 5;
+                    let attempts = 0;
+                    let maxAttempts = Math.floor((data.expires_in || 900) / pollSeconds);
+                    punchplayPollInterval = setInterval(async () => {
+                        attempts++;
+                        if (attempts > maxAttempts) {
+                            clearInterval(punchplayPollInterval);
+                            statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                            statusBox.style.color = '#fb7185';
+                            statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                            statusText.textContent = 'Authorization session expired. Please try again.';
+                            return;
+                        }
+                        await checkPunchPlayAuthOnce(true);
+                    }, pollSeconds * 1000);
+                } else {
+                    statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                    statusBox.style.color = '#fb7185';
+                    statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                    statusText.textContent = data.error || 'Failed to initialize PunchPlay authorization';
+                }
+            } catch (err) {
+                statusBox.style.background = 'rgba(244, 63, 94, 0.15)';
+                statusBox.style.color = '#fb7185';
+                statusBox.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                statusText.textContent = `Network error: ${err.message}`;
+            }
+        }
+
+        async function checkPunchPlayAuthOnce(isAutoPoll = false) {
+            if (!currentPunchPlayUserCode && !currentPunchPlayDeviceCode) return;
+
+            const statusText = document.getElementById('punchplay-status-text');
+            const statusBox = document.getElementById('punchplay-auth-status');
+
+            if (!isAutoPoll) {
+                statusText.textContent = 'Checking authorization status...';
+            }
+
+            try {
+                const resp = await fetch('/api/web/platforms/punchplay/check_auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_code: currentPunchPlayUserCode,
+                        device_code: currentPunchPlayDeviceCode
+                    })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    if (punchplayPollInterval) {
+                        clearInterval(punchplayPollInterval);
+                        punchplayPollInterval = null;
+                    }
+                    statusBox.style.background = 'rgba(16, 185, 129, 0.15)';
+                    statusBox.style.color = '#34d399';
+                    statusBox.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                    statusText.textContent = `Successfully authorised as ${data.username}!`;
+
+                    setTimeout(() => {
+                        togglePunchPlayAuthModal(false);
+                        fetchPlatforms();
+                    }, 1000);
+                } else if (!isAutoPoll) {
+                    statusText.textContent = data.error || 'Approval not detected yet. Please approve on PunchPlay.';
+                }
+            } catch (err) {
+                if (!isAutoPoll) {
+                    statusText.textContent = `Error: ${err.message}`;
+                }
+            }
+        }
+
+        async function revokePunchPlayAuth() {
+            if (!confirm('Are you sure you want to revoke PunchPlay authorisation?')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/web/platforms/punchplay/revoke', {
+                    method: 'POST'
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    fetchPlatforms();
+                } else {
+                    alert('Error revoking PunchPlay: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Network error revoking PunchPlay: ' + err.message);
             }
         }
 

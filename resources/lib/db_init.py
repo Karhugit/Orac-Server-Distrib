@@ -299,13 +299,20 @@ def init_dynamic_movie_db(db_path=None, conn=None):
                 last_watched_at TEXT,
                 trakt_synced_at TEXT,
                 simkl_synced_at TEXT,
-                mdblist_synced_at TEXT
+                mdblist_synced_at TEXT,
+                punchplay_synced_at TEXT
             )
         """)
 
         # Migration: Add mdblist_synced_at column if it doesn't exist
         try:
             cursor.execute("ALTER TABLE watched_history ADD COLUMN mdblist_synced_at TEXT")
+        except sqlite3.OperationalError:
+            pass # Column already exists
+
+        # Migration: Add punchplay_synced_at column if it doesn't exist
+        try:
+            cursor.execute("ALTER TABLE watched_history ADD COLUMN punchplay_synced_at TEXT")
         except sqlite3.OperationalError:
             pass # Column already exists
 
@@ -384,6 +391,7 @@ def init_dynamic_tvshows_db(db_path=None, conn=None):
                 trakt_synced_at TEXT,
                 simkl_synced_at TEXT,
                 mdblist_synced_at TEXT,
+                punchplay_synced_at TEXT,
                 PRIMARY KEY (show_tmdb_id, season, episode)
             )
         """)
@@ -391,6 +399,12 @@ def init_dynamic_tvshows_db(db_path=None, conn=None):
         # Migration: Add mdblist_synced_at column if it doesn't exist
         try:
             cursor.execute("ALTER TABLE watched_history ADD COLUMN mdblist_synced_at TEXT")
+        except sqlite3.OperationalError:
+            pass # Column already exists
+        
+        # Migration: Add punchplay_synced_at column if it doesn't exist
+        try:
+            cursor.execute("ALTER TABLE watched_history ADD COLUMN punchplay_synced_at TEXT")
         except sqlite3.OperationalError:
             pass # Column already exists
         

@@ -4,6 +4,14 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.3.8] — 2026-09-25
+
+### Added
+- **PunchPlay Platform Integration** — Added full platform integration for PunchPlay (`https://punchplay.tv`). Supports OAuth 2.0 device code flow with user PIN and QR code display in the Command Centre web dashboard, token lifecycle management (auto-refresh and revocation), and service connectivity diagnostics.
+- **PunchPlay Generic & User Lists** — Added public catalog discovery feeds ("PunchPlay Trending Movies", "PunchPlay Trending Shows", and "PunchPlay Trending Anime") with rank preservation and automated background synchronization. Ingests user-created lists from PunchPlay into the local library.
+- **Bidirectional Watched History Synchronization** — Integrated PunchPlay into the multi-provider watched history sync engine alongside Trakt, Simkl, and MDBList. Cursor-paginates inbound watch history (`/api/platform/v1/me/history`), flags provider-specific synced timestamps in `watched_history`, and pushes bulk watch events (`/api/platform/v1/sync/history`) using idempotency keys.
+- **Rate Limit Handling & Backoff** — Added parsing for PunchPlay rate limit headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After`). Implemented proactive threshold pausing, automatic 429 backoff, and chunk pacing during bulk history sync.
+
 ## [1.3.7] — 2026-09-20
 
 ### Added

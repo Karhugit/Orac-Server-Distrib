@@ -89,6 +89,11 @@ def get_authorized_watched_providers(config_db_path):
     if mdblist_api and mdblist_api != "empty_setting":
         providers.append('mdblist')
 
+    # Check PunchPlay
+    punchplay_token = get_config_value("punchplay.token", config_db_path)
+    if punchplay_token and punchplay_token != "empty_setting":
+        providers.append('punchplay')
+
     return providers
 
 

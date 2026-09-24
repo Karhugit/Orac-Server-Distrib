@@ -502,6 +502,7 @@ def app_factory(
                     WHERE key IN (
                         'trakt_user', 'trakt_token', 'trakt_refresh', 'trakt_expires',
                         'simkl.user', 'simkl_user', 'simkl.token',
+                        'punchplay.user', 'punchplay.token',
                         'tmdb_user', 'tmdb.user', 'tmdb_session_id',
                         'mdblist_api',
                         'rd.token', 'rd.enabled', 'rd.refresh', 'rd.account_id',
@@ -523,6 +524,9 @@ def app_factory(
                 
                 simkl_user = data.get('simkl.user') or data.get('simkl_user') or 'empty_setting'
                 simkl_token = data.get('simkl.token') or 'empty_setting'
+                
+                punchplay_user = data.get('punchplay.user') or 'empty_setting'
+                punchplay_token = data.get('punchplay.token') or 'empty_setting'
                 
                 tmdb_user = data.get('tmdb_user') or data.get('tmdb.user') or 'empty_setting'
                 tmdb_session_id = data.get('tmdb_session_id') or 'empty_setting'
@@ -561,6 +565,10 @@ def app_factory(
                     "simkl": {
                         "user": simkl_user,
                         "token": simkl_token
+                    },
+                    "punchplay": {
+                        "user": punchplay_user,
+                        "token": punchplay_token
                     },
                     "tmdb": {
                         "user": tmdb_user,
@@ -1038,7 +1046,20 @@ def app_factory(
                     "authenticated": is_simkl_auth,
                     "can_auth": True
                 })
-                
+
+                punchplay_user = data.get('punchplay.user')
+                punchplay_token = data.get('punchplay.token')
+                is_punchplay_auth = bool(punchplay_user and punchplay_token and punchplay_user not in ('empty_setting', '') and punchplay_token not in ('empty_setting', ''))
+                # PunchPlay is static - always present in the platforms list
+                platforms.append({
+                    "name": "PunchPlay",
+                    "id": "punchplay",
+                    "username": (punchplay_user if is_punchplay_auth else ""),
+                    "authenticated": is_punchplay_auth,
+                    "can_auth": True
+                })
+
+
                 tmdb_user = data.get('tmdb_user') or data.get('tmdb.user')
                 is_tmdb_auth = bool(tmdb_user and tmdb_user not in ('empty_setting', ''))
                 # TMDb is static - always present in the platforms list
@@ -1467,6 +1488,175 @@ def app_factory(
                 return JSONResponse(status_code=500, content={"success": False, "error": "Failed to clear Simkl configuration values"})
         except Exception as e:
             log(f"Error revoking Simkl authorisation: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/punchplay/start_auth")
+    async def web_punchplay_start_auth_api():
+        try:
+            from resources.lib.punchplay_api import (
+                PUNCHPLAY_CLIENT_ID,
+                PUNCHPLAY_DEVICE_CODE_URL,
+                PUNCHPLAY_SCOPES,
+                punchplay_post,
+            )
+
+            resp = punchplay_post(PUNCHPLAY_DEVICE_CODE_URL, json_body={
+                "client_id": PUNCHPLAY_CLIENT_ID,
+                "scope": PUNCHPLAY_SCOPES
+            }, timeout=15)
+
+            if resp.status_code != 200:
+                err_text = resp.text.strip()
+                log(f"[PunchPlay] Error starting device auth ({resp.status_code}): {err_text}", level=LOGERROR)
+                return JSONResponse(status_code=400, content={"success": False, "error": f"PunchPlay error ({resp.status_code}): {err_text or 'Failed to get device code'}"})
+
+            data = resp.json()
+            device_code = data.get("device_code")
+            user_code = data.get("user_code")
+            verification_url = data.get("verification_uri_complete") or data.get("verification_uri", "https://punchplay.tv")
+            verification_uri_qr = data.get("verification_uri_qr")
+            expires_in = data.get("expires_in", 900)
+
+            if not hasattr(app.state, "_punchplay_device_codes"):
+                app.state._punchplay_device_codes = {}
+            if user_code:
+                app.state._punchplay_device_codes[user_code] = device_code
+
+            return JSONResponse(status_code=200, content={
+                "success": True,
+                "user_code": user_code,
+                "device_code": device_code,
+                "verification_url": verification_url,
+                "verification_uri_qr": verification_uri_qr,
+                "expires_in": expires_in,
+                "interval": 5
+            })
+        except Exception as e:
+            log(f"Error starting PunchPlay authentication: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/punchplay/check_auth")
+    async def web_punchplay_check_auth_api(request: Request):
+        try:
+            from resources.lib.punchplay_api import (
+                PUNCHPLAY_CLIENT_ID,
+                PUNCHPLAY_DEVICE_TOKEN_URL,
+                PUNCHPLAY_ME_URL,
+                punchplay_post,
+                punchplay_get,
+            )
+            import time as _time
+
+            body = await request.json()
+            user_code = (body.get("user_code") or "").strip()
+            device_code = (body.get("device_code") or "").strip()
+
+            if not device_code and hasattr(app.state, "_punchplay_device_codes"):
+                device_code = app.state._punchplay_device_codes.get(user_code, "")
+
+            if not device_code:
+                return JSONResponse(status_code=400, content={"success": False, "error": "Missing device code"})
+
+            resp = punchplay_post(PUNCHPLAY_DEVICE_TOKEN_URL, json_body={
+                "client_id": PUNCHPLAY_CLIENT_ID,
+                "device_code": device_code,
+                "device_name": "Orac Server",
+                "device_id": "orac-server"
+            }, timeout=15)
+
+            if resp.status_code == 200:
+                token_data = resp.json()
+                access_token = token_data.get("access_token")
+                refresh_token = token_data.get("refresh_token") or ""
+                expires_in = token_data.get("expires_in", 3600)
+                expires_at = _time.time() + expires_in
+                username = token_data.get("username") or "punchplay_user"
+
+                # Fetch /me for canonical username if not in token response
+                if not token_data.get("username"):
+                    try:
+                        me_resp = punchplay_get(PUNCHPLAY_ME_URL, token=access_token, timeout=10)
+                        if me_resp.status_code == 200:
+                            me_data = me_resp.json()
+                            username = me_data.get("username") or me_data.get("name") or "punchplay_user"
+                    except Exception:
+                        pass
+
+                success = update_config_values({
+                    "punchplay.user": username,
+                    "punchplay.token": access_token,
+                    "punchplay.refresh_token": refresh_token,
+                    "punchplay.expires_at": str(expires_at),
+                    "punchplay.client": PUNCHPLAY_CLIENT_ID
+                }, app.state.config_db_path)
+
+                if hasattr(app.state, "_punchplay_device_codes") and user_code in app.state._punchplay_device_codes:
+                    del app.state._punchplay_device_codes[user_code]
+
+                if success:
+                    log(f"[PunchPlay] Successfully authorised as user: {username}", level=LOGINFO)
+                    return JSONResponse(status_code=200, content={"success": True, "username": username})
+                else:
+                    return JSONResponse(status_code=500, content={"success": False, "error": "Failed to save PunchPlay tokens in config database"})
+
+            err_data = {}
+            try:
+                err_data = resp.json()
+            except Exception:
+                pass
+
+            err = err_data.get("error", "")
+            if err == "authorization_pending":
+                return JSONResponse(status_code=200, content={"success": False, "status": "pending", "error": "Approval pending"})
+            elif err == "slow_down":
+                return JSONResponse(status_code=200, content={"success": False, "status": "slow_down", "error": "Polling too fast", "interval": 10})
+            elif err == "expired_token":
+                log("[PunchPlay] Device code expired during auth check", level=LOGWARNING)
+                return JSONResponse(status_code=200, content={"success": False, "status": "expired", "error": "Device code expired. Please try again."})
+            else:
+                err_msg = err_data.get("message") or err or f"HTTP {resp.status_code}: {resp.text.strip()}"
+                log(f"[PunchPlay] Error checking auth ({resp.status_code}): {err_msg}", level=LOGERROR)
+                return JSONResponse(status_code=200, content={"success": False, "status": "error", "error": err_msg})
+
+        except Exception as e:
+            log(f"Error checking PunchPlay authentication: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/punchplay/revoke")
+    async def web_punchplay_revoke_api():
+        try:
+            from resources.lib.punchplay_api import (
+                PUNCHPLAY_CLIENT_ID,
+                PUNCHPLAY_REVOKE_URL,
+                punchplay_post,
+            )
+
+            token = get_config_value("punchplay.token", app.state.config_db_path)
+
+            if token and token != "empty_setting":
+                try:
+                    punchplay_post(PUNCHPLAY_REVOKE_URL, json_body={
+                        "client_id": PUNCHPLAY_CLIENT_ID,
+                        "token": token
+                    }, timeout=10)
+                except Exception as e_rev:
+                    log(f"[PunchPlay] Revoke endpoint error (ignored): {e_rev}", level=LOGDEBUG)
+
+            success = update_config_values({
+                "punchplay.user": "empty_setting",
+                "punchplay.token": "empty_setting",
+                "punchplay.refresh_token": "empty_setting",
+                "punchplay.expires_at": "empty_setting",
+                "punchplay.client": "empty_setting"
+            }, app.state.config_db_path)
+
+            if success:
+                log("[PunchPlay] Successfully revoked PunchPlay authorisation", level=LOGINFO)
+                return JSONResponse(status_code=200, content={"success": True})
+            else:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Failed to clear PunchPlay configuration values"})
+        except Exception as e:
+            log(f"Error revoking PunchPlay authorisation: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
     @app.post("/api/web/platforms/mdblist/auth")
@@ -2302,6 +2492,10 @@ def app_factory(
             simkl_t = cfg.get("simkl.token") or cfg.get("simkl_token")
             is_simkl_auth = bool(simkl_t and simkl_t not in ('empty_setting', ''))
 
+            punchplay_u = cfg.get("punchplay.user")
+            punchplay_t = cfg.get("punchplay.token")
+            is_punchplay_auth = bool(punchplay_t and punchplay_t not in ('empty_setting', ''))
+
             mdb_k = cfg.get("mdblist_api") or cfg.get("mdblist_api_key")
             is_mdb_auth = bool(mdb_k and mdb_k not in ('empty_setting', ''))
 
@@ -2355,6 +2549,20 @@ def app_factory(
                     "authorized": True,
                     "username": simkl_u or "Authorised"
                 }, ping_simkl))
+
+            if is_punchplay_auth:
+                from resources.lib.punchplay_api import ensure_valid_punchplay_token, punchplay_get, PUNCHPLAY_ME_URL
+                valid_pp_t = ensure_valid_punchplay_token(app.state.config_db_path) or punchplay_t
+                def ping_punchplay():
+                    r = punchplay_get(PUNCHPLAY_ME_URL, token=valid_pp_t, timeout=4)
+                    return r.status_code == 200, f"HTTP {r.status_code}"
+                ping_tasks.append(({
+                    "id": "punchplay",
+                    "name": "PunchPlay",
+                    "authorized": True,
+                    "username": punchplay_u or "Authorised"
+                }, ping_punchplay))
+
 
             if is_mdb_auth:
                 def ping_mdblist():
@@ -2616,6 +2824,10 @@ def app_factory(
             diag["platforms"]["simkl"] = {
                 "authorized": is_simkl_auth,
                 "username": simkl_u or "Not configured"
+            }
+            diag["platforms"]["punchplay"] = {
+                "authorized": is_punchplay_auth,
+                "username": punchplay_u or "Not configured"
             }
             diag["platforms"]["tmdb"] = {
                 "authorized": is_tmdb_auth,

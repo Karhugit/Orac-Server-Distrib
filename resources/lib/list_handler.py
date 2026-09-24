@@ -261,6 +261,13 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
                             source = 'simkl'
                             list_user = 'simkl'
                             log(f"[Orac] List '{list_name}' recognised as Simkl generic list.", level=LOGDEBUG)
+                        else:
+                            from resources.lib.punchplay_lists import PUNCHPLAY_GENERIC_LISTS
+                            _punchplay_slugs = {l['slug'] for l in PUNCHPLAY_GENERIC_LISTS}
+                            if list_name in _punchplay_slugs:
+                                source = 'punchplay'
+                                list_user = 'punchplay'
+                                log(f"[Orac] List '{list_name}' recognised as PunchPlay generic list.", level=LOGDEBUG)
 
         # Step 2: If add_to_library is 1, or source is web/mdblist, fetch from local DB
         # (These sources always have items synced locally, so we serve from DB regardless of add_to_library)
@@ -269,8 +276,9 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
             if source == 'web':
                  log(f"[Orac] List {list_name} is web-sourced. Serving from local database.", level=LOGDEBUG)
             
-            # If list source is in ('web', 'mdblist', 'simkl'), we want to preserve insertion/rank order
-            preserve = source in ('web', 'mdblist', 'simkl')
+            # If list source is in ('web', 'mdblist', 'simkl', 'punchplay'), we want to preserve insertion/rank order
+            preserve = source in ('web', 'mdblist', 'simkl', 'punchplay')
+
             
             if item_type in ["movie", "all"]:
                 results.extend(_get_list_movies(list_name, user, movies_static_db_path, movies_dynamic_db_path, lists_db_path, preserve_order=preserve))
@@ -301,6 +309,8 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
                results = await _fetch_tmdb_list_external(tmdb_handler, slug, item_type)
         elif source == 'simkl':
             results = await _fetch_simkl_list_external(slug, item_type, tmdb_handler, movies_static_db_path, tvshows_static_db_path)
+        elif source == 'punchplay':
+            results = await _fetch_punchplay_list_external(slug, item_type, tmdb_handler, movies_static_db_path, tvshows_static_db_path)
         else:
             log(f"[Orac] Unknown source '{source}' for list {list_name}", level=LOGWARNING)
             results = []
@@ -783,6 +793,79 @@ async def _fetch_simkl_list_external(slug, item_type, tmdb_handler, movies_stati
         log(f"[Orac] Error fetching Simkl list {slug} externally: {e}", level=LOGERROR)
         return []
 
+
+async def _fetch_punchplay_list_external(slug, item_type, tmdb_handler, movies_static_db_path, tvshows_static_db_path):
+    """Fetches a PunchPlay generic list (trending movies/shows/anime) on the fly from the public catalog API."""
+    try:
+        from resources.lib.punchplay_lists import get_punchplay_generic_list
+        from resources.lib.punchplay_api import PUNCHPLAY_TRENDING_URL
+        import requests as _requests
+        import re
+
+        list_def = get_punchplay_generic_list(slug)
+        if not list_def:
+            log(f"[Orac] Unknown PunchPlay generic list slug: {slug}", level=LOGWARNING)
+            return []
+
+        api_type = list_def["api_type"]   # 'movie', 'show', or 'anime'
+        media_type = list_def["type"]      # 'movie' or 'show'
+
+        def _do_fetch():
+            return _requests.get(
+                PUNCHPLAY_TRENDING_URL,
+                params={"type": api_type},
+                headers={"Accept": "application/json"},
+                timeout=15
+            )
+
+        resp = await asyncio.to_thread(_do_fetch)
+        if resp.status_code != 200:
+            log(f"[Orac] Failed to fetch PunchPlay list {slug}: {resp.status_code}", level=LOGWARNING)
+            return []
+
+        data = resp.json()
+        raw_items = data.get("items", [])
+        if not isinstance(raw_items, list):
+            return []
+
+        formatted_items = []
+        for raw in raw_items:
+            tmdb_id = raw.get("tmdbId")
+            if not tmdb_id:
+                continue
+
+            item_kind = raw.get("type", media_type)  # 'movie' or 'show' (anime returns 'show')
+            year = raw.get("year")
+            overview = raw.get("overview", "")
+            poster_url = raw.get("posterUrl")
+
+            if item_kind == "movie" and item_type in ["movie", "all"]:
+                formatted_items.append({
+                    "tmdb_id": int(tmdb_id),
+                    "title": raw.get("name"),
+                    "year": year,
+                    "released": str(year) if year else None,
+                    "overview": overview,
+                    "poster_path": poster_url,
+                    "media_type": "movie"
+                })
+            elif item_kind == "show" and item_type in ["tvshow", "all"]:
+                formatted_items.append({
+                    "tmdb_id": int(tmdb_id),
+                    "title": raw.get("name"),
+                    "year": year,
+                    "premiered": str(year) if year else None,
+                    "overview": overview,
+                    "poster_path": poster_url,
+                    "media_type": "show"
+                })
+
+        enriched = await _enrich_items_with_metadata(formatted_items, tmdb_handler, movies_static_db_path, tvshows_static_db_path)
+        return [format_movie(item, tmdb_handler) if item.get('media_type') == 'movie' else item for item in enriched]
+
+    except Exception as e:
+        log(f"[Orac] Error fetching PunchPlay list {slug} externally: {e}", level=LOGERROR)
+        return []
 
 
 def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_static_db_path, tvshows_static_db_path, trakt_update_queue_path):

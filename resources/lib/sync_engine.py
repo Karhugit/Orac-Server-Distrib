@@ -208,15 +208,109 @@ def fetch_mdblist_history(config_db_path):
          
     return mdblist_data
 
-def reconcile_movies(db_path, trakt_data, simkl_data, mdblist_data, config_db_path=None):
+
+def _format_iso_rfc3339(ts_str):
+    if not ts_str:
+        return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    ts_str = str(ts_str).strip()
+    if ' ' in ts_str and 'T' not in ts_str:
+        ts_str = ts_str.replace(' ', 'T')
+    if not ts_str.endswith('Z') and not ('+' in ts_str[-6:] or '-' in ts_str[-6:]):
+        ts_str = ts_str + 'Z'
+    return ts_str
+
+
+def fetch_punchplay_history(config_db_path, force=False):
+    """
+    Fetches watched movies and episodes from PunchPlay via /api/platform/v1/me/history.
+    Supports continuous incremental sync using punchplay_last_sync_at watermark.
+    """
+    from resources.lib.config_handler import get_config_value
+    from resources.lib.punchplay_api import ensure_valid_punchplay_token, punchplay_get, PUNCHPLAY_HISTORY_URL
+    token = ensure_valid_punchplay_token(config_db_path) or get_config_value("punchplay.token", config_db_path)
+    if not token or token in ("empty_setting", ""):
+        log("[Sync Engine] Missing PunchPlay credentials.", level=LOGINFO)
+        return {"movies": {}, "shows": {}, "latest_watched_at": None}
+
+    punchplay_data = {"movies": {}, "shows": {}, "latest_watched_at": None}
+    now_iso = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    stored_last_sync = get_config_value("punchplay_last_sync_at", config_db_path, "")
+
+    cursor = None
+    page = 0
+    latest_ts = stored_last_sync or ""
+
+    try:
+        while True:
+            page += 1
+            params = {"limit": 100}
+            if cursor:
+                params["cursor"] = cursor
+
+            resp = punchplay_get(PUNCHPLAY_HISTORY_URL, token=token, params=params, timeout=20)
+            if resp.status_code != 200:
+                log(f"[Sync Engine] PunchPlay history page {page} failed ({resp.status_code}): {resp.text.strip()}", level=LOGWARNING)
+                break
+
+            data = resp.json()
+            items = data.get("items", [])
+            if not items:
+                break
+
+            reached_watermark = False
+            for item in items:
+                wat_at = item.get("watchedAt") or now_iso
+                if not latest_ts or wat_at > latest_ts:
+                    latest_ts = wat_at
+
+                if stored_last_sync and not force and wat_at <= stored_last_sync:
+                    reached_watermark = True
+                    break
+
+                item_type = item.get("type")
+                if item_type == "movie":
+                    tmdb_id = item.get("tmdbId")
+                    if tmdb_id:
+                        punchplay_data["movies"][str(tmdb_id)] = wat_at
+                elif item_type == "episode":
+                    show_tmdb_id = item.get("showTmdbId") or item.get("tmdbId")
+                    season = item.get("season")
+                    episode = item.get("episode")
+                    if show_tmdb_id and season is not None and episode is not None:
+                        sid_str = str(show_tmdb_id)
+                        if sid_str not in punchplay_data["shows"]:
+                            punchplay_data["shows"][sid_str] = {}
+                        key = f"{season}_{episode}"
+                        punchplay_data["shows"][sid_str][key] = wat_at
+
+            if reached_watermark:
+                log(f"[Sync Engine] PunchPlay incremental sync reached watermark {stored_last_sync}.", level=LOGINFO)
+                break
+
+            cursor = data.get("nextCursor")
+            if not cursor:
+                break
+
+        punchplay_data["latest_watched_at"] = latest_ts
+        log(f"[Sync Engine] PunchPlay fetched: {len(punchplay_data['movies'])} movies, {len(punchplay_data['shows'])} shows with episodes.", level=LOGINFO)
+
+    except Exception as e:
+        log(f"[Sync Engine] PunchPlay history fetch error: {e}", level=LOGERROR)
+
+    return punchplay_data
+
+
+def reconcile_movies(db_path, trakt_data, simkl_data, mdblist_data, config_db_path=None, punchplay_data=None):
     """
     Reconciles movies from all authorized providers into watched_history and movie_status.
     """
     log("[Sync Engine] Reconciling and flagging movies...", level=LOGINFO)
     from resources.lib.config_handler import get_authorized_watched_providers
-    authed_providers = get_authorized_watched_providers(config_db_path) if config_db_path else ['trakt', 'simkl', 'mdblist']
+    authed_providers = get_authorized_watched_providers(config_db_path) if config_db_path else ['trakt', 'simkl', 'mdblist', 'punchplay']
+    if punchplay_data is None:
+        punchplay_data = {}
     
-    all_tmdb_ids = set(trakt_data.keys()).union(set(simkl_data.keys())).union(set(mdblist_data.keys()))
+    all_tmdb_ids = set(trakt_data.keys()).union(set(simkl_data.keys())).union(set(mdblist_data.keys())).union(set(punchplay_data.keys()))
     if not all_tmdb_ids:
         log("[Sync Engine] No movies to reconcile.", level=LOGDEBUG)
         return
@@ -228,10 +322,12 @@ def reconcile_movies(db_path, trakt_data, simkl_data, mdblist_data, config_db_pa
         t_time_str = trakt_data.get(tmdb_id)
         s_time_str = simkl_data.get(tmdb_id)
         m_time_str = mdblist_data.get(tmdb_id)
+        p_time_str = punchplay_data.get(tmdb_id)
         
         t_time = _parse_timestamp(t_time_str)
         s_time = _parse_timestamp(s_time_str)
         m_time = _parse_timestamp(m_time_str)
+        p_time = _parse_timestamp(p_time_str)
         
         winner_time_str = t_time_str
         winner_time = t_time
@@ -243,6 +339,10 @@ def reconcile_movies(db_path, trakt_data, simkl_data, mdblist_data, config_db_pa
         if m_time and (not winner_time or m_time > winner_time):
             winner_time_str = m_time_str
             winner_time = m_time
+
+        if p_time and (not winner_time or p_time > winner_time):
+            winner_time_str = p_time_str
+            winner_time = p_time
             
         if not winner_time_str:
             winner_time_str = now_str
@@ -250,23 +350,25 @@ def reconcile_movies(db_path, trakt_data, simkl_data, mdblist_data, config_db_pa
         trakt_synced_at = now_str if t_time_str else (None if 'trakt' in authed_providers else 'unauthorized')
         simkl_synced_at = now_str if s_time_str else (None if 'simkl' in authed_providers else 'unauthorized')
         mdblist_synced_at = now_str if m_time_str else (None if 'mdblist' in authed_providers else 'unauthorized')
+        punchplay_synced_at = now_str if p_time_str else (None if 'punchplay' in authed_providers else 'unauthorized')
         
         to_update.append((
-             int(tmdb_id), winner_time_str, trakt_synced_at, simkl_synced_at, mdblist_synced_at
+             int(tmdb_id), winner_time_str, trakt_synced_at, simkl_synced_at, mdblist_synced_at, punchplay_synced_at
         ))
         
     if to_update:
         try:
             with db_connect(db_path) as conn:
                 query = """
-                INSERT INTO watched_history (tmdb_id, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at)
-                VALUES (?, 1, ?, ?, ?, ?)
+                INSERT INTO watched_history (tmdb_id, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at, punchplay_synced_at)
+                VALUES (?, 1, ?, ?, ?, ?, ?)
                 ON CONFLICT(tmdb_id) DO UPDATE SET
                     is_watched = 1,
                     last_watched_at = CASE WHEN excluded.last_watched_at > watched_history.last_watched_at THEN excluded.last_watched_at ELSE watched_history.last_watched_at END,
                     trakt_synced_at = COALESCE(excluded.trakt_synced_at, watched_history.trakt_synced_at),
                     simkl_synced_at = COALESCE(excluded.simkl_synced_at, watched_history.simkl_synced_at),
-                    mdblist_synced_at = COALESCE(excluded.mdblist_synced_at, watched_history.mdblist_synced_at)
+                    mdblist_synced_at = COALESCE(excluded.mdblist_synced_at, watched_history.mdblist_synced_at),
+                    punchplay_synced_at = COALESCE(excluded.punchplay_synced_at, watched_history.punchplay_synced_at)
                 """
                 conn.executemany(query, to_update)
                 
@@ -283,15 +385,17 @@ def reconcile_movies(db_path, trakt_data, simkl_data, mdblist_data, config_db_pa
             log(f"[Sync Engine] Error reconciling movies: {e}", level=LOGERROR)
 
 
-def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data, config_db_path=None, tvshows_static_db=None):
+def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data, config_db_path=None, tvshows_static_db=None, punchplay_data=None):
     """
     Reconciles TV show episodes from all authorized providers into watched_history and watched_episodes.
     """
     log("[Sync Engine] Reconciling and flagging tv shows...", level=LOGINFO)
     from resources.lib.config_handler import get_authorized_watched_providers, get_config_value, get_trakt_user
-    authed_providers = get_authorized_watched_providers(config_db_path) if config_db_path else ['trakt', 'simkl', 'mdblist']
+    authed_providers = get_authorized_watched_providers(config_db_path) if config_db_path else ['trakt', 'simkl', 'mdblist', 'punchplay']
+    if punchplay_data is None:
+        punchplay_data = {}
     
-    all_show_tmdb_ids = set(trakt_data.keys()).union(set(simkl_data.keys())).union(set(mdblist_data.keys()))
+    all_show_tmdb_ids = set(trakt_data.keys()).union(set(simkl_data.keys())).union(set(mdblist_data.keys())).union(set(punchplay_data.keys()))
     if not all_show_tmdb_ids:
         log("[Sync Engine] No tv shows to reconcile.", level=LOGDEBUG)
         return
@@ -303,8 +407,9 @@ def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data, config_db_pat
         t_eps = trakt_data.get(show_tmdb_id, {})
         s_eps = simkl_data.get(show_tmdb_id, {})
         m_eps = mdblist_data.get(show_tmdb_id, {})
+        p_eps = punchplay_data.get(show_tmdb_id, {})
         
-        all_ep_keys = set(t_eps.keys()).union(set(s_eps.keys())).union(set(m_eps.keys()))
+        all_ep_keys = set(t_eps.keys()).union(set(s_eps.keys())).union(set(m_eps.keys())).union(set(p_eps.keys()))
         for ep_key in all_ep_keys:
             try:
                 season_num, ep_num = map(int, ep_key.split('_'))
@@ -314,10 +419,12 @@ def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data, config_db_pat
             t_time_str = t_eps.get(ep_key)
             s_time_str = s_eps.get(ep_key)
             m_time_str = m_eps.get(ep_key)
+            p_time_str = p_eps.get(ep_key)
             
             t_time = _parse_timestamp(t_time_str)
             s_time = _parse_timestamp(s_time_str)
             m_time = _parse_timestamp(m_time_str)
+            p_time = _parse_timestamp(p_time_str)
             
             winner_time_str = t_time_str
             winner_time = t_time
@@ -329,6 +436,10 @@ def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data, config_db_pat
             if m_time and (not winner_time or m_time > winner_time):
                 winner_time_str = m_time_str
                 winner_time = m_time
+
+            if p_time and (not winner_time or p_time > winner_time):
+                winner_time_str = p_time_str
+                winner_time = p_time
                 
             if not winner_time_str:
                 winner_time_str = now_str
@@ -336,23 +447,25 @@ def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data, config_db_pat
             trakt_synced_at = now_str if t_time_str else (None if 'trakt' in authed_providers else 'unauthorized')
             simkl_synced_at = now_str if s_time_str else (None if 'simkl' in authed_providers else 'unauthorized')
             mdblist_synced_at = now_str if m_time_str else (None if 'mdblist' in authed_providers else 'unauthorized')
+            punchplay_synced_at = now_str if p_time_str else (None if 'punchplay' in authed_providers else 'unauthorized')
             
             to_update.append((
-                 int(show_tmdb_id), season_num, ep_num, winner_time_str, trakt_synced_at, simkl_synced_at, mdblist_synced_at
+                 int(show_tmdb_id), season_num, ep_num, winner_time_str, trakt_synced_at, simkl_synced_at, mdblist_synced_at, punchplay_synced_at
             ))
             
     if to_update:
         try:
             with db_connect(db_path) as conn:
                 query = """
-                INSERT INTO watched_history (show_tmdb_id, season, episode, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at)
-                VALUES (?, ?, ?, 1, ?, ?, ?, ?)
+                INSERT INTO watched_history (show_tmdb_id, season, episode, is_watched, last_watched_at, trakt_synced_at, simkl_synced_at, mdblist_synced_at, punchplay_synced_at)
+                VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
                 ON CONFLICT(show_tmdb_id, season, episode) DO UPDATE SET
                     is_watched = 1,
                     last_watched_at = CASE WHEN excluded.last_watched_at > watched_history.last_watched_at THEN excluded.last_watched_at ELSE watched_history.last_watched_at END,
                     trakt_synced_at = COALESCE(excluded.trakt_synced_at, watched_history.trakt_synced_at),
                     simkl_synced_at = COALESCE(excluded.simkl_synced_at, watched_history.simkl_synced_at),
-                    mdblist_synced_at = COALESCE(excluded.mdblist_synced_at, watched_history.mdblist_synced_at)
+                    mdblist_synced_at = COALESCE(excluded.mdblist_synced_at, watched_history.mdblist_synced_at),
+                    punchplay_synced_at = COALESCE(excluded.punchplay_synced_at, watched_history.punchplay_synced_at)
                 """
                 conn.executemany(query, to_update)
                 
@@ -378,7 +491,7 @@ def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data, config_db_pat
                 
                 watched_episodes_data = []
                 for u in to_update:
-                    sid, sea, ep, wat, _, _, _ = u
+                    sid, sea, ep, wat, *_ = u
                     tr_id, tm_id = ep_id_lookup.get((sid, sea, ep), (None, None))
                     watched_episodes_data.append((username, tr_id, tm_id, sea, ep, wat, 100, 2))
                     
@@ -523,16 +636,22 @@ def sync_providers_sync(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, co
         mdblist_history = fetch_mdblist_history(config_db_path)
         mdblist_movies = mdblist_history.get("movies", {})
         mdblist_shows = mdblist_history.get("shows", {})
-        
-        # 4. Reconcile movies
-        if movies_dynamic_db:
-            reconcile_movies(movies_dynamic_db, trakt_movies, simkl_movies, mdblist_movies, config_db_path)
-        
-        # 5. Reconcile shows
-        if tvshows_dynamic_db:
-            reconcile_shows(tvshows_dynamic_db, trakt_shows, simkl_shows, mdblist_shows, config_db_path, tvshows_static_db)
 
-        # 6. Persist activities timestamps
+        # 4. Fetch PunchPlay
+        punchplay_history = fetch_punchplay_history(config_db_path, force=force)
+        punchplay_movies = punchplay_history.get("movies", {})
+        punchplay_shows = punchplay_history.get("shows", {})
+        punchplay_latest_wat = punchplay_history.get("latest_watched_at")
+        
+        # 5. Reconcile movies
+        if movies_dynamic_db:
+            reconcile_movies(movies_dynamic_db, trakt_movies, simkl_movies, mdblist_movies, config_db_path, punchplay_data=punchplay_movies)
+        
+        # 6. Reconcile shows
+        if tvshows_dynamic_db:
+            reconcile_shows(tvshows_dynamic_db, trakt_shows, simkl_shows, mdblist_shows, config_db_path, tvshows_static_db, punchplay_data=punchplay_shows)
+
+        # 7. Persist activities timestamps
         if config_db_path:
             try:
                 updates = {}
@@ -554,6 +673,9 @@ def sync_providers_sync(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, co
                         updates["simkl_tv_completed_synced_at"] = s_tv_comp
                     if s_mov_comp:
                         updates["simkl_movies_completed_synced_at"] = s_mov_comp
+
+                if punchplay_latest_wat:
+                    updates["punchplay_last_sync_at"] = punchplay_latest_wat
                         
                 if updates:
                     update_config_values(updates, config_db_path)
@@ -611,8 +733,9 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
     has_trakt = 'trakt' in authed_providers and bool(trakt_handler)
     has_simkl = 'simkl' in authed_providers
     has_mdblist = 'mdblist' in authed_providers
+    has_punchplay = 'punchplay' in authed_providers
 
-    if not (has_trakt or has_simkl or has_mdblist):
+    if not (has_trakt or has_simkl or has_mdblist or has_punchplay):
         log("[Sync Engine] No authorized watched providers for bulk sync.", level=LOGDEBUG)
         return
 
@@ -620,6 +743,7 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
     m_trakt_rows = []
     m_simkl_rows = []
     m_mdblist_rows = []
+    m_punchplay_rows = []
     
     try:
         with db_connect(movies_dynamic_db) as conn:
@@ -633,6 +757,9 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
             if has_mdblist:
                 cursor.execute("SELECT tmdb_id, last_watched_at FROM watched_history WHERE is_watched = 1 AND (mdblist_synced_at IS NULL OR mdblist_synced_at = '')")
                 m_mdblist_rows = cursor.fetchall()
+            if has_punchplay:
+                cursor.execute("SELECT tmdb_id, last_watched_at FROM watched_history WHERE is_watched = 1 AND (punchplay_synced_at IS NULL OR punchplay_synced_at = '')")
+                m_punchplay_rows = cursor.fetchall()
     except Exception as e:
         log(f"[Sync Engine] Error collecting movies for bulk sync: {e}", level=LOGERROR)
          
@@ -640,6 +767,7 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
     t_trakt_rows = []
     t_simkl_rows = []
     t_mdblist_rows = []
+    t_punchplay_rows = []
     
     try:
         with db_connect(tvshows_dynamic_db) as conn:
@@ -653,18 +781,21 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
             if has_mdblist:
                 cursor.execute("SELECT show_tmdb_id, season, episode, last_watched_at FROM watched_history WHERE is_watched = 1 AND (mdblist_synced_at IS NULL OR mdblist_synced_at = '')")
                 t_mdblist_rows = cursor.fetchall()
+            if has_punchplay:
+                cursor.execute("SELECT show_tmdb_id, season, episode, last_watched_at FROM watched_history WHERE is_watched = 1 AND (punchplay_synced_at IS NULL OR punchplay_synced_at = '')")
+                t_punchplay_rows = cursor.fetchall()
     except Exception as e:
         log(f"[Sync Engine] Error collecting shows for bulk sync: {e}", level=LOGERROR)
 
-    total_pending = len(m_trakt_rows) + len(m_simkl_rows) + len(m_mdblist_rows) + len(t_trakt_rows) + len(t_simkl_rows) + len(t_mdblist_rows)
+    total_pending = len(m_trakt_rows) + len(m_simkl_rows) + len(m_mdblist_rows) + len(m_punchplay_rows) + len(t_trakt_rows) + len(t_simkl_rows) + len(t_mdblist_rows) + len(t_punchplay_rows)
     if total_pending == 0:
         log("[Sync Engine] No pending watched history items to sync.", level=LOGINFO)
         return
 
-    log(f"[Sync Engine] Pending sync items — Trakt: M:{len(m_trakt_rows)} E:{len(t_trakt_rows)} | Simkl: M:{len(m_simkl_rows)} E:{len(t_simkl_rows)} | MDBList: M:{len(m_mdblist_rows)} E:{len(t_mdblist_rows)}", level=LOGINFO)
+    log(f"[Sync Engine] Pending sync items — Trakt: M:{len(m_trakt_rows)} E:{len(t_trakt_rows)} | Simkl: M:{len(m_simkl_rows)} E:{len(t_simkl_rows)} | MDBList: M:{len(m_mdblist_rows)} E:{len(t_mdblist_rows)} | PunchPlay: M:{len(m_punchplay_rows)} E:{len(t_punchplay_rows)}", level=LOGINFO)
 
     # Fetch IMDB mappings from static db for collected shows
-    all_sids = list(set([r[0] for r in (t_trakt_rows + t_simkl_rows + t_mdblist_rows)]))
+    all_sids = list(set([r[0] for r in (t_trakt_rows + t_simkl_rows + t_mdblist_rows + t_punchplay_rows)]))
     imdb_map = {}
     if tvshows_static_db and all_sids:
         try:
@@ -792,6 +923,47 @@ def bulk_sync_history(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, conf
                     )
                     conn.commit()
 
+    # --- Push to PunchPlay ---
+    if has_punchplay and (m_punchplay_rows or t_punchplay_rows):
+        pp_items = []
+        for mid, wat in m_punchplay_rows:
+            iso_wat = _format_iso_rfc3339(wat)
+            pp_items.append({
+                "client_item_id": f"orac:movie:{mid}:{iso_wat}",
+                "kind": "movie",
+                "tmdb_id": int(mid),
+                "watched_at": iso_wat
+            })
+        for sid, sea, ep, wat in t_punchplay_rows:
+            iso_wat = _format_iso_rfc3339(wat)
+            pp_items.append({
+                "client_item_id": f"orac:episode:{sid}:{sea}:{ep}:{iso_wat}",
+                "kind": "episode",
+                "tmdb_id": int(sid),
+                "season": int(sea),
+                "episode": int(ep),
+                "watched_at": iso_wat
+            })
+
+        for chunk in _chunk_list(pp_items, 100):
+            if send_batch_to_punchplay(config_db_path, chunk):
+                m_ids = [it["tmdb_id"] for it in chunk if it["kind"] == "movie"]
+                e_tuples = [(it["tmdb_id"], it["season"], it["episode"]) for it in chunk if it["kind"] == "episode"]
+
+                if m_ids:
+                    with db_connect(movies_dynamic_db) as conn:
+                        conn.executemany("UPDATE watched_history SET punchplay_synced_at = ? WHERE tmdb_id = ?", [(now_str, mid) for mid in m_ids])
+                        conn.commit()
+
+                if e_tuples:
+                    with db_connect(tvshows_dynamic_db) as conn:
+                        conn.executemany(
+                            "UPDATE watched_history SET punchplay_synced_at = ? WHERE show_tmdb_id = ? AND season = ? AND episode = ?",
+                            [(now_str, sid, sea, ep) for sid, sea, ep in e_tuples]
+                        )
+                        conn.commit()
+                time.sleep(0.35)
+
     log("[Sync Engine] Bulk sync history cycle completed.", level=LOGINFO)
 
 
@@ -858,6 +1030,40 @@ def send_batch_to_mdblist(config_db_path, payload):
         log(f"[Sync Engine] MDBList batch error: {resp.status_code} - {resp.text}", level=LOGERROR)
     except Exception as e:
         log(f"[Sync Engine] MDBList batch exception: {e}", level=LOGERROR)
+    return False
+
+
+def send_batch_to_punchplay(config_db_path, items):
+    from resources.lib.punchplay_api import (
+        ensure_valid_punchplay_token, get_punchplay_headers,
+        PUNCHPLAY_SYNC_HISTORY_URL, handle_punchplay_rate_limit
+    )
+    import uuid
+    token = ensure_valid_punchplay_token(config_db_path)
+    if not token or token in ("empty_setting", ""):
+        return False
+
+    headers = get_punchplay_headers(token=token)
+    headers["Idempotency-Key"] = str(uuid.uuid4())
+    log(f"[Sync Engine] Sending PunchPlay history batch ({len(items)} items)...", level=LOGINFO)
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(PUNCHPLAY_SYNC_HISTORY_URL, json={"items": items}, headers=headers, timeout=30)
+            if resp.status_code in [200, 201]:
+                # If remaining window is low, pause proactively
+                handle_punchplay_rate_limit(resp, context="Sync Engine")
+                return True
+            elif resp.status_code == 429:
+                if attempt < max_retries - 1:
+                    handle_punchplay_rate_limit(resp, context="Sync Engine")
+                    continue
+            log(f"[Sync Engine] PunchPlay history batch error: {resp.status_code} - {resp.text}", level=LOGERROR)
+            break
+        except Exception as e:
+            log(f"[Sync Engine] PunchPlay history batch exception: {e}", level=LOGERROR)
+            break
     return False
 
 

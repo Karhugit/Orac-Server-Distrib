@@ -113,6 +113,8 @@ class UpdateQueueWorker:
                     self.process_simkl_update(row, update_type)
                 elif provider == 'mdblist':
                     self.process_mdblist_update(row, update_type)
+                elif provider == 'punchplay':
+                    self.process_punchplay_update(row, update_type)
                 else:
                     self.process_trakt_update(row, update_type)
 
@@ -301,6 +303,46 @@ class UpdateQueueWorker:
             raise Exception("MDBList update failed")
         else:
             self._update_synced_timestamp('mdblist', row, now_str)
+
+    def process_punchplay_update(self, row, update_type):
+        from resources.lib.sync_engine import send_batch_to_punchplay, _format_iso_rfc3339
+        now_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        items = []
+
+        if update_type == 'watched_movie':
+            tmdb_id = row['payload'].get('tmdb_id')
+            if tmdb_id:
+                iso_wat = _format_iso_rfc3339(now_str)
+                items.append({
+                    "client_item_id": f"orac:movie:{tmdb_id}:{iso_wat}",
+                    "kind": "movie",
+                    "tmdb_id": int(tmdb_id),
+                    "watched_at": iso_wat
+                })
+        elif update_type == 'watched_episode':
+            show_tmdb_id = row['payload'].get('show_tmdb_id') or row['payload'].get('tmdb_id')
+            season = row['payload'].get('season')
+            episode = row['payload'].get('episode')
+            if show_tmdb_id and season is not None and episode is not None:
+                iso_wat = _format_iso_rfc3339(now_str)
+                items.append({
+                    "client_item_id": f"orac:episode:{show_tmdb_id}:{season}:{episode}:{iso_wat}",
+                    "kind": "episode",
+                    "tmdb_id": int(show_tmdb_id),
+                    "season": int(season),
+                    "episode": int(episode),
+                    "watched_at": iso_wat
+                })
+        else:
+            log(f"[Queue] Unsupported PunchPlay update type: {update_type}", level=LOGWARNING)
+            return
+
+        success = send_batch_to_punchplay(self.config_db_path, items)
+        if not success:
+            self._mark_status(row['id'], 'retry')
+            raise Exception("PunchPlay update failed")
+        else:
+            self._update_synced_timestamp('punchplay', row, now_str)
 
     def mark_watched_episode(self, row):
         episode_trakt_id = row['payload'].get('episode_trakt_id')

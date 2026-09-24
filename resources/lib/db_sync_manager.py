@@ -257,6 +257,24 @@ async def sync_lists_and_items(trakt_handler, tmdb_handler, movies_static_db_pat
         else:
             log(f"[Orac] **SYNC** Trakt -> MDBList sync is disabled in settings. Skipping.", level=LOGINFO)
 
+    # Sync PunchPlay Lists
+    if config_db_path:
+        from resources.lib.punchplay_list_sync import punchplay_list_sync_task
+        log(f"[Orac] **SYNC** Starting PunchPlay lists sync process", level=LOGINFO)
+        punchplay_start_time = time()
+        await punchplay_list_sync_task(
+            config_db_path,
+            lists_db_path,
+            trakt_handler,
+            tmdb_handler,
+            movies_static_db_path,
+            movies_dynamic_db_path,
+            tvshows_static_db_path,
+            tvshows_dynamic_db_path,
+            trakt_update_queue_path
+        )
+        log(f"[Orac] PunchPlay lists sync completed in {time() - punchplay_start_time:.2f} seconds", level=LOGINFO)
+
 
     # Sync recent TV show updates to static DB (Trakt Source)
     trakt_updates_start = time()
