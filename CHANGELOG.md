@@ -1,0 +1,204 @@
+# Orac Server — Changelog
+
+All notable changes are documented here.
+The distrib repo is tagged with `vX.Y.Z` for each release so the
+in-server update checker can compare against the running version.
+
+## [1.3.8] — 2026-09-25
+
+### Added
+- **PunchPlay Platform Integration** — Added full platform integration for PunchPlay (`https://punchplay.tv`). Supports OAuth 2.0 device code flow with user PIN and QR code display in the Command Centre web dashboard, token lifecycle management (auto-refresh and revocation), and service connectivity diagnostics.
+- **PunchPlay Generic & User Lists** — Added public catalog discovery feeds ("PunchPlay Trending Movies", "PunchPlay Trending Shows", and "PunchPlay Trending Anime") with rank preservation and automated background synchronization. Ingests user-created lists from PunchPlay into the local library.
+- **Bidirectional Watched History Synchronization** — Integrated PunchPlay into the multi-provider watched history sync engine alongside Trakt, Simkl, and MDBList. Cursor-paginates inbound watch history (`/api/platform/v1/me/history`), flags provider-specific synced timestamps in `watched_history`, and pushes bulk watch events (`/api/platform/v1/sync/history`) using idempotency keys.
+- **Rate Limit Handling & Backoff** — Added parsing for PunchPlay rate limit headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After`). Implemented proactive threshold pausing, automatic 429 backoff, and chunk pacing during bulk history sync.
+
+## [1.3.7] — 2026-09-20
+
+### Added
+- **IntroDB Episode Segment Timestamps** — Added migration v3 to store IntroDB intro and outro segment start/end timestamps in `tvshows_static_cache.db`. Added background hourly sync for active TV shows and exposed native `intro` (`{start, end}`) and `outro` dictionaries in `/show`, `/shows`, and `/next_episodes` API responses for player skip support in Liberator.
+- **TMDb External IDs Resolution** — Added `get_show_external_ids` to `TMDbAPI` to robustly resolve and backfill IMDb and TVDB IDs for TV shows lacking them, maximizing IntroDB segment match rates.
+- **Simkl API Conventions & Headers** — Standardized all Simkl API requests with required headers (`User-Agent`, `Content-Type`, `simkl-api-key`, `Authorization`) and query parameters (`client_id`, `app-name`, `app-version`) per official Simkl conventions.
+- **Two-Phase Simkl Continuous Delta Sync** — Implemented Simkl continuous delta sync using `/sync/activities` change-detection and `date_from` timestamp watermarks, downloading only changed delta items rather than full history. Optimized dropped and plan-to-watch sync using scoped `ids_only` endpoints.
+
+### Changed
+- **Provider Sync Frequency Throttled** — Reduced background provider sync (Trakt, Simkl, MDBList inbound history and dropped checks) in `UpdateQueueWorker` from every 5 minutes to once every hour (3600s), while preserving the 5-minute loop for immediate local outbound queue processing.
+
+## [1.3.6] — 2026-09-19
+
+### Added
+- **Bidirectional Dropped Show Synchronization** — Added full bidirectional sync of dropped TV show status across Trakt, Simkl, and MDBList, with the local database (`shows` table in `tvshows_static_cache.db`) serving as the source of truth.
+- **Provider Dropped Status Ingestion** — Added `fetch_trakt_dropped`, `fetch_simkl_dropped`, and `fetch_mdblist_dropped` with delta sync change-detection via provider activity endpoints.
+- **Bulk & Immediate Dropped Sync** — Added `bulk_sync_dropped` to push locally dropped shows to all authorized providers, executed immediately upon marking a show as dropped via `/drop_tvshow` and periodically during the queue worker cycle.
+
+### Fixed
+- **Queue Worker Drop Query Column** — Fixed query in `drop_show` to reference `show_tmdb_id` instead of the non-existent `tmdb_id` column, and delegated drop processing to the multi-provider sync engine.
+
+## [1.3.5] — 2026-09-18
+
+### Added
+- **Dedicated Services Tab** — consolidated Authorized Platforms, Debrid Resolvers, and Service Diagnostics into a unified, responsive Services management tab in the Command Centre web dashboard.
+- **AIOStreams Integration** — added full AIOStreams credential management and live connectivity diagnostics directly to the Authorised Platforms pane.
+- **Centralized Premiumize Authorization & Live Cloud Storage** — migrated Premiumize.me OAuth device authorization and revocation to the web dashboard, with custom client credentials and live un-cached cloud file operations.
+- **Multi-Provider Watched Synchronization** — established the local database (`watched_history`) as the single source of truth for watched data with bidirectional synchronization across Trakt, Simkl, and MDBList. Uses provider activity endpoints (`/sync/last_activities` and `/sync/activities`) for efficient delta syncing.
+- **Season & Series Pack Scraping for TV Episodes** — added concurrent season pack and show pack scraping support for TV episodes, expanding source results and debrid cached resolution.
+- **On-Demand Watched Sync Endpoint** — added `GET /sync_watched` to trigger immediate background multi-provider watched synchronization.
+
+### Fixed
+- **Debrid Resolvers Table Alignment** — center-justified Priority and Latency columns under their respective headers.
+- **Simkl Episode History Ingestion** — resolved issue where Simkl episode items were omitted from sync queries due to missing extended parameter and status field mismatch.
+- **MDBList Watched History Parsing** — updated payload parser to match MDBList sync response schema for movies and episodes.
+
+## [1.3.4] — 2026-08-25
+
+### Added
+- **Central Account Authorization in Web Dashboard** — added full OAuth and PIN-based authorization workflows directly within the web dashboard for Trakt, Simkl, TMDb, and MDBList.
+- **Static Platform Management** — Trakt, Simkl, TMDb, and MDBList permanently display in the Authorised Platforms dashboard with live connection status, PIN codes, QR codes, and instant revoke support.
+
+## [1.3.3] — 2026-08-07
+
+### Fixed
+- **Database Locked Errors Fix** — introduced central `db_connect()` helper with 30s timeout, busy handling, and WAL journal mode across all SQLite connection points.
+- **WAL Mode at Startup** — automatically enables WAL journal mode on all databases during server init.
+- **Stale Episode Refresh Trakt Lookup** — skipped Trakt lookups when `show_trakt_id` is negative (synthetic placeholder).
+
+## [1.3.1] — 2026-07-04
+
+### Added
+- **Database Migration Runner** — introduced a generic, version-based sequential database migration framework to safely upgrade users' databases.
+- **TV Show Specials Watched Recalculation** — added a v1 migration to automatically recalculate stored TV show watched status values to exclude Season 0 specials, ensuring "In Progress" lists immediately reflect the fix introduced in 1.3.0.
+
+## [1.3.0] — 2026-07-04
+
+### Fixed
+- **TV Show Watched Status Calculation** — excluded Specials (Season 0) when computing a show's overall tri-state `watched_status` (Unwatched/In Progress/Watched). This resolves issues where fully watched shows were incorrectly categorized as "In Progress" due to unwatched special episodes.
+
+## [1.2.9] — 2026-06-30
+
+### Fixed
+- **Python 3.11 Startup Crash** — fixed `SyntaxError: f-string expression part cannot include a backslash` in `formatting_utils.py` by extracting path string replacement outside of the f-string, resolving startup crashes when running in Docker or older Python environments.
+
+## [1.2.8] — 2026-06-29
+
+### Added
+- **Movie Trailer Support** — implemented backend database, scraper, and payload support to retrieve, save, and return YouTube movie trailers from TMDb.
+- **Improved Distribution Packaging** — updated the distribution packaging script to exclude local testing image assets.
+
+## [1.2.7] — 2026-06-23
+
+### Added
+- **Fanart.tv API (v3.2) Integration** — implemented frontend configuration options inside the Accounts settings tab of the Liberator addon (`fanart_enabled`, `fanart_api_key`, `fanart_storage_mode`) to sync and redirect artwork queries.
+- **Background Latest Sync Worker** — created a delta sync runner that queries Fanart.tv's `/latest` movies and TV show changes endpoints and refreshes static databases selectively.
+- **Local Asset Streaming** — added dynamic asset streaming by mounting the downloaded local images directory (`/assets/images`) statically via FastAPI, rewriting media endpoints on the fly using the host LAN address.
+- **Database Schema Upgrades** — added `fanart_poster_path`, `fanart_fanart_path`, `fanart_clearlogo_path`, and `fanart_last_updated` columns, and integrated TVDB ID tracking to TV Show tables.
+
+## [1.2.6] — 2026-06-14
+
+### Added
+- **Higher-resolution images** — upgraded all TMDb image size parameters: posters `w500→w780`, fanart/landscape `w780→w1280`, thumbnails/episode stills `w300→w780`, clear logos `w300→w500`.
+- **Image resolution migration script** — added `migrate_image_resolution.py` to upgrade all existing stored image URLs in the database without requiring a full resync.
+- **AIOStreams diagnostic logging** — added detailed INFO-level logging across the full settings pipeline (Liberator send → Orac receive/store → scraper credential load → header source) with masked passwords.
+
+### Fixed
+- **FlixPatrol title resolution** — extract year from URL slug (e.g. `/title/the-babysitter-1995/`) and pass it to TMDb search, fixing wrong-version matches like The Babysitter (2017 vs 1995).
+- **FlixPatrol ranking order** — preserve scraped rank order for FlixPatrol/web/mdblist lists instead of resorting by release date. Fixed an int/string type mismatch in the `id_to_index` lookup that was silently defeating the sort.
+
+---
+
+## [1.2.5] — 2026-06-07
+
+### Added
+- **Torz Scraper** — registered a new scraper module wrapping StremThru aggregator providers with parallel querying and hash deduplication.
+- **Library List Items Detail Modal** — implemented a landscape-optimized glassmorphic grid overlay to show all items (movies and TV shows) inside any selected library list.
+- **Details & Reviews View** — added a detail overlay panel displaying poster, rating, type, overview, and user reviews from TMDb (with translation formatting for Kodi BBCode tags).
+- **Manual Scrape Action** — added a scrape button inside the list detail view cards to run scraper queries manually and inspect parsed results.
+
+### Fixed
+- **Thread pool worker starvation** — fixed thread allocation limits to guarantee dynamically registered scrapers receive a full thread pool.
+- **TMDb TV show fallback matching** — resolved a mapping error where show IMDb IDs were matched with episode IMDb IDs when enriching show cache fallbacks.
+- **Simkl watchlist sync crash** — fixed a KeyError when synchronizing lists lacking titles/years by enriching them from the TMDb API.
+
+---
+
+## [1.2.4] — 2026-06-04
+
+### Fixed
+- **TMDB list v3 updates** — added the `"media_type"` parameter inside the request JSON payload body for custom list additions and removals, resolving the 403 Forbidden client error when adding or removing TV shows.
+
+---
+
+## [1.2.3] — 2026-06-02
+
+### Added
+- **Dynamic Scraper Modes** — implemented backend support for standalone AIOStreams mode, hybrid mode, and standard Orac scraper mode based on client setting preferences.
+- **Provider Partitioning Filtering** — added query parameter extraction and dynamic filtering for primary/background providers during scrape requests.
+
+---
+
+## [1.2.2] — 2026-06-02
+
+### Fixed
+- **TMDB changes daily safety limit** — expanded the TMDB changes daily sync safety limit from 10 to 50 pages, allowing retrieval of up to 5,000 show updates per cycle so that no edits are lost on busy days where changes exceed 1,000.
+- **ID Deduplication** — optimized the TMDB TV changes sync engine to deduplicate incoming show IDs using a set, avoiding redundant thread spawning and database writes.
+
+---
+
+## [1.2.1] — 2026-06-02
+
+### Added
+- **External Lists Watched Status Enrichment** — implemented automatic local database lookup and status injection (watched ticks and resume percentage points) for movies and TV shows fetched from external lists (TMDB, Trakt, Simkl, MDblist) that are not imported into the library.
+
+---
+
+## [1.2.0] — 2026-06-01
+
+### Added
+- **`/api/status` endpoint** — returns central authorization status and access tokens (Trakt, Simkl, TMDb, MDbList) to seamlessly synchronize credentials across multiple active Liberator addon instances.
+
+### Fixed
+- **TMDB custom list pagination** — implemented a pagination loop to aggregate all items across multiple pages (bypassing the 20-item v3 details API limit) when syncing user-created lists.
+
+---
+
+## [1.1.0] — 2026-05-29
+
+### Added
+- **Versioning system** — `version.py` is now the single source of truth for the
+  server version number (`1.1.0`).
+- **Automatic update notifications** — the server checks GitHub Releases once at
+  startup and then every 24 hours. When a newer release is available:
+  - An amber banner appears in the web dashboard linking to the release notes.
+  - A `[WARNING]` log line is written at startup and on each daily check.
+- **`/api/version` endpoint** — returns current version, latest version, whether
+  an update is available, the release URL, and when the check last ran.
+- **Dynamic TMDB watch providers** — new `providers_handler.py` syncs and serves
+  the TMDB watch-provider catalogue; exposed via the `/providers` endpoint.
+- **Stale episode metadata refresh** — new `stale_episode_refresh.py` background
+  worker refreshes episode metadata that has gone stale (24-hour cycle).
+- **`docker-entrypoint.sh`** — improved Docker entry-point script.
+
+### Changed
+- **Trakt watched history sync now paginated** — `sync_engine.py` loops through
+  pages of `/sync/watched/movies` and `/sync/watched/shows` using a 250-item page
+  size, ready for Trakt's June 2026 hard limit.
+- **`last_activities` change detection** — `sync_providers()` now calls
+  `/sync/last_activities` before fetching watched history. If neither movies nor
+  episodes have changed since the last sync the paginated fetches are skipped
+  entirely, saving significant API quota on idle hourly cycles.
+- **Watchlist, favorites, and collection syncs paginated** — `trakt_utils.py` and
+  `sync_trakt_with_db.py` now loop through pages for `/users/me/watchlist`,
+  `/users/me/favorites`, `/users/me/collection/movies`, and
+  `/users/me/collection/shows`.
+- **Custom list page size** — `_fetch_all_list_items` default reduced from 1000 to
+  250 to comply with the new Trakt limit (the pagination loop was already correct).
+- **MDBList sync** — major rewrite of `mdblist_list_sync.py` with reliability fixes.
+
+### Fixed
+- **AIOStreams scraper** — switched from HTTP basic auth to the required
+  `x-aiostreams-user-data` header; handles `{"data": null}` responses gracefully
+  instead of raising an exception.
+
+---
+
+## [1.0.0] — 2026-05-01
+
+- Initial public release.

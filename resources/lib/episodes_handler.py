@@ -1,0 +1,164 @@
+import sqlite3
+from resources.lib.db_utils import db_connect
+import json
+from resources.lib.log_utils import log, LOGERROR, LOGDEBUG, LOGINFO
+from time import time
+
+def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None):
+    """
+    Returns enriched next episode data (including show and episode info)
+    excluding dropped shows. If user is None, calculates next episodes for
+    all watched shows in the database regardless of username.
+    """
+    try:
+        starttime = time()
+        with db_connect(tvshows_dynamic_db_path) as dynamic_conn, \
+             db_connect(tvshows_static_db_path) as static_conn:
+
+            if user in ("empty_setting", ""):
+                user = None
+
+            # Attach the dynamic DB to the static connection for JOINs
+            static_conn.execute(f"ATTACH DATABASE ? AS dynamic_db", (tvshows_dynamic_db_path,))
+            cursor = static_conn.cursor()
+
+            # This query calculates the next episode to watch on the fly.
+            # It prioritizes partially watched episodes, then the next unwatched episode after the last watched one.
+            query = """
+                WITH AllEpisodes AS (
+                    SELECT
+                        show_id,
+                        season,
+                        episode_number,
+                        tmdb_id,
+                        ROW_NUMBER() OVER(PARTITION BY show_id ORDER BY season, episode_number) as rn
+                    FROM episodes
+                    WHERE DATE(air_date) <= DATE('now')
+                ),
+                UserWatchedEpisodes AS (
+                    SELECT
+                        ae.show_id,
+                        ae.season,
+                        ae.episode_number,
+                        ae.tmdb_id,
+                        ae.rn,
+                        MAX(we.percent_watched) AS percent_watched,
+                        MAX(we.watched_at) AS watched_at,
+                        MAX(we.watched_status) AS watched_status
+                    FROM AllEpisodes ae
+                    JOIN dynamic_db.watched_episodes we ON ae.tmdb_id = we.tmdb_id
+                    WHERE (? IS NULL OR we.user = ? COLLATE NOCASE)
+                    GROUP BY ae.show_id, ae.season, ae.episode_number, ae.tmdb_id, ae.rn
+                ),
+                PartiallyWatched AS (
+                    SELECT
+                        show_id,
+                        tmdb_id,
+                        watched_at
+                    FROM UserWatchedEpisodes
+                    WHERE (percent_watched > 0 AND percent_watched < 80) OR watched_status = 1
+                ),
+                LastFullyWatched AS (
+                    SELECT
+                        show_id,
+                        MAX(rn) as last_watched_rn
+                    FROM UserWatchedEpisodes
+                    WHERE percent_watched >= 80 OR watched_status = 2
+                    GROUP BY show_id
+                ),
+                NextEpisodeCandidates AS (
+                    SELECT show_id, tmdb_id, watched_at FROM PartiallyWatched
+                    UNION
+                    SELECT
+                        lfw.show_id,
+                        ae.tmdb_id,
+                        NULL as watched_at
+                    FROM LastFullyWatched lfw
+                    JOIN AllEpisodes ae ON lfw.show_id = ae.show_id AND ae.rn = lfw.last_watched_rn + 1
+                    WHERE lfw.show_id NOT IN (SELECT show_id FROM PartiallyWatched)
+                )
+                SELECT
+                    e.episode_trakt_id,
+                    s.title,
+                    s.year AS show_year,
+                    s.overview AS show_overview,
+                    s.show_trakt_id,
+                    s.show_tmdb_id,
+                    s.network,
+                    s.imdb_id AS show_imdb_id,
+                    s.poster_path AS show_poster_path,
+                    s.fanart_path AS show_fanart_path,
+                    s.thumbnail_path AS show_thumbnail_path,
+                    s.clearlogo_path AS show_clearlogo_path,
+                    s.landscape_path AS show_landscape_path,
+                    e.season,
+                    e.episode_number,
+                    e.episode_title,
+                    COALESCE(NULLIF(e.episode_overview, ''), s.overview) AS episode_overview,
+                    e.tmdb_id,
+                    e.imdb_id,
+                    e.tvdb_id,
+                    e.air_date,
+                    e.runtime,
+                    e.episode_type,
+                    e.original_title,
+                    e.rating AS episode_rating,
+                    e.episode_poster_path,
+                    e.episode_fanart_path,
+                    e.episode_clearlogo_path,
+                    e.episode_landscape_path,
+                    e.episode_thumbnail_path,
+                    e.intro,
+                    e.outro,
+                    COALESCE(nec.watched_at, we.watched_at) AS last_watched_at,
+                    COALESCE(we.percent_watched, 0) AS percent_watched
+                FROM NextEpisodeCandidates nec
+                JOIN episodes AS e ON nec.tmdb_id = e.tmdb_id
+                JOIN shows AS s ON nec.show_id = s.show_tmdb_id
+                LEFT JOIN (
+                    SELECT tmdb_id, MAX(watched_at) AS watched_at, MAX(percent_watched) AS percent_watched
+                    FROM dynamic_db.watched_episodes
+                    WHERE (? IS NULL OR user = ? COLLATE NOCASE)
+                    GROUP BY tmdb_id
+                ) AS we ON e.tmdb_id = we.tmdb_id
+                WHERE (s.dropped IS NULL OR s.dropped = 0)
+                ORDER BY last_watched_at DESC;
+            """
+
+            cursor.execute(query, (user, user, user, user))
+            rows = cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description]
+            results = [dict(zip(columns, row)) for row in rows]
+            log(f"[Orac] Retrieved {len(results)} next episodes (user filter: {repr(user)}) in {time() - starttime:.2f} seconds", level=LOGDEBUG)
+
+
+            # Format show and episode artwork paths and parse segments
+            from resources.lib.formatting_utils import format_image_url
+            for r in results:
+                for seg_key in ('intro', 'outro'):
+                    val = r.get(seg_key)
+                    if val and isinstance(val, str):
+                        try:
+                            r[seg_key] = json.loads(val)
+                        except Exception:
+                            pass
+                    elif val == '':
+                        r[seg_key] = None
+                # Show artwork
+                r["show_poster_path"] = format_image_url(r.get("show_poster_path"), "w780")
+                r["show_fanart_path"] = format_image_url(r.get("show_fanart_path"), "w1280")
+                r["show_thumbnail_path"] = format_image_url(r.get("show_thumbnail_path"), "w780")
+                r["show_clearlogo_path"] = format_image_url(r.get("show_clearlogo_path"), "w500")
+                r["show_landscape_path"] = format_image_url(r.get("show_landscape_path"), "w1280")
+                # Episode artwork
+                r["episode_poster_path"] = format_image_url(r.get("episode_poster_path"), "w780")
+                r["episode_fanart_path"] = format_image_url(r.get("episode_fanart_path"), "w1280")
+                r["episode_clearlogo_path"] = format_image_url(r.get("episode_clearlogo_path"), "w500")
+                r["episode_landscape_path"] = format_image_url(r.get("episode_landscape_path"), "w1280")
+                r["episode_thumbnail_path"] = format_image_url(r.get("episode_thumbnail_path"), "w780")
+
+            return results
+
+    except Exception as e:
+        log(f"[Orac] Error retrieving next episodes: {e}", level=LOGERROR)
+        return []

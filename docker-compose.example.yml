@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  orac-server:
+    image: ghcr.io/karhugit/orac_server:latest
+    container_name: orac-server
+    restart: unless-stopped
+    ports:
+      - "5555:5555"
+    environment:
+      - ORAC_ENV=DOCKER
+    volumes:
+      # Mount the individual SQLite database files and config.json.
+      # This ensures all your databases and settings are persisted on the host,
+      # while keeping the server source code inside the container clean and updatable.
+      - ./config.json:/app/config.json
+      - ./movies_static_cache.db:/app/movies_static_cache.db
+      - ./movies_dynamic_cache.db:/app/movies_dynamic_cache.db
+      - ./tvshows_static_cache.db:/app/tvshows_static_cache.db
+      - ./tvshows_dynamic_cache.db:/app/tvshows_dynamic_cache.db
+      - ./lists_cache.db:/app/lists_cache.db
+      - ./update_queue.db:/app/update_queue.db
+      - ./config.db:/app/config.db
+      - ./ext_indexes.db:/app/ext_indexes.db
+      - ./tags_cache.db:/app/tags_cache.db
+      - ./undesirables.db:/app/undesirables.db
+      - ./trakt_history_sync.db:/app/trakt_history_sync.db

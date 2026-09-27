@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  orac-server:
+    build: .
+    container_name: orac-server
+    restart: unless-stopped
+    ports:
+      - "5555:5555"
+    environment:
+      - ORAC_ENV=DOCKER
+      # You can override config elements via environment variables if desired
+      # - TRAKT_CLIENT_ID=your_id
+      # - TRAKT_CLIENT_SECRET=your_secret
+      # - TMDB_API_KEY=your_key
+    volumes:
+      # Mount the current directory into the container.
+      # This ensures all your SQLite databases (.db) and config.json are persisted 
+      # back to your host machine so you don't lose data when the container restarts.
+      - ./:/app

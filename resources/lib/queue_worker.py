@@ -1,0 +1,536 @@
+import sqlite3
+from resources.lib.db_utils import db_connect
+import json
+import time
+from resources.lib.log_utils import log, LOGERROR, LOGDEBUG, LOGINFO
+from datetime import datetime
+from threading import Thread, Event
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from resources.lib.trakt_utils import unlike_trakt_list
+from resources.lib.config_handler import get_config_value
+
+
+class UpdateQueueWorker:
+    def __init__(self, update_queue_path, tvshows_static_db_path, trakt_auth, tmdb_handler, db_manager, config_db_path, movies_dynamic_db_path=None, tvshows_dynamic_db_path=None, interval=300, provider_sync_interval=3600):
+        self.db = update_queue_path
+        self.tvshows_static_db = tvshows_static_db_path
+        self.trakt_auth = trakt_auth
+        self.tmdb_handler = tmdb_handler
+        self.db_manager = db_manager
+        self.config_db_path = config_db_path
+        self.movies_dynamic_db_path = movies_dynamic_db_path
+        self.tvshows_dynamic_db_path = tvshows_dynamic_db_path
+        self.interval = interval  # in seconds
+        self.provider_sync_interval = provider_sync_interval  # in seconds (default: 1 hour)
+        self._last_provider_sync = time.time()
+
+        self._stop_event = Event()
+        self._pause_event = Event()
+        self._pause_event.set()  # Start in "running" state
+        self._thread = None
+
+    def start(self):
+        if self._thread is None or not self._thread.is_alive():
+            self._stop_event.clear()
+            self._pause_event.set()
+            self._thread = Thread(target=self._run_loop, daemon=True)
+            self._thread.start()
+
+    def stop(self):
+        self._stop_event.set()
+        self._pause_event.set()  # Unpause if paused, so it can exit
+        if self._thread:
+            self._thread.join()
+            self._thread = None
+
+    def pause(self):
+        self._pause_event.clear()
+
+    def resume(self):
+        self._pause_event.set()
+
+    def _run_loop(self):
+        while not self._stop_event.is_set():
+            self._pause_event.wait()  # Will block here if paused
+            self.process_queue_once()
+            time.sleep(self.interval)
+
+    def process_queue_once(self, force_provider_sync=False):
+        if self.movies_dynamic_db_path and self.tvshows_dynamic_db_path:
+             from resources.lib.sync_engine import sync_providers_sync, bulk_sync_history, bulk_sync_dropped
+             now = time.time()
+             if force_provider_sync or (now - self._last_provider_sync >= self.provider_sync_interval):
+                 self._last_provider_sync = now
+                 try:
+                     sync_providers_sync(
+                         self.movies_dynamic_db_path,
+                         self.tvshows_dynamic_db_path,
+                         self.trakt_auth,
+                         self.config_db_path,
+                         tvshows_static_db=self.tvshows_static_db,
+                         force=False
+                     )
+                 except Exception as e:
+                     log(f"[Queue] Error running provider sync in processor: {e}", level=LOGERROR)
+             try:
+                 bulk_sync_history(self.movies_dynamic_db_path, self.tvshows_dynamic_db_path, self.trakt_auth, self.config_db_path, self.tvshows_static_db)
+             except Exception as e:
+                 log(f"[Queue] Error running bulk status sync in processor: {e}", level=LOGERROR)
+             try:
+                 bulk_sync_dropped(self.tvshows_static_db, self.trakt_auth, self.config_db_path)
+             except Exception as e:
+                 log(f"[Queue] Error running bulk dropped sync in processor: {e}", level=LOGERROR)
+                 
+        conn = self.db_manager.get_connection(self.db)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM update_queue WHERE status = 'pending' OR status = 'retry' ORDER BY priority, created_at ASC")
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            # log("[Queue] No pending updates.")
+            return
+
+        def handle_row(row_data):
+            row = dict(row_data)
+            row['payload'] = json.loads(row['payload']) if row['payload'] else {}
+            provider = (row.get('provider') or row['payload'].get('source') or 'trakt').lower()
+            update_type = row.get('update_type') or row['payload'].get('update_type')
+
+            if row['status'] == 'retry':
+                number_of_attempts = row.get('attempts', 0) + 1
+                if number_of_attempts > 3:
+                    log(f"[Queue] Max retry attempts reached for row {row['id']}. Marking as failed.")
+                    self._mark_status(row['id'], 'failed')
+                    return
+            self._mark_status(row['id'], 'processing')
+            try:
+                if provider == 'tmdb':
+                    self.process_tmdb_update(row, update_type)
+                elif provider == 'simkl':
+                    self.process_simkl_update(row, update_type)
+                elif provider == 'mdblist':
+                    self.process_mdblist_update(row, update_type)
+                elif provider == 'punchplay':
+                    self.process_punchplay_update(row, update_type)
+                else:
+                    self.process_trakt_update(row, update_type)
+
+                self._mark_status(row['id'], 'done')
+            except Exception as e:
+                log(f"[Queue] Error processing row {row['id']}: {e}", level=LOGERROR)
+                self._mark_status(row['id'], 'failed')
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(handle_row, row) for row in rows]
+            for future in as_completed(futures):
+                try:
+                    future.result()  # This will re-raise exceptions if any
+                except Exception as e:
+                    log(f"[Queue] Error in worker thread: {e}", level=LOGERROR)
+
+    def process_trakt_update(self, row, update_type):
+        if update_type == 'watched_episode':
+            self.mark_watched_episode(row)
+        elif update_type == 'watched_movie':
+            self.mark_watched_movie(row)
+        elif update_type == 'add_to_list':
+            result = self.add_to_list_trakt(row)
+            if not result:
+                self._mark_status(row['id'], 'retry')
+                raise Exception("Failed to add to Trakt list")
+        elif update_type == 'remove_from_list':
+            result = self.remove_from_list_trakt(row)
+            if not result:
+                self._mark_status(row['id'], 'retry')
+                raise Exception("Failed to remove from Trakt list")
+        elif update_type == 'unlike_trakt_list':
+            result = unlike_trakt_list(
+                self.trakt_auth,
+                row['payload'].get('user'),
+                row['payload'].get('list_name'),
+                row['payload'].get('slug')
+            )
+            if not result:
+                self._mark_status(row['id'], 'retry')
+                raise Exception("Failed to unlike Trakt list")
+        elif update_type == 'drop_show':
+            self.drop_show(row)
+        else:
+            log(f"[Queue] Unknown Trakt update type: {update_type}", level=LOGERROR)
+            raise Exception(f"Unknown update type {update_type}")
+
+    def process_tmdb_update(self, row, update_type):
+        # Fetch generic TMDB credentials
+        # We need session_id and account_id
+        session_id = get_config_value("tmdb_session_id", self.config_db_path)
+        account_id = get_config_value("tmdb_account_id", self.config_db_path)
+        
+        if not session_id:
+             log(f"[Queue] Missing TMDB session_id. Cannot process TMDB update.", level=LOGERROR)
+             raise Exception("Missing TMDB session_id")
+
+        tmdb_id = row['payload'].get('tmdb_id')
+        item_type = row['payload'].get('item_type') # 'movie' or 'tvshow'
+        slug = row['payload'].get('slug')
+        
+        # Map internal item_type to TMDB media_type
+        media_type = 'movie' if item_type == 'movie' else 'tv'
+        
+        result = None
+        
+        if update_type == 'add_to_list':
+            if slug == 'watchlist':
+                 log(f"[Queue] Adding {media_type} {tmdb_id} to TMDB Watchlist")
+                 result = self.tmdb_handler.add_to_watchlist(account_id, session_id, media_type, tmdb_id)
+            else:
+                 log(f"[Queue] Adding item {tmdb_id} to TMDB List {slug}")
+                 # Slug for TMDB lists is expected to be the List ID
+                 result = self.tmdb_handler.add_to_list(slug, session_id, tmdb_id, media_type=media_type)
+                 
+        elif update_type == 'remove_from_list':
+             if slug == 'watchlist':
+                 log(f"[Queue] Removing {media_type} {tmdb_id} from TMDB Watchlist")
+                 result = self.tmdb_handler.remove_from_watchlist(account_id, session_id, media_type, tmdb_id)
+             else:
+                 log(f"[Queue] Removing item {tmdb_id} from TMDB List {slug}")
+                 result = self.tmdb_handler.remove_from_list(slug, session_id, tmdb_id, media_type=media_type)
+        
+        else:
+            log(f"[Queue] Unknown TMDB update type: {update_type}", level=LOGERROR)
+            raise Exception(f"Unknown TMDB update type {update_type}")
+
+        if not result or (result.get('success') is False and result.get('status_code') not in [1, 12, 13]):
+            # 1: Success, 12: Item updated, 13: Item deleted
+            log(f"[Queue] TMDB update failed: {result}", level=LOGERROR)
+            self._mark_status(row['id'], 'retry')
+            raise Exception(f"TMDB API failure: {result}")
+        else:
+            log(f"[Queue] TMDB update successful: {result}", level=LOGINFO)
+
+
+    def _mark_status(self, row_id, status):
+        with self.db_manager.connection(self.db) as conn:
+            conn.execute("UPDATE update_queue SET status = ? WHERE id = ?", (status, row_id))
+
+
+    def _update_synced_timestamp(self, provider, row, timestamp):
+        column = f"{provider}_synced_at"
+        update_type = row.get('update_type')
+        payload = row.get('payload', {})
+
+        if update_type == 'watched_movie':
+            tmdb_id = payload.get('tmdb_id')
+            if tmdb_id and self.movies_dynamic_db_path:
+                try:
+                    with self.db_manager.connection(self.movies_dynamic_db_path) as conn:
+                        conn.execute(f"UPDATE watched_history SET {column} = ? WHERE tmdb_id = ?", (timestamp, int(tmdb_id)))
+                except Exception as e:
+                    log(f"[Queue] Error updating {column} for movie {tmdb_id}: {e}", level=LOGWARNING)
+        elif update_type == 'watched_episode':
+            show_tmdb_id = payload.get('show_tmdb_id') or payload.get('tmdb_id')
+            season = payload.get('season')
+            episode = payload.get('episode')
+            if show_tmdb_id and season is not None and episode is not None and self.tvshows_dynamic_db_path:
+                try:
+                    with self.db_manager.connection(self.tvshows_dynamic_db_path) as conn:
+                        conn.execute(f"UPDATE watched_history SET {column} = ? WHERE show_tmdb_id = ? AND season = ? AND episode = ?", (timestamp, int(show_tmdb_id), int(season), int(episode)))
+                except Exception as e:
+                    log(f"[Queue] Error updating {column} for show {show_tmdb_id} S{season}E{episode}: {e}", level=LOGWARNING)
+
+    def process_simkl_update(self, row, update_type):
+        from resources.lib.sync_engine import send_batch_to_simkl
+        payload = {"movies": [], "shows": []}
+        now_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+        if update_type == 'watched_movie':
+            tmdb_id = row['payload'].get('tmdb_id')
+            if tmdb_id:
+                payload["movies"].append({"watched_at": now_str, "ids": {"tmdb": tmdb_id}})
+        elif update_type == 'watched_episode':
+            show_tmdb_id = row['payload'].get('show_tmdb_id') or row['payload'].get('tmdb_id')
+            season = row['payload'].get('season')
+            episode = row['payload'].get('episode')
+            if show_tmdb_id and season is not None and episode is not None:
+                payload["shows"].append({
+                    "ids": {"tmdb": show_tmdb_id},
+                    "seasons": [{
+                        "number": season,
+                        "episodes": [{"number": episode, "watched_at": now_str}]
+                    }]
+                })
+        else:
+            log(f"[Queue] Unsupported Simkl update type: {update_type}", level=LOGWARNING)
+            return
+
+        success = send_batch_to_simkl(self.config_db_path, payload)
+        if not success:
+            self._mark_status(row['id'], 'retry')
+            raise Exception("Simkl update failed")
+        else:
+            self._update_synced_timestamp('simkl', row, now_str)
+
+    def process_mdblist_update(self, row, update_type):
+        from resources.lib.sync_engine import send_batch_to_mdblist
+        payload = {"movies": [], "shows": []}
+        now_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+        if update_type == 'watched_movie':
+            tmdb_id = row['payload'].get('tmdb_id')
+            if tmdb_id:
+                payload["movies"].append({"watched_at": now_str, "ids": {"tmdb": tmdb_id}})
+        elif update_type == 'watched_episode':
+            show_tmdb_id = row['payload'].get('show_tmdb_id') or row['payload'].get('tmdb_id')
+            season = row['payload'].get('season')
+            episode = row['payload'].get('episode')
+            if show_tmdb_id and season is not None and episode is not None:
+                payload["shows"].append({
+                    "ids": {"tmdb": show_tmdb_id},
+                    "seasons": [{
+                        "number": season,
+                        "episodes": [{"number": episode, "watched_at": now_str}]
+                    }]
+                })
+        else:
+            log(f"[Queue] Unsupported MDBList update type: {update_type}", level=LOGWARNING)
+            return
+
+        success = send_batch_to_mdblist(self.config_db_path, payload)
+        if not success:
+            self._mark_status(row['id'], 'retry')
+            raise Exception("MDBList update failed")
+        else:
+            self._update_synced_timestamp('mdblist', row, now_str)
+
+    def process_punchplay_update(self, row, update_type):
+        from resources.lib.sync_engine import send_batch_to_punchplay, _format_iso_rfc3339
+        now_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        items = []
+
+        if update_type == 'watched_movie':
+            tmdb_id = row['payload'].get('tmdb_id')
+            if tmdb_id:
+                iso_wat = _format_iso_rfc3339(now_str)
+                items.append({
+                    "client_item_id": f"orac:movie:{tmdb_id}:{iso_wat}",
+                    "kind": "movie",
+                    "tmdb_id": int(tmdb_id),
+                    "watched_at": iso_wat
+                })
+        elif update_type == 'watched_episode':
+            show_tmdb_id = row['payload'].get('show_tmdb_id') or row['payload'].get('tmdb_id')
+            season = row['payload'].get('season')
+            episode = row['payload'].get('episode')
+            if show_tmdb_id and season is not None and episode is not None:
+                iso_wat = _format_iso_rfc3339(now_str)
+                items.append({
+                    "client_item_id": f"orac:episode:{show_tmdb_id}:{season}:{episode}:{iso_wat}",
+                    "kind": "episode",
+                    "tmdb_id": int(show_tmdb_id),
+                    "season": int(season),
+                    "episode": int(episode),
+                    "watched_at": iso_wat
+                })
+        else:
+            log(f"[Queue] Unsupported PunchPlay update type: {update_type}", level=LOGWARNING)
+            return
+
+        success = send_batch_to_punchplay(self.config_db_path, items)
+        if not success:
+            self._mark_status(row['id'], 'retry')
+            raise Exception("PunchPlay update failed")
+        else:
+            self._update_synced_timestamp('punchplay', row, now_str)
+
+    def mark_watched_episode(self, row):
+        episode_trakt_id = row['payload'].get('episode_trakt_id')
+        episode_tmdb_id = row['payload'].get('tmdb_id')
+        now_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+        # Build IDs block - prefer Trakt ID if available, only use TMDB ID if it's positive (not a placeholder)
+        ids_block = {}
+        if episode_trakt_id and episode_trakt_id > 0:
+            ids_block["trakt"] = episode_trakt_id
+        if episode_tmdb_id and episode_tmdb_id > 0:
+            ids_block["tmdb"] = episode_tmdb_id
+
+        if not ids_block:
+            log(f"[Queue] Cannot mark episode as watched - no valid IDs (trakt={episode_trakt_id}, tmdb={episode_tmdb_id})", level=LOGERROR)
+            return
+
+        payload = {
+            "episodes": [
+                {
+                    "watched_at": now_str,
+                    "ids": ids_block
+                }
+            ]
+        }
+
+        log(f"[Queue] Marking episode as watched: {payload}")
+        if not self.trakt_auth:
+            log("[Queue] Trakt not authorized, skipping Trakt queue update.", level=LOGWARNING)
+            return
+
+        response = self.trakt_auth.post(f"/sync/history", json=payload)
+
+        if response.status_code not in [200, 201]:
+            log(f"[Queue] Failed to mark episode as watched: {response.status_code}")
+            self._mark_status(row['id'], 'retry')
+            raise Exception(f"Trakt update failed with status {response.status_code}")
+        else:
+            log("[Queue] Successfully marked episode as watched on Trakt")
+            self._update_synced_timestamp('trakt', row, now_str)
+
+    def mark_watched_movie(self, row):
+        percent_watched = row['payload'].get('percent_watched', 100)
+        now_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+        payload = {
+            "movies": [
+                {
+                    "watched_at": now_str,
+                    "ids": {
+                        "trakt": row['payload'].get('trakt_id', 0) or 0,
+                        "tmdb": row['payload'].get('tmdb_id')
+                    }
+                }
+            ]
+        }
+
+        log(f"[Queue] Marking movie as watched: {payload}")
+        if not self.trakt_auth:
+            log("[Queue] Trakt not authorized, skipping Trakt queue update.", level=LOGWARNING)
+            return
+
+        response = self.trakt_auth.post(f"/sync/history", json=payload)
+
+        if response.status_code not in [200, 201]:
+            log(f"[Queue] Failed to mark movie as watched: {response.status_code}")
+            self._mark_status(row['id'], 'retry')
+            raise Exception(f"Trakt update failed with status {response.status_code}")
+        else:
+            log("[Queue] Successfully marked movie as watched on Trakt")
+            self._update_synced_timestamp('trakt', row, now_str)
+
+
+    def drop_show(self, row):
+        # The payload contains {"shows": [{"ids": {"trakt": 12345}}]}
+        # bulk_sync_dropped handles pushing to all authorized providers using local DB
+        # This queue entry may exist for legacy compatibility — just run bulk_sync_dropped to ensure sync
+        log(f"[Queue] Processing drop_show queue entry: {row.get('payload', {})}")
+        try:
+            from resources.lib.sync_engine import bulk_sync_dropped
+            bulk_sync_dropped(self.tvshows_static_db, self.trakt_auth, self.config_db_path)
+        except Exception as e:
+            log(f"[Queue] Error running bulk_sync_dropped for drop_show: {e}", level=LOGERROR)
+            raise
+
+
+    # Slugs that map to Trakt's dedicated /sync/collection endpoint.
+    # Trakt renamed "Collection" to "Library" in the UI but the API is unchanged.
+    # We accept all reasonable slug variants so UI label changes don't break things.
+    _COLLECTION_SLUGS = {
+        "collection", "collection-movies", "collection-shows",
+        "library",    "library-movies",    "library-shows",
+    }
+
+    def add_to_list_trakt(self, row):
+        list_id = row['payload'].get('list_name')
+        tmdb_id = row['payload'].get('tmdb_id')
+        media_type = row['payload'].get('item_type', 'movie')  # Default to movie if not specified
+        slug = row['payload'].get('slug')
+
+
+        if not list_id or not tmdb_id:
+            log(f"[Queue] Missing list_id or tmdb_id in payload for add_to_list", LOGERROR)
+            return
+        
+        # The payload needs to be structured with a key of "movies" or "shows"
+        if media_type == 'movie':
+            payload = {
+                "movies": [{"ids": {"tmdb": tmdb_id}}]
+            }
+        elif media_type == 'tvshow':
+            payload = {
+                "shows": [{"ids": {"tmdb": tmdb_id}}]
+            }
+        else:
+            log(f"[Queue] Unsupported media_type for add_to_list: {media_type}", LOGERROR)
+            # Mark as failed because we can't process this
+            self._mark_status(row['id'], 'failed')
+            return
+
+        # Route to the correct Trakt endpoint based on the slug.
+        if slug == 'watchlist':
+            endpoint = "/sync/watchlist"
+            log(f"[Queue] Adding {media_type} with TMDb ID {tmdb_id} to watchlist")
+        elif slug == 'favorites':
+            endpoint = "/sync/favorites"
+            log(f"[Queue] Adding {media_type} with TMDb ID {tmdb_id} to favorites")
+        elif slug in self._COLLECTION_SLUGS:
+            # Trakt's collection/library is a dedicated sync endpoint, not a custom list.
+            endpoint = "/sync/collection"
+            log(f"[Queue] Adding {media_type} with TMDb ID {tmdb_id} to collection/library (slug='{slug}')")
+        else:
+            endpoint = f"/users/me/lists/{slug}/items"
+            log(f"[Queue] Adding {media_type} with TMDb ID {tmdb_id} to list '{list_id}'")
+
+        response = self.trakt_auth.post(endpoint, json=payload)
+
+        if response.status_code != 201:
+            log(f"[Queue] Failed to add item to list: {response.status_code} - {response.text}", LOGERROR)
+        else:
+            log(f"[Queue] Successfully added item to list {list_id}")
+
+        return response.status_code == 201
+
+    def remove_from_list_trakt(self, row):
+        list_id = row['payload'].get('list_name')
+        tmdb_id = row['payload'].get('tmdb_id')
+        media_type = row['payload'].get('item_type', 'movie')  # Default to movie if not specified
+        slug = row['payload'].get('slug')
+
+        if not list_id or not tmdb_id:
+            log(f"[Queue] Missing list_id or tmdb_id in payload for remove_from_list", LOGERROR)
+            return
+
+        # The payload needs to be structured with a key of "movies" or "shows"
+        if media_type == 'movie':
+            payload = {
+                "movies": [{"ids": {"tmdb": tmdb_id}}]
+            }
+        elif media_type == 'tvshow':
+            payload = {
+                "shows": [{"ids": {"tmdb": tmdb_id}}]
+            }
+        else:
+            log(f"[Queue] Unsupported media_type for remove_from_list: {media_type}", LOGERROR)
+            # Mark as failed because we can't process this
+            self._mark_status(row['id'], 'failed')
+            return
+
+        # Route to the correct Trakt endpoint based on the slug.
+        if slug == 'watchlist':
+            endpoint = "/sync/watchlist/remove"
+            log(f"[Queue] Removing {media_type} with TMDb ID {tmdb_id} from watchlist")
+        elif slug == 'favorites':
+            endpoint = "/sync/favorites/remove"
+            log(f"[Queue] Removing {media_type} with TMDb ID {tmdb_id} from favorites")
+        elif slug in self._COLLECTION_SLUGS:
+            endpoint = "/sync/collection/remove"
+            log(f"[Queue] Removing {media_type} with TMDb ID {tmdb_id} from collection/library (slug='{slug}')")
+        else:
+            endpoint = f"/users/me/lists/{slug}/items/remove"
+            log(f"[Queue] Removing {media_type} with TMDb ID {tmdb_id} from list '{list_id}'")
+
+        response = self.trakt_auth.post(endpoint, json=payload)
+
+        if response.status_code != 200:
+            log(f"[Queue] Failed to remove item from list: {response.status_code} - {response.text}", LOGERROR)
+        else:
+            log(f"[Queue] Successfully removed item from list {list_id}")
+
+        return response.status_code == 200

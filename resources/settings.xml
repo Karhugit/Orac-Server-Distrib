@@ -1,0 +1,8 @@
+<settings>
+  <category label="Trakt">
+    <setting id="auth_trakt"
+         type="action"
+         label="Authorize Trakt"
+         action="RunAddon(service.orac, auth_trakt)" />
+  </category>
+</settings>

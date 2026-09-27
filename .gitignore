@@ -1,0 +1,28 @@
+# Runtime databases
+*.db
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+*.log.old
+
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Dev/debug artifacts
+tokens.json
+tzen_tokens.json
+next_episodes_list.txt
+Scrape results.txt
+
+# Installer artifacts
+Output/
+*.iss
+
+# Runtime-downloaded assets (fanart, posters, etc.)
+resources/assets/
