@@ -406,6 +406,8 @@ def update_list_library_status(params, db_path, ext_indexes_db_path=None):
         log(f"[Orac] Could not resolve list '{slug}' to a local list_id. Falling back to legacy construction.", level=LOGWARNING)
         list_id = f"{user}:{slug}"
 
+    params['resolved_list_id'] = list_id
+
     try:
         with db_connect(db_path) as conn:
             cursor = conn.cursor()
@@ -416,6 +418,7 @@ def update_list_library_status(params, db_path, ext_indexes_db_path=None):
                 )
             else:
                 cursor.execute("UPDATE lists SET add_to_library = ? WHERE list_id = ?", (add_to_library, list_id))
+                cursor.execute("DELETE FROM list_items WHERE list_id = ?", (list_id,))
             conn.commit()
         log(f"[Orac] Updated add_to_library status for list_id {list_id} to {add_to_library}", level=LOGINFO)
     except Exception as e:

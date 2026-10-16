@@ -4,6 +4,11 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.4.2] — 2026-10-17
+
+### Changed
+- **Targeted Single-List Library Sync & Removal** — Switching a list's library status in the List Manager tab no longer runs a full 5-minute server resync. Adding a list to the library now fetches and syncs only that list's items into `list_items` and the static/dynamic media databases (`sync_single_list_items`), while removing a list from the library immediately deletes only that list's rows from `list_items` (`remove_single_list_items`), leaving static cleanup to scheduled garbage collection.
+
 ## [1.4.1] — 2026-10-17
 
 ### Added

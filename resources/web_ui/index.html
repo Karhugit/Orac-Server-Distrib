@@ -4957,19 +4957,11 @@ Orac Server Port: 8000 (default)</div>
                     throw new Error(data.error || 'Failed to update list library status');
                 }
 
-                // Update local cache immediately for snappy UI response
-                const match = rawMyLists.find(l => (l.list_id || `${l.source}:${l.slug || l.name}`) === listId);
-                if (match) {
-                    match.add_to_library = newStatus;
-                }
-                renderMyLists();
-                fetchLibraryLists();
-
-                // Refresh again after background resync has had time to process items
-                setTimeout(() => {
-                    fetchLibraryLists();
-                    fetchMyLists();
-                }, 4000);
+                // Refresh both panes now that the single-list sync/removal has completed
+                await Promise.all([
+                    fetchLibraryLists(),
+                    fetchMyLists()
+                ]);
             } catch (err) {
                 console.error('Error toggling list library status:', err);
                 alert('Failed to switch library status: ' + err.message);

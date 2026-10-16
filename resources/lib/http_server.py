@@ -26,7 +26,7 @@ from resources.lib.reload_handler import clear_databases
 from resources.lib.queue_worker import UpdateQueueWorker
 from resources.lib.trakt_maintenance_worker import TraktMaintenanceWorker
 from resources.lib.stale_episode_refresh import StaleEpisodeRefreshWorker
-from resources.lib.db_sync_manager import sync_lists_and_items
+from resources.lib.db_sync_manager import sync_lists_and_items, sync_single_list_items, remove_single_list_items
 from resources.lib.episodes_handler import get_next_episodes
 from resources.lib.watched import update_next_episode, mark_movie_watched, mark_tvshow_watched, drop_tvshow
 from resources.lib.migrate_database import migrate_database
@@ -2409,20 +2409,29 @@ def app_factory(
                     )
                 conn.commit()
 
-            log(f"[Orac] Web UI toggled library status for '{name}' ({list_id}) to {new_status}. Triggering list resync...", level=LOGINFO)
-
-            # 3. Force a background list & library resync
-            trakt_user = await get_t_user(app)
-            asyncio.create_task(sync_lists_and_items(
-                app.state.trakt_handler, app.state.tmdb_handler,
-                app.state.movies_static_db_path, app.state.movies_dynamic_db_path,
-                app.state.tvshows_static_db_path, app.state.tvshows_dynamic_db_path,
-                app.state.lists_db_path, app.state.trakt_update_queue_path,
-                app.state.trakt_queue_worker, username=trakt_user,
-                external_indexes_db_path=app.state.ext_indexes_db_path,
-                config_db_path=app.state.config_db_path,
-                tags_db_path=app.state.tags_db_path
-            ))
+            # 3. Targeted single-list action:
+            #    - If added to library (new_status == 1): sync only this list's items into list_items & static/dynamic DBs.
+            #    - If removed from library (new_status == 0): delete only this list's items from list_items.
+            if new_status == 1:
+                log(f"[Orac] Web UI added '{name}' ({list_id}) to library. Syncing items for this list only...", level=LOGINFO)
+                trakt_user = await get_t_user(app)
+                await sync_single_list_items(
+                    list_id,
+                    app.state.trakt_handler,
+                    app.state.tmdb_handler,
+                    app.state.movies_static_db_path,
+                    app.state.movies_dynamic_db_path,
+                    app.state.tvshows_static_db_path,
+                    app.state.tvshows_dynamic_db_path,
+                    app.state.lists_db_path,
+                    app.state.trakt_update_queue_path,
+                    username=trakt_user,
+                    external_indexes_db_path=app.state.ext_indexes_db_path,
+                    config_db_path=app.state.config_db_path
+                )
+            else:
+                log(f"[Orac] Web UI removed '{name}' ({list_id}) from library. Removing list_items only...", level=LOGINFO)
+                remove_single_list_items(app.state.lists_db_path, list_id)
 
             return JSONResponse(status_code=200, content={
                 "success": True,
@@ -3416,7 +3425,24 @@ def app_factory(
 
     @app.put("/update_list_library_status")
     async def up_list_stat(request: Request):
-        success = update_list_library_status(flat_qs(request), app.state.lists_db_path, app.state.ext_indexes_db_path)
+        params = flat_qs(request)
+        success = update_list_library_status(params, app.state.lists_db_path, app.state.ext_indexes_db_path)
+        if success and params.get("update") == "Add" and params.get("resolved_list_id"):
+            trakt_user = await get_t_user(app)
+            asyncio.create_task(sync_single_list_items(
+                params["resolved_list_id"],
+                app.state.trakt_handler,
+                app.state.tmdb_handler,
+                app.state.movies_static_db_path,
+                app.state.movies_dynamic_db_path,
+                app.state.tvshows_static_db_path,
+                app.state.tvshows_dynamic_db_path,
+                app.state.lists_db_path,
+                app.state.trakt_update_queue_path,
+                username=trakt_user,
+                external_indexes_db_path=app.state.ext_indexes_db_path,
+                config_db_path=app.state.config_db_path
+            ))
         return JSONResponse(status_code=200 if success else 500, content={"status": "success" if success else "error"})
 
     @app.put("/unlike_trakt_list")
