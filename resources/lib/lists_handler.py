@@ -18,8 +18,8 @@ def get_my_lists(db_path, list_name, item_type, ext_indexes_db_path=None, exclud
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    # Base condition: user NOT IN ('trakt', 'tmdb', 'simkl', 'punchplay') OR it's an external index added to library
-    base_condition = "(user NOT IN ('trakt', 'tmdb', 'simkl', 'punchplay') OR (list_id LIKE 'tmdb:index:%' AND add_to_library = 1))"
+    # Base condition: owned_by_user = 1 OR user NOT IN ('trakt', 'tmdb', 'simkl', 'punchplay') OR it's an external index added to library
+    base_condition = "(owned_by_user = 1 OR user NOT IN ('trakt', 'tmdb', 'simkl', 'punchplay') OR (list_id LIKE 'tmdb:index:%' AND add_to_library = 1))"
 
     
     # If exclude_empty is True, we only require item_count > 0.

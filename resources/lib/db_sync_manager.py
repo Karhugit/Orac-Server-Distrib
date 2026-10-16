@@ -347,7 +347,8 @@ async def sync_lists_and_items(trakt_handler, tmdb_handler, movies_static_db_pat
                 tvshows_dynamic_db_path,
                 trakt_handler,
                 config_db_path,
-                tvshows_static_db=tvshows_static_db_path
+                tvshows_static_db=tvshows_static_db_path,
+                tmdb_handler=tmdb_handler
             )
         except Exception as e:
             log(f"[Orac] Error running multi-provider history sync: {e}", level=LOGERROR)

@@ -69,7 +69,8 @@ class UpdateQueueWorker:
                          self.trakt_auth,
                          self.config_db_path,
                          tvshows_static_db=self.tvshows_static_db,
-                         force=False
+                         force=False,
+                         tmdb_handler=self.tmdb_handler
                      )
                  except Exception as e:
                      log(f"[Queue] Error running provider sync in processor: {e}", level=LOGERROR)
@@ -261,6 +262,49 @@ class UpdateQueueWorker:
                         "episodes": [{"number": episode, "watched_at": now_str}]
                     }]
                 })
+        elif update_type == 'add_to_list':
+            tmdb_id = row['payload'].get('tmdb_id')
+            raw_media_type = row['payload'].get('item_type') or row.get('media_type', 'movie')
+            media_type = 'movie' if raw_media_type in ('movie', 'movies') else 'show'
+            slug = row['payload'].get('slug') or ''
+
+            # If targeting Simkl Watchlist
+            if slug in ('simkl-watchlist', 'watchlist') or 'watchlist' in slug.lower():
+                from resources.lib.simkl_api import add_item_to_simkl_watchlist
+                success = add_item_to_simkl_watchlist(self.config_db_path, int(tmdb_id), media_type, status="plantowatch")
+                if not success:
+                    self._mark_status(row['id'], 'retry')
+                    raise Exception("Simkl add-to-list failed")
+                else:
+                    self._update_synced_timestamp('simkl', row, now_str)
+                return
+            else:
+                # Custom list: Simkl API does not support writing to custom lists yet (web-only)
+                log(f"[Queue] Simkl Custom Lists do not support API modifications yet (web-only). Item {tmdb_id} was added locally in Orac DB.", level=LOGINFO)
+                self._update_synced_timestamp('simkl', row, now_str)
+                return
+
+        elif update_type == 'remove_from_list':
+            tmdb_id = row['payload'].get('tmdb_id')
+            raw_media_type = row['payload'].get('item_type') or row.get('media_type', 'movie')
+            media_type = 'movie' if raw_media_type in ('movie', 'movies') else 'show'
+            slug = row['payload'].get('slug') or ''
+
+            # If targeting Simkl Watchlist
+            if slug in ('simkl-watchlist', 'watchlist') or 'watchlist' in slug.lower():
+                from resources.lib.simkl_api import remove_item_from_simkl_watchlist
+                success = remove_item_from_simkl_watchlist(self.config_db_path, int(tmdb_id), media_type)
+                if not success:
+                    self._mark_status(row['id'], 'retry')
+                    raise Exception("Simkl remove-from-list failed")
+                else:
+                    self._update_synced_timestamp('simkl', row, now_str)
+                return
+            else:
+                # Custom list: Simkl API does not support writing to custom lists yet (web-only)
+                log(f"[Queue] Simkl Custom Lists do not support API modifications yet (web-only). Item {tmdb_id} was removed locally in Orac DB.", level=LOGINFO)
+                self._update_synced_timestamp('simkl', row, now_str)
+                return
         else:
             log(f"[Queue] Unsupported Simkl update type: {update_type}", level=LOGWARNING)
             return

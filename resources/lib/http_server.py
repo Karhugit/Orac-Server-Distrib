@@ -509,7 +509,7 @@ def app_factory(
                         'pm.token', 'pm.enabled', 'pm.account_id',
                         'oc.token', 'oc.enabled',
                         'ed.token', 'ed.enabled',
-                        'tb.token', 'tb.enabled',
+                        'tb.token', 'tb.enabled', 'tb.account_id',
                         'easynews_user', 'easynews_password', 'provider.easynews'
                     )
                 """)
@@ -548,6 +548,7 @@ def app_factory(
                     'ed.enabled': 'false',
                     'tb.token': 'empty_setting',
                     'tb.enabled': 'false',
+                    'tb.account_id': 'empty_setting',
                     'easynews_user': 'empty_setting',
                     'easynews_password': 'empty_setting',
                     'provider.easynews': 'false'
@@ -842,7 +843,8 @@ def app_factory(
                     app.state.trakt_handler,
                     app.state.config_db_path,
                     tvshows_static_db=app.state.tvshows_static_db_path,
-                    force=True
+                    force=True,
+                    tmdb_handler=app.state.tmdb_handler
                 )
                 bulk_sync_history(
                     app.state.movies_dynamic_db_path,
@@ -1392,18 +1394,20 @@ def app_factory(
                 expires_in = token_data.get("expires_in", 604800)
                 expires_at = time.time() + expires_in
 
-                # Fetch account settings to get username
+                # Fetch account settings to get username and user_id
                 settings_url = "https://api.simkl.com/users/settings"
                 headers_user = get_simkl_headers(token=access_token, client_id=client_id)
                 user_resp = simkl_get(settings_url, params=get_simkl_params(client_id), headers=headers_user, timeout=10)
                 username = "simkl_user"
+                user_id = ""
                 if user_resp.status_code == 200:
                     user_data = user_resp.json()
-                    if "user" in user_data and "name" in user_data["user"]:
-                        username = str(user_data["user"]["name"])
+                    if "user" in user_data:
+                        username = str(user_data["user"].get("name") or "simkl_user")
+                        user_id = str(user_data["user"].get("id") or "")
 
                 # Save in config.db
-                success = update_config_values({
+                cfg_updates = {
                     "simkl.user": username,
                     "simkl_user": username,
                     "simkl.token": access_token,
@@ -1412,7 +1416,12 @@ def app_factory(
                     "simkl_refresh_token": refresh_token,
                     "simkl.expires_at": str(expires_at),
                     "simkl.client": client_id
-                }, app.state.config_db_path)
+                }
+                if user_id:
+                    cfg_updates["simkl.user_id"] = user_id
+                    cfg_updates["simkl_user_id"] = user_id
+
+                success = update_config_values(cfg_updates, app.state.config_db_path)
 
                 if hasattr(app.state, "_simkl_device_codes") and user_code in app.state._simkl_device_codes:
                     del app.state._simkl_device_codes[user_code]
@@ -1991,6 +2000,107 @@ def app_factory(
             return JSONResponse(status_code=200, content={"success": True})
         except Exception as e:
             log(f"Error revoking Premiumize: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    # =========================================================================
+    # TORBOX DEBRID AUTHORISATION ENDPOINTS
+    # =========================================================================
+    @app.post("/api/web/debrid/torbox/auth_token")
+    async def web_torbox_auth_token_api(request: Request):
+        try:
+            body = await request.json()
+            token = (body.get("token") or "").strip()
+            if not token or token == "empty_setting":
+                return JSONResponse(status_code=400, content={"success": False, "error": "API Key cannot be empty"})
+
+            info_res = await asyncio.to_thread(
+                requests.get,
+                "https://api.torbox.app/v1/api/user/me",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=8
+            )
+            if info_res.status_code != 200:
+                return JSONResponse(status_code=400, content={"success": False, "error": f"Failed to validate API Key (HTTP {info_res.status_code})"})
+
+            info_data = info_res.json()
+            if info_data.get("success") is not True:
+                return JSONResponse(status_code=400, content={"success": False, "error": info_data.get("detail") or "Invalid TorBox API Key"})
+
+            user = info_data.get("data") or {}
+            account_id = str(user.get("email") or user.get("customer") or user.get("id") or "empty_setting")
+            update_config_values({
+                "tb.token": token,
+                "tb.enabled": "true",
+                "tb.account_id": account_id
+            }, app.state.config_db_path)
+
+            log(f"[TorBox] Successfully authorised account: {account_id}", level=LOGINFO)
+            return JSONResponse(status_code=200, content={"success": True, "account_id": account_id})
+        except Exception as e:
+            log(f"Error authorising TorBox: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/debrid/torbox/revoke")
+    async def web_torbox_revoke_api():
+        try:
+            update_config_values({
+                "tb.token": "empty_setting",
+                "tb.enabled": "false",
+                "tb.account_id": "empty_setting"
+            }, app.state.config_db_path)
+            log("[TorBox] Successfully revoked TorBox authorisation", level=LOGINFO)
+            return JSONResponse(status_code=200, content={"success": True})
+        except Exception as e:
+            log(f"Error revoking TorBox: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    # =========================================================================
+    # EASYNEWS AUTHORISATION ENDPOINTS
+    # =========================================================================
+    @app.post("/api/web/debrid/easynews/auth")
+    async def web_easynews_auth_api(request: Request):
+        try:
+            body = await request.json()
+            username = (body.get("username") or "").strip()
+            password = (body.get("password") or "").strip()
+            if not username or username == "empty_setting" or not password or password == "empty_setting":
+                return JSONResponse(status_code=400, content={"success": False, "error": "Username and Password are required"})
+
+            info_res = await asyncio.to_thread(
+                requests.get,
+                "https://account.easynews.com/editinfo.php",
+                auth=(username, password),
+                timeout=8
+            )
+            if info_res.status_code != 200:
+                if info_res.status_code in (401, 403):
+                    return JSONResponse(status_code=400, content={"success": False, "error": "Invalid EasyNews username or password"})
+                return JSONResponse(status_code=400, content={"success": False, "error": f"Failed to validate EasyNews credentials (HTTP {info_res.status_code})"})
+
+            update_config_values({
+                "easynews_user": username,
+                "easynews_password": password,
+                "provider.easynews": "true"
+            }, app.state.config_db_path)
+
+            log(f"[EasyNews] Successfully authorised account: {username}", level=LOGINFO)
+            return JSONResponse(status_code=200, content={"success": True, "account_id": username})
+        except Exception as e:
+            log(f"Error authorising EasyNews: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/debrid/easynews/revoke")
+    async def web_easynews_revoke_api():
+        try:
+            update_config_values({
+                "easynews_user": "empty_setting",
+                "easynews_password": "empty_setting",
+                "provider.easynews": "false"
+            }, app.state.config_db_path)
+            log("[EasyNews] Successfully revoked EasyNews authorisation", level=LOGINFO)
+            return JSONResponse(status_code=200, content={"success": True})
+        except Exception as e:
+            log(f"Error revoking EasyNews: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
     # Premiumize Cloud Storage Operations (Live Fetch, No Caching)
@@ -2640,7 +2750,11 @@ def app_factory(
             for d_name, token_key, enabled_key, prio_key, def_prio, d_id in debrid_svcs:
                 tok = cfg.get(token_key)
                 en = cfg.get(enabled_key, "false").lower() in ("true", "1")
-                has_tok = bool(tok and tok != "empty_setting")
+                if d_id == "easynews":
+                    en_pwd = cfg.get("easynews_password")
+                    has_tok = bool(tok and tok != "empty_setting" and en_pwd and en_pwd != "empty_setting")
+                else:
+                    has_tok = bool(tok and tok != "empty_setting")
                 try:
                     prio_val = int(cfg.get(prio_key, def_prio))
                 except (ValueError, TypeError):
@@ -2659,6 +2773,14 @@ def app_factory(
                         acct_id = None
                 elif d_id == "rd":
                     acct_id = cfg.get("rd.account_id")
+                    if acct_id == "empty_setting":
+                        acct_id = None
+                elif d_id == "tb":
+                    acct_id = cfg.get("tb.account_id")
+                    if acct_id == "empty_setting":
+                        acct_id = None
+                elif d_id == "easynews":
+                    acct_id = cfg.get("easynews_user")
                     if acct_id == "empty_setting":
                         acct_id = None
 

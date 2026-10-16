@@ -197,3 +197,291 @@ def ensure_valid_simkl_token(config_db_path: str) -> str | None:
 
     return token
 
+
+def get_simkl_user_info(config_db_path: str) -> dict:
+    """
+    Returns a dict with 'username' and 'user_id' for the authorized Simkl user.
+    If 'simkl.user_id' is not yet stored, queries https://api.simkl.com/users/settings
+    and caches it into config.db.
+    """
+    from resources.lib.config_handler import get_config_value, update_config_values
+    username = get_config_value("simkl.user", config_db_path) or get_config_value("simkl_user", config_db_path) or "simkl_user"
+    user_id = get_config_value("simkl.user_id", config_db_path) or get_config_value("simkl_user_id", config_db_path)
+
+    if not user_id or user_id in ("empty_setting", ""):
+        token = ensure_valid_simkl_token(config_db_path)
+        client_id = get_effective_simkl_client_id(config_db_path)
+        if token and client_id:
+            try:
+                settings_url = "https://api.simkl.com/users/settings"
+                headers = get_simkl_headers(token=token, client_id=client_id)
+                resp = simkl_get(settings_url, params=get_simkl_params(client_id), headers=headers, timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    user_obj = data.get("user", {})
+                    fetched_name = str(user_obj.get("name") or username)
+                    fetched_id = str(user_obj.get("id") or "")
+                    if fetched_id:
+                        user_id = fetched_id
+                        username = fetched_name
+                        update_config_values({
+                            "simkl.user_id": user_id,
+                            "simkl_user_id": user_id,
+                            "simkl.user": username,
+                            "simkl_user": username
+                        }, config_db_path)
+                        log(f"[Simkl API] Cached user ID: {user_id} for user: {username}", level=LOGINFO)
+            except Exception as e:
+                log(f"[Simkl API] Error fetching user settings: {e}", level=LOGWARNING)
+
+    return {"username": username, "user_id": user_id or username}
+
+
+def fetch_simkl_user_custom_lists(config_db_path: str) -> dict:
+    """
+    Fetches the user's custom lists via GET https://api.simkl.com/lists/user/{userId}.
+    Handles pagination. Returns {'lists': [...]} or {'error': 'premium_only', 'lists': []}.
+    """
+    token = ensure_valid_simkl_token(config_db_path)
+    client_id = get_effective_simkl_client_id(config_db_path)
+    if not token or not client_id:
+        log("[Simkl API] Missing Simkl credentials for custom lists.", level=LOGINFO)
+        return {"lists": []}
+
+    user_info = get_simkl_user_info(config_db_path)
+    user_id = user_info.get("user_id") or user_info.get("username")
+    if not user_id:
+        log("[Simkl API] No user ID or username available for custom lists fetch.", level=LOGWARNING)
+        return {"lists": []}
+
+    headers = get_simkl_headers(token=token, client_id=client_id)
+    all_lists = []
+    page = 1
+    limit = 50
+
+    while True:
+        url = f"https://api.simkl.com/lists/user/{user_id}"
+        params = get_simkl_params(client_id, {"page": page, "limit": limit})
+        try:
+            resp = simkl_get(url, params=params, headers=headers, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json() if resp.text else {}
+                if isinstance(data, dict) and data.get("error") == "premium_only":
+                    log(f"[Simkl API] Custom lists require Simkl PRO/VIP: {data.get('message')}", level=LOGINFO)
+                    return {"error": "premium_only", "lists": []}
+
+                lists_page = data.get("lists", []) if isinstance(data, dict) else []
+                all_lists.extend(lists_page)
+
+                pagination = data.get("pagination", {})
+                total_pages = pagination.get("total_pages", 1)
+                if page >= total_pages or not lists_page:
+                    break
+                page += 1
+            else:
+                log(f"[Simkl API] Error fetching user custom lists (HTTP {resp.status_code}): {resp.text[:200]}", level=LOGWARNING)
+                break
+        except Exception as e:
+            log(f"[Simkl API] Exception fetching user custom lists: {e}", level=LOGERROR)
+            break
+
+    log(f"[Simkl API] Fetched {len(all_lists)} custom lists for user {user_id}", level=LOGINFO)
+    return {"lists": all_lists}
+
+
+def fetch_simkl_custom_list_items(config_db_path: str, list_id: int | str, limit: int = 500, tmdb_handler=None) -> dict | None:
+    """
+    Fetches all items for a Simkl custom list via GET https://api.simkl.com/lists/{id}.
+    Handles pagination and normalizes items for Orac DB sync (with 'tmdb', 'trakt', 'imdb' ids).
+    """
+    token = ensure_valid_simkl_token(config_db_path)
+    client_id = get_effective_simkl_client_id(config_db_path)
+    if not token or not client_id:
+        log("[Simkl API] Missing Simkl credentials for fetching list items.", level=LOGINFO)
+        return None
+
+    headers = get_simkl_headers(token=token, client_id=client_id)
+    page = 1
+    all_raw_items = []
+    list_meta = {}
+
+    while True:
+        url = f"https://api.simkl.com/lists/{list_id}"
+        params = get_simkl_params(client_id, {"page": page, "limit": limit, "extended": "full"})
+        try:
+            resp = simkl_get(url, params=params, headers=headers, timeout=20)
+            if resp.status_code == 200:
+                data = resp.json() if resp.text else {}
+                if isinstance(data, dict) and data.get("error") == "premium_only":
+                    log(f"[Simkl API] Custom list {list_id} requires Simkl PRO/VIP: {data.get('message')}", level=LOGWARNING)
+                    return {"error": "premium_only", "items": [], "counts": {"movies": 0, "shows": 0}, "meta": {}}
+
+                if not list_meta and isinstance(data, dict):
+                    list_meta = {
+                        "id": data.get("id"),
+                        "name": data.get("name"),
+                        "slug": data.get("slug"),
+                        "media_type": data.get("media_type"),
+                        "description": data.get("description", ""),
+                        "privacy": data.get("privacy", "public"),
+                        "sort": data.get("sort", ["position", "asc"]),
+                        "counts": data.get("counts", {})
+                    }
+
+                items_page = data.get("items", []) if isinstance(data, dict) else []
+                all_raw_items.extend(items_page)
+
+                pagination = data.get("pagination", {})
+                total_pages = pagination.get("total_pages", 1)
+                if page >= total_pages or not items_page:
+                    break
+                page += 1
+            elif resp.status_code == 404:
+                log(f"[Simkl API] Custom list {list_id} not found on Simkl (404).", level=LOGWARNING)
+                return None
+            else:
+                log(f"[Simkl API] Error fetching custom list items for {list_id} (HTTP {resp.status_code})", level=LOGWARNING)
+                break
+        except Exception as e:
+            log(f"[Simkl API] Exception fetching items for list {list_id}: {e}", level=LOGERROR)
+            break
+
+    formatted_items = []
+    item_counts = {"movies": 0, "shows": 0}
+
+    for item in all_raw_items:
+        raw_type = str(item.get("type") or "").lower()
+        media_type = "movie" if raw_type in ("movie", "movies") else "show"
+
+        ids = item.get("ids", {})
+        tmdb_id = ids.get("tmdb")
+        trakt_id = ids.get("trakt")
+        imdb_id = ids.get("imdb")
+        simkl_id = ids.get("simkl_id") or ids.get("simkl")
+
+        # Fallback to resolve tmdb_id via imdb if missing
+        if not tmdb_id and imdb_id and tmdb_handler:
+            try:
+                resolved = tmdb_handler.find_by_external_id(imdb_id, source="imdb_id")
+                if resolved and resolved.get("id"):
+                    tmdb_id = resolved["id"]
+            except Exception:
+                pass
+
+        if not tmdb_id:
+            continue
+
+        try:
+            tmdb_id_int = int(tmdb_id)
+        except (ValueError, TypeError):
+            continue
+
+        trakt_id_val = int(trakt_id) if trakt_id else -tmdb_id_int
+
+        formatted_items.append({
+            "type": media_type,
+            media_type: {
+                "title": item.get("title"),
+                "year": item.get("year"),
+                "ids": {
+                    "tmdb": tmdb_id_int,
+                    "trakt": trakt_id_val,
+                    "imdb": imdb_id,
+                    "simkl": simkl_id
+                }
+            }
+        })
+        if media_type == "movie":
+            item_counts["movies"] += 1
+        else:
+            item_counts["shows"] += 1
+
+    return {
+        "items": formatted_items,
+        "counts": item_counts,
+        "meta": list_meta
+    }
+
+
+def add_item_to_simkl_watchlist(config_db_path: str, tmdb_id: int, media_type: str, status: str = "plantowatch") -> bool:
+    """
+    Adds a movie or TV show to the user's Simkl watchlist (e.g. status='plantowatch')
+    via POST https://api.simkl.com/sync/add-to-list.
+    Handles rate-limit locking retries.
+    """
+    token = ensure_valid_simkl_token(config_db_path)
+    client_id = get_effective_simkl_client_id(config_db_path)
+    if not token or not client_id:
+        log("[Simkl API] Missing Simkl credentials to add to watchlist.", level=LOGWARNING)
+        return False
+
+    url = "https://api.simkl.com/sync/add-to-list"
+    headers = get_simkl_headers(token=token, client_id=client_id)
+    params = get_simkl_params(client_id)
+
+    key = "movies" if media_type == "movie" else "shows"
+    payload = {
+        "to": status,
+        key: [{"ids": {"tmdb": int(tmdb_id)}}]
+    }
+
+    for attempt in range(2):
+        try:
+            resp = simkl_post(url, params=params, headers=headers, json=payload, timeout=15)
+            if resp.status_code == 200:
+                log(f"[Simkl API] Successfully added {media_type} {tmdb_id} to Simkl watchlist ({status})", level=LOGINFO)
+                return True
+            elif resp.status_code == 400 and "rate_limit" in resp.text and attempt == 0:
+                log("[Simkl API] Rate limit lock active on add-to-list. Waiting 3s before retry...", level=LOGINFO)
+                time.sleep(3)
+                continue
+            else:
+                log(f"[Simkl API] Failed to add item to Simkl watchlist (HTTP {resp.status_code}): {resp.text}", level=LOGWARNING)
+                return False
+        except Exception as e:
+            log(f"[Simkl API] Exception adding item to Simkl watchlist: {e}", level=LOGERROR)
+            return False
+
+    return False
+
+
+def remove_item_from_simkl_watchlist(config_db_path: str, tmdb_id: int, media_type: str) -> bool:
+    """
+    Removes a movie or TV show from the user's Simkl watchlist / history
+    via POST https://api.simkl.com/sync/history/remove.
+    Handles rate-limit locking retries.
+    """
+    token = ensure_valid_simkl_token(config_db_path)
+    client_id = get_effective_simkl_client_id(config_db_path)
+    if not token or not client_id:
+        log("[Simkl API] Missing Simkl credentials to remove from watchlist.", level=LOGWARNING)
+        return False
+
+    url = "https://api.simkl.com/sync/history/remove"
+    headers = get_simkl_headers(token=token, client_id=client_id)
+    params = get_simkl_params(client_id)
+
+    key = "movies" if media_type == "movie" else "shows"
+    payload = {
+        key: [{"ids": {"tmdb": int(tmdb_id)}}]
+    }
+
+    for attempt in range(2):
+        try:
+            resp = simkl_post(url, params=params, headers=headers, json=payload, timeout=15)
+            if resp.status_code == 200:
+                log(f"[Simkl API] Successfully removed {media_type} {tmdb_id} from Simkl history/watchlist", level=LOGINFO)
+                return True
+            elif resp.status_code == 400 and "rate_limit" in resp.text and attempt == 0:
+                log("[Simkl API] Rate limit lock active on history/remove. Waiting 3s before retry...", level=LOGINFO)
+                time.sleep(3)
+                continue
+            else:
+                log(f"[Simkl API] Failed to remove item from Simkl watchlist (HTTP {resp.status_code}): {resp.text}", level=LOGWARNING)
+                return False
+        except Exception as e:
+            log(f"[Simkl API] Exception removing item from Simkl watchlist: {e}", level=LOGERROR)
+            return False
+
+    return False
+

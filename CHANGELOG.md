@@ -4,6 +4,16 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.3.9] — 2026-10-17
+
+### Added
+- **TorBox & EasyNews Dashboard Authorisation** — Added centralised TorBox (API Key) and EasyNews (Username & Password) credential validation, authorisation, and revocation directly in the Services tab of the Command Centre web dashboard.
+- **Simkl Custom Lists Synchronization** — Added full sync, display, and mutation support (`add`/`remove`) for user-created Simkl custom lists.
+
+### Fixed
+- **Watched History Sync & Static TV Show Population** — Populated missing static TV show records during provider watch history sync, guarded against NULL episode `tmdb_id` values during reconciliation, and fixed Simkl watermark boundary handling.
+- **PunchPlay History Sync Throttle** — Fixed missing `time` import in queue processor bulk status sync.
+
 ## [1.3.8] — 2026-09-25
 
 ### Added

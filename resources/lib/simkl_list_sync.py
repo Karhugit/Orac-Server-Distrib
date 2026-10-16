@@ -12,7 +12,10 @@ from resources.lib.simkl_api import (
     get_simkl_headers,
     simkl_get,
     get_effective_simkl_client_id,
-    SIMKL_APP_NAME
+    SIMKL_APP_NAME,
+    fetch_simkl_user_custom_lists,
+    fetch_simkl_custom_list_items,
+    get_simkl_user_info
 )
 from resources.lib.simkl_lists import SIMKL_GENERIC_LISTS
 from resources.lib.version import __version__
@@ -309,5 +312,123 @@ async def simkl_list_sync_task(config_db_path, lists_db_path, trakt_handler, tmd
             )
             log(f"[Orac] **SYNC** Updated Simkl generic list {slug}", level=LOGINFO)
 
+        # -------------------------------------------------------------
+        # 3. Simkl Custom Lists (User Curated Lists)
+        # -------------------------------------------------------------
+        token = ensure_valid_simkl_token(config_db_path) or get_config_value("simkl.token", config_db_path)
+        if token and client_id:
+            try:
+                user_info = get_simkl_user_info(config_db_path)
+                simkl_username = user_info.get("username") or username
+
+                custom_lists_res = fetch_simkl_user_custom_lists(config_db_path)
+                if custom_lists_res.get("error") == "premium_only":
+                    log("[Orac] Simkl account is free tier. Custom lists sync requires Simkl PRO or VIP.", level=LOGINFO)
+                else:
+                    user_custom_lists = custom_lists_res.get("lists", [])
+                    active_simkl_custom_ids = set()
+
+                    for clist in user_custom_lists:
+                        simkl_list_id = clist.get("id")
+                        if not simkl_list_id:
+                            continue
+
+                        db_list_id = f"simkl:custom:{simkl_list_id}"
+                        active_simkl_custom_ids.add(db_list_id)
+
+                        slug = clist.get("slug") or str(simkl_list_id)
+                        name = clist.get("name") or f"Simkl List {simkl_list_id}"
+                        description = clist.get("description") or ""
+                        counts = clist.get("counts", {})
+                        total_items = counts.get("items", 0)
+                        updated_at = clist.get("updated_at") or datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+                        is_in_library = lists_library_settings.get(db_list_id, None)
+
+                        # Default new user personal lists to add_to_library = 1
+                        if is_in_library is None:
+                            with db_connect(lists_db_path) as conn:
+                                cursor = conn.cursor()
+                                cursor.execute("""
+                                    INSERT OR IGNORE INTO lists (list_id, source, user, owned_by_user, slug, name, description, last_checked, item_count_movies, item_count_shows, add_to_library)
+                                    VALUES (?, 'simkl', ?, 1, ?, ?, ?, '1970-01-01T00:00:00.000Z', 0, 0, 1)
+                                """, (db_list_id, simkl_username, slug, name, description))
+                                conn.commit()
+                            is_in_library = 1
+
+                        if is_in_library == 1:
+                            last_checked = get_local_list_updated_at(lists_db_path, db_list_id)
+                            # Only re-fetch items if list has changed or never checked
+                            if not last_checked or last_checked == "1970-01-01T00:00:00.000Z" or updated_at > last_checked:
+                                list_data = fetch_simkl_custom_list_items(config_db_path, simkl_list_id, limit=500, tmdb_handler=tmdb_handler)
+                                if list_data and "items" in list_data:
+                                    items = list_data["items"]
+                                    item_counts = list_data["counts"]
+                                    list_meta = {
+                                        "ids": {"slug": slug, "simkl": simkl_list_id},
+                                        "name": name,
+                                        "description": description,
+                                        "updated_at": updated_at,
+                                        "item_count": item_counts,
+                                        "user": {"ids": {"slug": simkl_username}},
+                                        "source": "simkl",
+                                        "owned_by_user": True,
+                                        "list_id": db_list_id
+                                    }
+
+                                    log(f"[Orac] **SYNC** Updating Simkl custom list '{name}' ({len(items)} items)", level=LOGINFO)
+                                    await run_list_sync(
+                                        lists_db_path,
+                                        simkl_username,
+                                        items,
+                                        slug,
+                                        movies_static_db_path,
+                                        movies_dynamic_db_path,
+                                        tvshows_static_db_path,
+                                        tvshows_dynamic_db_path,
+                                        trakt_queue_path,
+                                        trakt_handler,
+                                        tmdb_handler,
+                                        list_meta
+                                    )
+                                    log(f"[Orac] **SYNC** Updated Simkl custom list '{name}'", level=LOGINFO)
+                            else:
+                                # Metadata update only
+                                with db_connect(lists_db_path) as conn:
+                                    cursor = conn.cursor()
+                                    cursor.execute("UPDATE lists SET name = ?, description = ? WHERE list_id = ?", (name, description, db_list_id))
+                                    conn.commit()
+                        else:
+                            # Not in library: update metadata and remove cached items
+                            cleanup_list_items(lists_db_path, db_list_id)
+                            with db_connect(lists_db_path) as conn:
+                                cursor = conn.cursor()
+                                cursor.execute("""
+                                    INSERT INTO lists (list_id, source, user, owned_by_user, slug, name, description, last_checked, item_count_movies, item_count_shows, add_to_library)
+                                    VALUES (?, 'simkl', ?, 1, ?, ?, ?, ?, 0, 0, 0)
+                                    ON CONFLICT(list_id) DO UPDATE SET
+                                        name = excluded.name,
+                                        description = excluded.description,
+                                        last_checked = excluded.last_checked
+                                """, (db_list_id, simkl_username, slug, name, description, updated_at))
+                                conn.commit()
+
+                    # Clean up local custom lists that were deleted remotely on Simkl
+                    with db_connect(lists_db_path) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT list_id FROM lists WHERE list_id LIKE 'simkl:custom:%'")
+                        existing_custom_ids = [row[0] for row in cursor.fetchall()]
+                        stale_ids = [lid for lid in existing_custom_ids if lid not in active_simkl_custom_ids]
+                        for stale_id in stale_ids:
+                            log(f"[Orac] Removing deleted Simkl custom list from local DB: {stale_id}", level=LOGINFO)
+                            cursor.execute("DELETE FROM list_items WHERE list_id = ?", (stale_id,))
+                            cursor.execute("DELETE FROM lists WHERE list_id = ?", (stale_id,))
+                        if stale_ids:
+                            conn.commit()
+
+            except Exception as e:
+                log(f"[Orac] Error syncing Simkl custom lists: {e}", level=LOGERROR)
+
     except Exception as e:
         log(f"[Orac] Error in Simkl list sync task: {e}", level=LOGERROR)
+

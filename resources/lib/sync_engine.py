@@ -1,8 +1,9 @@
 import sqlite3
 import threading
+import time
 import requests
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from resources.lib.db_utils import db_connect
 from resources.lib.log_utils import log, LOGERROR, LOGINFO, LOGDEBUG, LOGWARNING
 from resources.lib.simkl_api import get_simkl_params, get_simkl_headers, simkl_get, simkl_post
@@ -85,12 +86,21 @@ def fetch_simkl_history(config_db_path, tvshows_static_db=None, force=False):
     # 2. Items fetch: Phase 1 Initial Sync vs Phase 2 Continuous Delta Sync
     try:
         if stored_last_sync and not force:
+            # Simkl date_from is strictly greater-than (>). Subtract 5s buffer so items at the boundary second are not missed.
+            adjusted_sync = stored_last_sync
+            try:
+                dt = _parse_timestamp(stored_last_sync)
+                if dt:
+                    adjusted_sync = (dt - timedelta(seconds=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            except Exception:
+                pass
             extra_params = {
-                "date_from": stored_last_sync,
+                "date_from": adjusted_sync,
                 "extended": "full",
-                "episode_watched_at": "yes"
+                "episode_watched_at": "yes",
+                "include_all_episodes": "yes"
             }
-            log(f"[Sync Engine] Simkl continuous sync: fetching delta since {stored_last_sync}...", level=LOGINFO)
+            log(f"[Sync Engine] Simkl continuous sync: fetching delta since {adjusted_sync}...", level=LOGINFO)
         else:
             extra_params = {
                 "extended": "full",
@@ -385,9 +395,10 @@ def reconcile_movies(db_path, trakt_data, simkl_data, mdblist_data, config_db_pa
             log(f"[Sync Engine] Error reconciling movies: {e}", level=LOGERROR)
 
 
-def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data, config_db_path=None, tvshows_static_db=None, punchplay_data=None):
+def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data, config_db_path=None, tvshows_static_db=None, punchplay_data=None, tmdb_handler=None, trakt_handler=None):
     """
     Reconciles TV show episodes from all authorized providers into watched_history and watched_episodes.
+    Ensures missing shows are populated into static DB so episode records and next episode queries work correctly.
     """
     log("[Sync Engine] Reconciling and flagging tv shows...", level=LOGINFO)
     from resources.lib.config_handler import get_authorized_watched_providers, get_config_value, get_trakt_user
@@ -472,6 +483,72 @@ def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data, config_db_pat
                 # Update watched_episodes in tvshows_dynamic_cache.db for local user
                 username = (get_trakt_user(config_db_path) or get_config_value('username', config_db_path) or 'default').lower()
                 
+                # Check for any shows missing from the static DB and populate them
+                distinct_shows = list(set([u[0] for u in to_update]))
+                if tvshows_static_db and distinct_shows:
+                    missing_show_ids = []
+                    try:
+                        with db_connect(tvshows_static_db) as sconn:
+                            scursor = sconn.cursor()
+                            placeholders = ','.join(['?'] * len(distinct_shows))
+                            scursor.execute(
+                                f"SELECT show_tmdb_id FROM shows WHERE show_tmdb_id IN ({placeholders})",
+                                distinct_shows
+                            )
+                            existing_ids = {row[0] for row in scursor.fetchall()}
+                            missing_show_ids = [sid for sid in distinct_shows if sid not in existing_ids]
+                    except Exception as e_check:
+                        log(f"[Sync Engine] Warning: could not check existing shows in static DB: {e_check}", level=LOGWARNING)
+
+                    if missing_show_ids:
+                        if tmdb_handler is None:
+                            try:
+                                from resources.lib.config_handler import get_config_value
+                                from resources.lib.tmdb_handler import TMDbAPI
+                                from resources.lib.config_loader import ConfigLoader
+                                cl = ConfigLoader()
+                                stored_tmdb_key = get_config_value("tmdb_api_key", config_db_path) if config_db_path else None
+                                tmdb_api_key = stored_tmdb_key if stored_tmdb_key else cl.tmdb_config.get("api_key")
+                                if tmdb_api_key:
+                                    tmdb_handler = TMDbAPI(api_key=tmdb_api_key, static_db_path=tvshows_static_db)
+                            except Exception as e_tmdb:
+                                log(f"[Sync Engine] Could not initialize fallback TMDbAPI: {e_tmdb}", level=LOGWARNING)
+
+                        if tmdb_handler:
+                            log(f"[Sync Engine] Adding {len(missing_show_ids)} missing watched show(s) to static DB: {missing_show_ids}", level=LOGINFO)
+                            from resources.lib.db_utils import add_tvshow
+                            for sid in missing_show_ids:
+                                try:
+                                    show_data = {"ids": {"tmdb": sid, "trakt": -1}, "title": ""}
+                                    if trakt_handler:
+                                        try:
+                                            resp = trakt_handler._get(f"/search/tmdb/{sid}?type=show&extended=full")
+                                            if resp and resp.status_code == 200:
+                                                res_json = resp.json()
+                                                if res_json and isinstance(res_json, list) and len(res_json) > 0 and res_json[0].get("show"):
+                                                    show_data = res_json[0]["show"]
+                                        except Exception as e_tsearch:
+                                            log(f"[Sync Engine] Trakt search failed for TMDB ID {sid}: {e_tsearch}", level=LOGDEBUG)
+
+                                    trakt_id = show_data.get("ids", {}).get("trakt", -1)
+                                    media_id = {"trakt": trakt_id, "tmdb": sid}
+
+                                    with db_connect(tvshows_static_db) as sconn:
+                                        scursor = sconn.cursor()
+                                        add_tvshow(
+                                            tvshows_static_cursor=scursor,
+                                            tvshows_dynamic_cursor=None,
+                                            trakt_queue_cursor=None,
+                                            media_id=media_id,
+                                            trakt_handler=trakt_handler,
+                                            tmdb_handler=tmdb_handler,
+                                            show=show_data
+                                        )
+                                        sconn.commit()
+                                    log(f"[Sync Engine] Successfully populated missing show tmdb_id={sid} in static DB", level=LOGINFO)
+                                except Exception as e_add:
+                                    log(f"[Sync Engine] Failed to add missing show {sid}: {e_add}", level=LOGWARNING)
+
                 # Look up static episode IDs
                 ep_id_lookup = {}
                 if tvshows_static_db:
@@ -493,12 +570,14 @@ def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data, config_db_pat
                 for u in to_update:
                     sid, sea, ep, wat, *_ = u
                     tr_id, tm_id = ep_id_lookup.get((sid, sea, ep), (None, None))
-                    watched_episodes_data.append((username, tr_id, tm_id, sea, ep, wat, 100, 2))
+                    if tm_id is not None:
+                        watched_episodes_data.append((username, tr_id, tm_id, sea, ep, wat, 100, 2))
                     
-                conn.executemany("""
-                    INSERT OR REPLACE INTO watched_episodes (user, episode_trakt_id, tmdb_id, season, episode, watched_at, percent_watched, watched_status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, watched_episodes_data)
+                if watched_episodes_data:
+                    conn.executemany("""
+                        INSERT OR REPLACE INTO watched_episodes (user, episode_trakt_id, tmdb_id, season, episode, watched_at, percent_watched, watched_status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, watched_episodes_data)
                 
                 # Update parent show watched status in user_show_sync if static DB is available
                 if tvshows_static_db:
@@ -516,9 +595,10 @@ def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data, config_db_pat
                 log(f"[Sync Engine] Successfully reconciled {len(to_update)} tv show episodes.", level=LOGINFO)
         except Exception as e:
             log(f"[Sync Engine] Error reconciling shows: {e}", level=LOGERROR)
+            raise
 
 
-def sync_providers_sync(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, config_db_path, tvshows_static_db=None, force=False):
+def sync_providers_sync(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, config_db_path, tvshows_static_db=None, force=False, tmdb_handler=None):
     """
     Synchronous implementation of multi-provider watch history ingestion.
     Safe to call from background threads like UpdateQueueWorker.
@@ -529,6 +609,26 @@ def sync_providers_sync(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, co
         
     try:
         log("[Sync Engine] Starting multi-provider watch history ingestion...", level=LOGINFO)
+        
+        if not tvshows_static_db:
+            try:
+                from resources.lib.database_manager import DatabaseManager
+                tvshows_static_db = DatabaseManager().get_path('tvshows_static')
+            except Exception:
+                pass
+
+        if not tmdb_handler:
+            try:
+                from resources.lib.config_handler import get_config_value
+                from resources.lib.tmdb_handler import TMDbAPI
+                from resources.lib.config_loader import ConfigLoader
+                cl = ConfigLoader()
+                stored_tmdb_key = get_config_value("tmdb_api_key", config_db_path) if config_db_path else None
+                tmdb_api_key = stored_tmdb_key if stored_tmdb_key else cl.tmdb_config.get("api_key")
+                if tmdb_api_key:
+                    tmdb_handler = TMDbAPI(api_key=tmdb_api_key, static_db_path=tvshows_static_db)
+            except Exception as e_tmdb:
+                log(f"[Sync Engine] Could not initialize fallback TMDbAPI: {e_tmdb}", level=LOGWARNING)
         
         # 1. Fetch Trakt
         PAGE_SIZE = 250
@@ -644,23 +744,43 @@ def sync_providers_sync(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, co
         punchplay_latest_wat = punchplay_history.get("latest_watched_at")
         
         # 5. Reconcile movies
+        movies_reconciled = True
         if movies_dynamic_db:
-            reconcile_movies(movies_dynamic_db, trakt_movies, simkl_movies, mdblist_movies, config_db_path, punchplay_data=punchplay_movies)
+            try:
+                reconcile_movies(movies_dynamic_db, trakt_movies, simkl_movies, mdblist_movies, config_db_path, punchplay_data=punchplay_movies)
+            except Exception as e:
+                log(f"[Sync Engine] Error reconciling movies: {e}", level=LOGERROR)
+                movies_reconciled = False
         
         # 6. Reconcile shows
+        shows_reconciled = True
         if tvshows_dynamic_db:
-            reconcile_shows(tvshows_dynamic_db, trakt_shows, simkl_shows, mdblist_shows, config_db_path, tvshows_static_db, punchplay_data=punchplay_shows)
+            try:
+                reconcile_shows(
+                    tvshows_dynamic_db,
+                    trakt_shows,
+                    simkl_shows,
+                    mdblist_shows,
+                    config_db_path=config_db_path,
+                    tvshows_static_db=tvshows_static_db,
+                    punchplay_data=punchplay_shows,
+                    tmdb_handler=tmdb_handler,
+                    trakt_handler=trakt_handler
+                )
+            except Exception as e:
+                log(f"[Sync Engine] Error reconciling shows: {e}", level=LOGERROR)
+                shows_reconciled = False
 
-        # 7. Persist activities timestamps
+        # 7. Persist activities timestamps only if reconciliation succeeded
         if config_db_path:
             try:
                 updates = {}
-                if _movies_watched_at:
+                if movies_reconciled and _movies_watched_at:
                     updates["trakt_movies_watched_synced_at"] = _movies_watched_at
-                if _episodes_watched_at:
+                if shows_reconciled and _episodes_watched_at:
                     updates["trakt_episodes_watched_synced_at"] = _episodes_watched_at
                     
-                if simkl_act:
+                if simkl_act and (shows_reconciled and movies_reconciled):
                     s_all = simkl_act.get("all")
                     if s_all:
                         updates["simkl_last_sync_at"] = s_all
@@ -674,7 +794,7 @@ def sync_providers_sync(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, co
                     if s_mov_comp:
                         updates["simkl_movies_completed_synced_at"] = s_mov_comp
 
-                if punchplay_latest_wat:
+                if punchplay_latest_wat and (shows_reconciled and movies_reconciled):
                     updates["punchplay_last_sync_at"] = punchplay_latest_wat
                         
                 if updates:
@@ -683,7 +803,7 @@ def sync_providers_sync(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, co
             except Exception as e:
                 log(f"[Sync Engine] Failed to persist activities timestamps: {e}", level=LOGWARNING)
 
-        # 7. Fetch dropped shows from each authorized provider
+        # 8. Fetch dropped shows from each authorized provider
         if tvshows_static_db:
             try:
                 from resources.lib.config_handler import get_authorized_watched_providers
@@ -702,7 +822,7 @@ def sync_providers_sync(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, co
         _sync_engine_lock.release()
 
 
-async def sync_providers(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, config_db_path, tvshows_static_db=None, force=False):
+async def sync_providers(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, config_db_path, tvshows_static_db=None, force=False, tmdb_handler=None):
     """
     Async wrapper for sync_providers_sync, offloading to worker thread.
     """
@@ -713,7 +833,8 @@ async def sync_providers(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, c
         trakt_handler,
         config_db_path,
         tvshows_static_db,
-        force
+        force,
+        tmdb_handler
     )
 
 def _chunk_list(lst, chunk_size):

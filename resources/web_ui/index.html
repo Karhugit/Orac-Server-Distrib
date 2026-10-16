@@ -2388,6 +2388,72 @@ Orac Server Port: 8000 (default)</div>
         </div>
     </div>
 
+    <!-- EasyNews Authorisation Modal -->
+    <div id="easynews-auth-modal" class="modal-overlay" onclick="closeEasynewsAuthModal(event)" style="z-index: 1200;">
+        <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="justify-content: space-between;">
+                <h2>Authorise EasyNews</h2>
+                <button class="modal-close-btn" onclick="toggleEasynewsAuthModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+
+            <form id="en-auth-form" onsubmit="handleEnAuthSubmit(event)" style="display: flex; flex-direction: column; gap: 1.15rem;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
+                    Enter your EasyNews account username and password below.
+                </p>
+
+                <div class="filter-group">
+                    <label class="filter-label">Username</label>
+                    <input type="text" id="en-user-input" class="form-input" required placeholder="Enter EasyNews Username" autocomplete="username" spellcheck="false" style="width: 100%; font-size: 0.85rem;">
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Password</label>
+                    <input type="password" id="en-pass-input" class="form-input" required placeholder="Enter EasyNews Password" autocomplete="current-password" spellcheck="false" style="width: 100%; font-size: 0.85rem;">
+                </div>
+
+                <div id="en-auth-msg" style="display: none; font-size: 0.82rem; padding: 0.5rem 0.75rem; border-radius: 0.4rem;"></div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+                    <button type="button" class="btn-secondary" onclick="toggleEasynewsAuthModal(false)">Cancel</button>
+                    <button type="submit" id="en-auth-submit-btn" class="btn-primary">Save & Authorise</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- TorBox Authorisation Modal -->
+    <div id="torbox-auth-modal" class="modal-overlay" onclick="closeTorboxAuthModal(event)" style="z-index: 1200;">
+        <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="justify-content: space-between;">
+                <h2>Authorise TorBox</h2>
+                <button class="modal-close-btn" onclick="toggleTorboxAuthModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+
+            <form id="tb-auth-key-tab" onsubmit="handleTbTokenSubmit(event)" style="display: flex; flex-direction: column; gap: 1.15rem;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
+                    Paste your TorBox API Key from your
+                    <a href="https://torbox.app/settings" target="_blank" rel="noopener noreferrer" style="color: #38bdf8;">TorBox Settings</a> page.
+                </p>
+
+                <div class="filter-group">
+                    <label class="filter-label">API Key</label>
+                    <input type="text" id="tb-token-input" class="form-input" required placeholder="Paste TorBox API Key" autocomplete="off" spellcheck="false" style="width: 100%; font-size: 0.85rem;">
+                </div>
+
+                <div id="tb-key-msg" style="display: none; font-size: 0.82rem; padding: 0.5rem 0.75rem; border-radius: 0.4rem;"></div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+                    <button type="button" class="btn-secondary" onclick="toggleTorboxAuthModal(false)">Cancel</button>
+                    <button type="submit" id="tb-key-submit-btn" class="btn-primary">Save API Key</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Premiumize Authorisation Modal -->
     <div id="premiumize-auth-modal" class="modal-overlay" onclick="closePremiumizeAuthModal(event)" style="z-index: 1200;">
         <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem;" onclick="event.stopPropagation()">
@@ -3698,6 +3764,203 @@ Orac Server Port: 8000 (default)</div>
                 }
             } catch (err) {
                 alert(`Error revoking Premiumize: ${err.message}`);
+            }
+        }
+
+        // -------------------------------------------------------------
+        // TORBOX AUTH LOGIC
+        // -------------------------------------------------------------
+        function toggleTorboxAuthModal(show) {
+            const modal = document.getElementById('torbox-auth-modal');
+            const msgEl = document.getElementById('tb-key-msg');
+            const input = document.getElementById('tb-token-input');
+            if (show) {
+                input.value = '';
+                msgEl.style.display = 'none';
+                msgEl.textContent = '';
+                modal.classList.add('visible');
+                setTimeout(() => input.focus(), 50);
+            } else {
+                modal.classList.remove('visible');
+            }
+        }
+
+        function openTorboxAuthModal() {
+            toggleTorboxAuthModal(true);
+        }
+
+        function closeTorboxAuthModal(e) {
+            if (e.target.id === 'torbox-auth-modal') {
+                toggleTorboxAuthModal(false);
+            }
+        }
+
+        function setTorboxMsg(kind, text) {
+            const msgEl = document.getElementById('tb-key-msg');
+            const styles = {
+                info: ['rgba(99, 102, 241, 0.15)', '#818cf8', 'rgba(99, 102, 241, 0.3)'],
+                ok: ['rgba(16, 185, 129, 0.15)', '#34d399', 'rgba(16, 185, 129, 0.3)'],
+                err: ['rgba(244, 63, 94, 0.15)', '#fb7185', 'rgba(244, 63, 94, 0.3)']
+            }[kind];
+            msgEl.style.display = 'block';
+            msgEl.style.background = styles[0];
+            msgEl.style.color = styles[1];
+            msgEl.style.border = `1px solid ${styles[2]}`;
+            msgEl.textContent = text;
+        }
+
+        async function handleTbTokenSubmit(e) {
+            e.preventDefault();
+            const token = (document.getElementById('tb-token-input').value || '').trim();
+            const submitBtn = document.getElementById('tb-key-submit-btn');
+
+            if (!token) {
+                setTorboxMsg('err', 'Please enter an API Key.');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Validating...';
+            setTorboxMsg('info', 'Validating with TorBox...');
+
+            try {
+                const resp = await fetch('/api/web/debrid/torbox/auth_token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: token })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    setTorboxMsg('ok', `Successfully authorised (Account: ${data.account_id || 'Active'})!`);
+                    setTimeout(() => {
+                        toggleTorboxAuthModal(false);
+                        fetchDiagnostics();
+                    }, 1000);
+                } else {
+                    setTorboxMsg('err', data.error || 'Failed to validate API Key');
+                }
+            } catch (err) {
+                setTorboxMsg('err', `Network error: ${err.message}`);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Save API Key';
+            }
+        }
+
+        async function revokeTorboxAuth() {
+            if (!confirm('Are you sure you want to revoke TorBox authorisation?')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/web/debrid/torbox/revoke', { method: 'POST' });
+                const data = await resp.json();
+                if (data.success) {
+                    fetchDiagnostics();
+                } else {
+                    alert('Error revoking TorBox: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert(`Error revoking TorBox: ${err.message}`);
+            }
+        }
+
+        // -------------------------------------------------------------
+        // EASYNEWS AUTH LOGIC
+        // -------------------------------------------------------------
+        function toggleEasynewsAuthModal(show) {
+            const modal = document.getElementById('easynews-auth-modal');
+            const msgEl = document.getElementById('en-auth-msg');
+            const userInput = document.getElementById('en-user-input');
+            const passInput = document.getElementById('en-pass-input');
+            if (show) {
+                userInput.value = '';
+                passInput.value = '';
+                msgEl.style.display = 'none';
+                msgEl.textContent = '';
+                modal.classList.add('visible');
+                setTimeout(() => userInput.focus(), 50);
+            } else {
+                modal.classList.remove('visible');
+            }
+        }
+
+        function openEasynewsAuthModal() {
+            toggleEasynewsAuthModal(true);
+        }
+
+        function closeEasynewsAuthModal(e) {
+            if (e.target.id === 'easynews-auth-modal') {
+                toggleEasynewsAuthModal(false);
+            }
+        }
+
+        function setEasynewsMsg(kind, text) {
+            const msgEl = document.getElementById('en-auth-msg');
+            const styles = {
+                info: ['rgba(99, 102, 241, 0.15)', '#818cf8', 'rgba(99, 102, 241, 0.3)'],
+                ok: ['rgba(16, 185, 129, 0.15)', '#34d399', 'rgba(16, 185, 129, 0.3)'],
+                err: ['rgba(244, 63, 94, 0.15)', '#fb7185', 'rgba(244, 63, 94, 0.3)']
+            }[kind];
+            msgEl.style.display = 'block';
+            msgEl.style.background = styles[0];
+            msgEl.style.color = styles[1];
+            msgEl.style.border = `1px solid ${styles[2]}`;
+            msgEl.textContent = text;
+        }
+
+        async function handleEnAuthSubmit(e) {
+            e.preventDefault();
+            const username = (document.getElementById('en-user-input').value || '').trim();
+            const password = (document.getElementById('en-pass-input').value || '').trim();
+            const submitBtn = document.getElementById('en-auth-submit-btn');
+
+            if (!username || !password) {
+                setEasynewsMsg('err', 'Please enter both username and password.');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Validating...';
+            setEasynewsMsg('info', 'Validating with EasyNews...');
+
+            try {
+                const resp = await fetch('/api/web/debrid/easynews/auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: username, password: password })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    setEasynewsMsg('ok', `Successfully authorised (Account: ${data.account_id || username})!`);
+                    setTimeout(() => {
+                        toggleEasynewsAuthModal(false);
+                        fetchDiagnostics();
+                    }, 1000);
+                } else {
+                    setEasynewsMsg('err', data.error || 'Failed to validate EasyNews credentials');
+                }
+            } catch (err) {
+                setEasynewsMsg('err', `Network error: ${err.message}`);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Save & Authorise';
+            }
+        }
+
+        async function revokeEasynewsAuth() {
+            if (!confirm('Are you sure you want to revoke EasyNews authorisation?')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/web/debrid/easynews/revoke', { method: 'POST' });
+                const data = await resp.json();
+                if (data.success) {
+                    fetchDiagnostics();
+                } else {
+                    alert('Error revoking EasyNews: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert(`Error revoking EasyNews: ${err.message}`);
             }
         }
 
@@ -5065,12 +5328,26 @@ Orac Server Port: 8000 (default)</div>
                         </div>
                     ` : debridList.map(d => {
                         const isPm = (d.id === 'pm' || d.id === 'premiumize' || (d.name && d.name.toLowerCase() === 'premiumize'));
+                        const isTb = (d.id === 'tb' || d.id === 'torbox' || (d.name && d.name.toLowerCase() === 'torbox'));
+                        const isEn = (d.id === 'easynews' || d.id === 'en' || (d.name && d.name.toLowerCase() === 'easynews'));
                         let debridActionHtml = '';
                         if (isPm) {
                             if (d.configured) {
                                 debridActionHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokePremiumizeAuth()">Revoke</button>`;
                             } else {
                                 debridActionHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openPremiumizeAuthModal()">Authorise</button>`;
+                            }
+                        } else if (isTb) {
+                            if (d.configured) {
+                                debridActionHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokeTorboxAuth()">Revoke</button>`;
+                            } else {
+                                debridActionHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openTorboxAuthModal()">Authorise</button>`;
+                            }
+                        } else if (isEn) {
+                            if (d.configured) {
+                                debridActionHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokeEasynewsAuth()">Revoke</button>`;
+                            } else {
+                                debridActionHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openEasynewsAuthModal()">Authorise</button>`;
                             }
                         }
                         const isConfigured = d.configured !== false;

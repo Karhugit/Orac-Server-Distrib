@@ -308,7 +308,7 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
             else:
                results = await _fetch_tmdb_list_external(tmdb_handler, slug, item_type)
         elif source == 'simkl':
-            results = await _fetch_simkl_list_external(slug, item_type, tmdb_handler, movies_static_db_path, tvshows_static_db_path)
+            results = await _fetch_simkl_list_external(slug, item_type, tmdb_handler, movies_static_db_path, tvshows_static_db_path, lists_db_path=lists_db_path, trakt_handler=trakt_handler)
         elif source == 'punchplay':
             results = await _fetch_punchplay_list_external(slug, item_type, tmdb_handler, movies_static_db_path, tvshows_static_db_path)
         else:
@@ -720,16 +720,60 @@ async def _fetch_tmdb_list_external(tmdb_handler, slug, item_type):
         return []
 
 
-async def _fetch_simkl_list_external(slug, item_type, tmdb_handler, movies_static_db_path, tvshows_static_db_path):
-    """Fetches a Simkl generic list (trending/popular) on the fly from Simkl CDN."""
+async def _fetch_simkl_list_external(slug, item_type, tmdb_handler, movies_static_db_path, tvshows_static_db_path, lists_db_path=None, trakt_handler=None):
+    """Fetches a Simkl list (generic trending/popular or user custom list) on the fly."""
     try:
         from resources.lib.simkl_lists import get_simkl_generic_list
-        from resources.lib.simkl_api import get_effective_simkl_client_id, SIMKL_APP_NAME
+        from resources.lib.simkl_api import get_effective_simkl_client_id, SIMKL_APP_NAME, fetch_simkl_custom_list_items
         from resources.lib.version import __version__
         import requests
 
         list_def = get_simkl_generic_list(slug)
         if not list_def:
+            # Check if this is a Simkl custom list
+            config_db_path = getattr(trakt_handler, "config_db_path", None)
+            if lists_db_path and config_db_path:
+                with db_connect(lists_db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT list_id, name, slug FROM lists WHERE source = 'simkl' AND (slug = ? OR list_id = ? OR LOWER(REPLACE(REPLACE(name, ' ', '-'), '_', '-')) = LOWER(?))", (slug, slug, slug))
+                    row = cursor.fetchone()
+                    if row and row[0].startswith("simkl:custom:"):
+                        simkl_list_id = row[0].replace("simkl:custom:", "")
+                        res = await asyncio.to_thread(fetch_simkl_custom_list_items, config_db_path, simkl_list_id, 500, tmdb_handler)
+                        if res and "items" in res:
+                            formatted_items = []
+                            for item in res["items"]:
+                                m_type = item.get("type")
+                                inner = item.get(m_type, {})
+                                ids = inner.get("ids", {})
+                                tmdb_id = ids.get("tmdb")
+                                if not tmdb_id:
+                                    continue
+                                if m_type == "movie" and item_type in ["movie", "all"]:
+                                    formatted_items.append({
+                                        "tmdb_id": int(tmdb_id),
+                                        "imdb_id": ids.get("imdb"),
+                                        "title": inner.get("title"),
+                                        "year": inner.get("year"),
+                                        "released": None,
+                                        "overview": None,
+                                        "poster_path": None,
+                                        "media_type": "movie"
+                                    })
+                                elif m_type == "show" and item_type in ["tvshow", "all"]:
+                                    formatted_items.append({
+                                        "tmdb_id": int(tmdb_id),
+                                        "imdb_id": ids.get("imdb"),
+                                        "title": inner.get("title"),
+                                        "year": inner.get("year"),
+                                        "premiered": None,
+                                        "overview": None,
+                                        "poster_path": None,
+                                        "media_type": "show"
+                                    })
+                            enriched = await _enrich_items_with_metadata(formatted_items, tmdb_handler, movies_static_db_path, tvshows_static_db_path)
+                            return [format_movie(item, tmdb_handler) if item.get('media_type') == 'movie' else item for item in enriched]
+
             log(f"[Orac] Unknown Simkl generic list slug: {slug}", level=LOGWARNING)
             return []
 
