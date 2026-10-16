@@ -8,13 +8,28 @@ echo
 echo "Tip: If you get a permission error, run: chmod +x start_server.sh"
 echo
 
+run_orac_loop() {
+    export ORAC_LAUNCHER_LOOP=1
+    while true; do
+        echo "Checking for updated dependencies..."
+        venv/bin/pip install -q -r requirements.txt
+        echo "Starting Orac Server..."
+        venv/bin/python -W ignore::SyntaxWarning run_server.py
+        EXIT_CODE=$?
+        if [ $EXIT_CODE -eq 42 ]; then
+            echo ""
+            echo "Restarting Orac Server after update..."
+            echo ""
+            sleep 2
+            continue
+        fi
+        exit $EXIT_CODE
+    done
+}
+
 # Check if venv exists
 if [ -f "venv/bin/python" ]; then
-    echo "Checking for updated dependencies..."
-    venv/bin/pip install -q -r requirements.txt
-    echo "Starting Orac Server..."
-    venv/bin/python -W ignore::SyntaxWarning run_server.py
-    exit $?
+    run_orac_loop
 fi
 
 echo "First run detected - setting up environment..."
@@ -81,5 +96,4 @@ echo "Setup complete!"
 echo
 
 # Start server
-echo "Starting Orac Server..."
-venv/bin/python -W ignore::SyntaxWarning run_server.py
+run_orac_loop

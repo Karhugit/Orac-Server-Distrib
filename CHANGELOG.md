@@ -4,6 +4,15 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.4.0] — 2026-10-17
+
+### Added
+- **One-Click Dashboard Self-Updater** — Added an interactive **Orac Server Software Update** modal in the Command Centre web dashboard (accessible by clicking the version badge or the golden update notification pill). Downloads the latest release from GitHub, updates server files in place while preserving all local databases, caches, API keys, and authorised accounts, and automatically restarts the server and reloads the dashboard.
+- **Launcher Auto-Restart Loop** — Updated `start_server.bat` and `start_server.sh` to automatically restart `run_server.py` when a dashboard self-update completes (exit code `42`).
+
+### Fixed
+- **Update Notification Detection** — Enhanced `update_checker.py` to check `resources/lib/version.py` and `CHANGELOG.md` directly on the `main` branch of `Orac-Server-Distrib` in addition to the GitHub Releases API, ensuring new versions are always detected even when deployed without a manual GitHub Release object.
+
 ## [1.3.9] — 2026-10-17
 
 ### Added

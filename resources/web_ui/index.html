@@ -137,6 +137,14 @@
             padding: 0.25rem 0.6rem;
             border-radius: 0.5rem;
             border: 1px solid var(--border-glass);
+            cursor: pointer;
+            transition: background var(--animation-timing), color var(--animation-timing), border-color var(--animation-timing);
+        }
+
+        .version-label:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-main);
+            border-color: rgba(255, 255, 255, 0.25);
         }
 
         /* Update Banner */
@@ -152,6 +160,7 @@
             font-weight: 600;
             color: #fbbf24;
             text-decoration: none;
+            cursor: pointer;
             transition: background var(--animation-timing), border-color var(--animation-timing);
             white-space: nowrap;
         }
@@ -1551,8 +1560,8 @@
         </div>
 
         <div class="header-right">
-            <span class="version-label" id="version-label">v1.0.0</span>
-            <a id="update-banner" class="update-banner" href="#" target="_blank" rel="noopener">
+            <span class="version-label" id="version-label" title="Click to check for Orac Server updates" onclick="openOracUpdateModal(event, true)">v1.0.0</span>
+            <a id="update-banner" class="update-banner" href="#" onclick="openOracUpdateModal(event, false)">
                 <span class="update-dot"></span>
                 <span id="update-banner-text">Update available</span>
             </a>
@@ -2423,6 +2432,54 @@ Orac Server Port: 8000 (default)</div>
         </div>
     </div>
 
+    <!-- Orac Server Update Modal -->
+    <div id="orac-update-modal" class="modal-overlay" onclick="closeOracUpdateModal(event)" style="z-index: 1250;">
+        <div class="modal-container" style="max-width: 540px; height: auto; padding: 1.75rem;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="justify-content: space-between;">
+                <h2>Orac Server Software Update</h2>
+                <button class="modal-close-btn" id="orac-update-close-btn" onclick="toggleOracUpdateModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 1.1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border-glass); border-radius: 0.65rem; padding: 0.85rem 1.1rem;">
+                    <div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Installed Version</div>
+                        <div id="update-modal-current-ver" style="font-family: 'Fira Code', monospace; font-size: 1.05rem; font-weight: 600; color: var(--text-main); margin-top: 0.2rem;">v1.0.0</div>
+                    </div>
+                    <div style="color: var(--text-muted); font-size: 1.2rem;">&rarr;</div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Latest Available</div>
+                        <div id="update-modal-latest-ver" style="font-family: 'Fira Code', monospace; font-size: 1.05rem; font-weight: 600; color: #38bdf8; margin-top: 0.2rem;">Checking...</div>
+                    </div>
+                </div>
+
+                <div id="update-modal-notes-wrap" style="display: none; flex-direction: column; gap: 0.4rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span class="filter-label" style="margin: 0;">Release Notes</span>
+                        <a id="update-modal-github-link" href="https://github.com/Karhugit/Orac-Server-Distrib" target="_blank" rel="noopener noreferrer" style="font-size: 0.78rem; color: #38bdf8; text-decoration: none;">View on GitHub &nearr;</a>
+                    </div>
+                    <pre id="update-modal-notes" style="background: rgba(15, 23, 42, 0.65); border: 1px solid var(--border-glass); border-radius: 0.5rem; padding: 0.85rem; margin: 0; font-family: 'Fira Code', monospace; font-size: 0.8rem; color: var(--text-main); white-space: pre-wrap; max-height: 220px; overflow-y: auto; line-height: 1.45;"></pre>
+                </div>
+
+                <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0; line-height: 1.45;">
+                    Updating downloads the latest release from GitHub and updates Orac Server in place while preserving your databases, caches, API keys, and authorised accounts.
+                </p>
+
+                <div id="update-modal-status" style="display: none; font-size: 0.84rem; padding: 0.65rem 0.85rem; border-radius: 0.45rem; line-height: 1.4;"></div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-top: 0.25rem;">
+                    <button type="button" id="update-modal-check-btn" class="btn-secondary" onclick="checkUpdateFromModal()">Check Again</button>
+                    <div style="display: flex; gap: 0.65rem;">
+                        <button type="button" id="update-modal-cancel-btn" class="btn-secondary" onclick="toggleOracUpdateModal(false)">Close</button>
+                        <button type="button" id="update-modal-apply-btn" class="btn-primary" onclick="startOracSelfUpdate()">Update &amp; Restart Now</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- TorBox Authorisation Modal -->
     <div id="torbox-auth-modal" class="modal-overlay" onclick="closeTorboxAuthModal(event)" style="z-index: 1200;">
         <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem;" onclick="event.stopPropagation()">
@@ -2897,32 +2954,226 @@ Orac Server Port: 8000 (default)</div>
         }
 
         // -------------------------------------------------------------
-        // VERSION & LOGS & DASHBOARD
+        // VERSION & SELF-UPDATER & LOGS & DASHBOARD
         // -------------------------------------------------------------
-        async function fetchVersionInfo() {
+        let latestVersionInfo = null;
+        let isUpdatingOrac = false;
+
+        async function fetchVersionInfo(forceRefresh = false) {
             try {
-                const response = await fetch('/api/web/version');
+                const url = forceRefresh ? '/api/web/version?refresh=true' : '/api/web/version';
+                const response = await fetch(url);
                 const data = await response.json();
-                if (!data.success) return;
+                if (!data.success) return null;
+
+                latestVersionInfo = data;
 
                 const label = document.getElementById('version-label');
                 if (label && data.current_version) {
                     label.textContent = `v${data.current_version}`;
                 }
 
+                const banner = document.getElementById('update-banner');
+                const bannerText = document.getElementById('update-banner-text');
                 if (data.update_available && data.latest_version) {
-                    const banner = document.getElementById('update-banner');
-                    const bannerText = document.getElementById('update-banner-text');
                     if (banner) {
-                        banner.href = data.release_url || '#';
                         banner.classList.add('visible');
                     }
                     if (bannerText) {
                         bannerText.textContent = `Update available: v${data.latest_version}`;
                     }
+                } else if (banner) {
+                    banner.classList.remove('visible');
                 }
+                return data;
             } catch (error) {
                 console.error('Failed to load version info', error);
+                return null;
+            }
+        }
+
+        function toggleOracUpdateModal(show) {
+            if (isUpdatingOrac && !show) return;
+            const modal = document.getElementById('orac-update-modal');
+            if (!modal) return;
+            if (show) {
+                modal.classList.add('active');
+            } else {
+                modal.classList.remove('active');
+            }
+        }
+
+        function closeOracUpdateModal(event) {
+            if (event.target.id === 'orac-update-modal' && !isUpdatingOrac) {
+                toggleOracUpdateModal(false);
+            }
+        }
+
+        function renderOracUpdateModalData(data) {
+            const curEl = document.getElementById('update-modal-current-ver');
+            const latEl = document.getElementById('update-modal-latest-ver');
+            const notesWrap = document.getElementById('update-modal-notes-wrap');
+            const notesEl = document.getElementById('update-modal-notes');
+            const ghLink = document.getElementById('update-modal-github-link');
+            const applyBtn = document.getElementById('update-modal-apply-btn');
+            const statusEl = document.getElementById('update-modal-status');
+
+            if (!data) {
+                if (latEl) latEl.textContent = 'Unavailable';
+                return;
+            }
+
+            if (curEl) curEl.textContent = `v${data.current_version || '1.0.0'}`;
+            if (latEl) {
+                latEl.textContent = data.latest_version ? `v${data.latest_version}` : `v${data.current_version || '1.0.0'}`;
+                latEl.style.color = data.update_available ? '#fbbf24' : '#4ade80';
+            }
+            if (ghLink && data.release_url) {
+                ghLink.href = data.release_url;
+            }
+
+            if (data.release_notes && notesWrap && notesEl) {
+                notesEl.textContent = data.release_notes;
+                notesWrap.style.display = 'flex';
+            } else if (notesWrap) {
+                notesWrap.style.display = 'none';
+            }
+
+            if (!isUpdatingOrac && statusEl) {
+                if (data.error) {
+                    statusEl.style.display = 'block';
+                    statusEl.style.background = 'rgba(239, 68, 68, 0.15)';
+                    statusEl.style.color = '#f87171';
+                    statusEl.textContent = `Update check warning: ${data.error}`;
+                } else if (data.update_available) {
+                    statusEl.style.display = 'block';
+                    statusEl.style.background = 'rgba(251, 191, 36, 0.12)';
+                    statusEl.style.color = '#fbbf24';
+                    statusEl.textContent = `A newer version of Orac Server (v${data.latest_version}) is ready to install.`;
+                } else {
+                    statusEl.style.display = 'block';
+                    statusEl.style.background = 'rgba(34, 197, 94, 0.12)';
+                    statusEl.style.color = '#4ade80';
+                    statusEl.textContent = 'Orac Server is up to date!';
+                }
+            }
+
+            if (applyBtn && !isUpdatingOrac) {
+                applyBtn.textContent = data.update_available ? `Update to v${data.latest_version} & Restart` : 'Re-install Latest & Restart';
+            }
+        }
+
+        async function openOracUpdateModal(event, refresh = false) {
+            if (event) event.preventDefault();
+            toggleOracUpdateModal(true);
+            if (latestVersionInfo) {
+                renderOracUpdateModalData(latestVersionInfo);
+            }
+            if (refresh || !latestVersionInfo) {
+                await checkUpdateFromModal();
+            }
+        }
+
+        async function checkUpdateFromModal() {
+            if (isUpdatingOrac) return;
+            const checkBtn = document.getElementById('update-modal-check-btn');
+            const latEl = document.getElementById('update-modal-latest-ver');
+            if (checkBtn) {
+                checkBtn.disabled = true;
+                checkBtn.textContent = 'Checking...';
+            }
+            if (latEl) latEl.textContent = 'Checking...';
+            const data = await fetchVersionInfo(true);
+            renderOracUpdateModalData(data);
+            if (checkBtn) {
+                checkBtn.disabled = false;
+                checkBtn.textContent = 'Check Again';
+            }
+        }
+
+        async function startOracSelfUpdate() {
+            if (isUpdatingOrac) return;
+            isUpdatingOrac = true;
+
+            const applyBtn = document.getElementById('update-modal-apply-btn');
+            const checkBtn = document.getElementById('update-modal-check-btn');
+            const cancelBtn = document.getElementById('update-modal-cancel-btn');
+            const closeBtn = document.getElementById('orac-update-close-btn');
+            const statusEl = document.getElementById('update-modal-status');
+
+            if (applyBtn) {
+                applyBtn.disabled = true;
+                applyBtn.textContent = 'Updating...';
+            }
+            if (checkBtn) checkBtn.disabled = true;
+            if (cancelBtn) cancelBtn.disabled = true;
+            if (closeBtn) closeBtn.disabled = true;
+
+            if (statusEl) {
+                statusEl.style.display = 'block';
+                statusEl.style.background = 'rgba(56, 189, 248, 0.15)';
+                statusEl.style.color = '#38bdf8';
+                statusEl.textContent = 'Downloading latest release from GitHub and applying files... Please wait.';
+            }
+
+            try {
+                const resp = await fetch('/api/web/system/update', { method: 'POST' });
+                const data = await resp.json();
+
+                if (!resp.ok || !data.success) {
+                    throw new Error(data.error || 'Self-update failed');
+                }
+
+                if (statusEl) {
+                    statusEl.style.background = 'rgba(34, 197, 94, 0.15)';
+                    statusEl.style.color = '#4ade80';
+                    statusEl.textContent = 'Update applied! Waiting for Orac Server to restart...';
+                }
+
+                // Wait a moment for the old process to exit, then poll until the restarted server responds
+                await new Promise(r => setTimeout(r, 2500));
+                let attempts = 0;
+                const maxAttempts = 30;
+                const pollInterval = setInterval(async () => {
+                    attempts++;
+                    try {
+                        const ping = await fetch('/api/web/version', { cache: 'no-store' });
+                        if (ping.ok) {
+                            clearInterval(pollInterval);
+                            if (statusEl) {
+                                statusEl.textContent = 'Orac Server is back online! Reloading dashboard...';
+                            }
+                            setTimeout(() => window.location.reload(), 800);
+                        }
+                    } catch (_) {
+                        if (attempts >= maxAttempts) {
+                            clearInterval(pollInterval);
+                            isUpdatingOrac = false;
+                            if (statusEl) {
+                                statusEl.style.background = 'rgba(251, 191, 36, 0.15)';
+                                statusEl.style.color = '#fbbf24';
+                                statusEl.textContent = 'Update completed, but automatic reconnect timed out. Please refresh the page or check the Orac Server window.';
+                            }
+                            if (cancelBtn) cancelBtn.disabled = false;
+                            if (closeBtn) closeBtn.disabled = false;
+                        }
+                    }
+                }, 2000);
+            } catch (err) {
+                isUpdatingOrac = false;
+                if (statusEl) {
+                    statusEl.style.display = 'block';
+                    statusEl.style.background = 'rgba(239, 68, 68, 0.15)';
+                    statusEl.style.color = '#f87171';
+                    statusEl.textContent = `Update failed: ${err.message}`;
+                }
+                if (applyBtn) {
+                    applyBtn.disabled = false;
+                    applyBtn.textContent = 'Retry Update & Restart';
+                }
+                if (checkBtn) checkBtn.disabled = false;
+                if (cancelBtn) cancelBtn.disabled = false;
+                if (closeBtn) closeBtn.disabled = false;
             }
         }
 

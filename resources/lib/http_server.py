@@ -47,7 +47,7 @@ from .tags_handler import get_all_tags, get_tags_for_item, add_tag_to_item, remo
 from .collections_handler import handle_collections_request
 from .providers_handler import init_watch_providers_db, sync_watch_providers, get_watch_providers
 from .version import __version__
-from .update_checker import check_for_update, get_update_state
+from .update_checker import check_for_update, get_update_state, perform_self_update, trigger_server_restart
 from .simkl_api import get_simkl_params, get_simkl_headers, simkl_get, simkl_post
 
 def _vacuum_database(db_path, db_manager=None):
@@ -3096,14 +3096,31 @@ def app_factory(
 
     # --- VERSION / UPDATE CHECK ROUTES ---
     @app.get("/api/version")
-    async def api_version():
+    async def api_version(refresh: bool = False):
         """Returns the running version and latest available version from GitHub."""
+        if refresh:
+            await asyncio.to_thread(check_for_update)
         return JSONResponse(status_code=200, content=get_update_state())
 
     @app.get("/api/web/version")
-    async def web_version_api():
+    async def web_version_api(refresh: bool = False):
         """Web-dashboard version endpoint — same data wrapped with success flag."""
+        if refresh:
+            await asyncio.to_thread(check_for_update)
         return JSONResponse(status_code=200, content={"success": True, **get_update_state()})
+
+    @app.post("/api/web/system/update")
+    async def web_system_update():
+        """Downloads and applies the latest Orac Server release from GitHub, then restarts."""
+        try:
+            result = await asyncio.to_thread(perform_self_update)
+            if result.get("success"):
+                trigger_server_restart(1.5)
+                return JSONResponse(status_code=200, content=result)
+            return JSONResponse(status_code=500, content=result)
+        except Exception as e:
+            log(f"[AutoUpdater] Error in /api/web/system/update: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
     # --- PUT ROUTES ---
 

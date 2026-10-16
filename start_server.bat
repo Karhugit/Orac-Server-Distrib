@@ -83,8 +83,16 @@ echo Setup complete!
 echo.
 
 :start_server
+set ORAC_LAUNCHER_LOOP=1
 echo Checking for updated dependencies...
 venv\Scripts\pip.exe install -q -r requirements.txt
 echo Starting Orac Server...
 venv\Scripts\python.exe -W ignore::SyntaxWarning run_server.py
+if %errorlevel% equ 42 (
+    echo.
+    echo Restarting Orac Server after update...
+    echo.
+    timeout /t 2 /nobreak >nul
+    goto :start_server
+)
 pause
