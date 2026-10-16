@@ -4,6 +4,11 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.4.3] — 2026-10-17
+
+### Fixed
+- **Update Modal Display** — Fixed `.modal-overlay.visible` class toggle on `#orac-update-modal` so clicking the golden **Update available** banner or version badge opens the update modal.
+
 ## [1.4.2] — 2026-10-17
 
 ### Changed
