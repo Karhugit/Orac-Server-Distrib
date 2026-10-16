@@ -2340,6 +2340,99 @@ def app_factory(
             log(f"Error fetching my lists: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
+    @app.post("/api/web/lists/toggle_library")
+    async def web_toggle_list_library_api(request: Request):
+        try:
+            data = await request.json()
+            list_id = data.get("list_id")
+            slug = data.get("slug") or ""
+            name = data.get("name") or slug
+            source = data.get("source") or "trakt"
+            user = data.get("user") or source
+            target_status = data.get("add_to_library")
+
+            if not list_id and not slug:
+                return JSONResponse(status_code=400, content={"success": False, "error": "Missing list_id or slug"})
+
+            new_status = 1 if target_status in (1, True, "1", "true") else 0
+
+            # 1. If this is an external index, also update external_indexes.db
+            is_ext_index = (list_id and str(list_id).startswith("tmdb:index:")) or user == "External Index"
+            if app.state.ext_indexes_db_path and (is_ext_index or source == "tmdb"):
+                try:
+                    idx_slug = str(list_id).replace("tmdb:index:", "") if is_ext_index and list_id else slug
+                    with db_connect(app.state.ext_indexes_db_path) as ext_conn:
+                        ext_cur = ext_conn.cursor()
+                        ext_cur.execute(
+                            "UPDATE external_indexes SET add_to_library = ? WHERE LOWER(REPLACE(REPLACE(id, ' ', '-'), '_', '-')) = ? OR LOWER(id) = LOWER(?)",
+                            (new_status, idx_slug.lower(), name)
+                        )
+                        ext_conn.commit()
+                except Exception as ext_err:
+                    log(f"[Orac] Warning updating external_indexes for {list_id}: {ext_err}", level=LOGWARNING)
+
+            # 2. Update lists table in lists_db_path
+            with db_connect(app.state.lists_db_path) as conn:
+                cursor = conn.cursor()
+                updated = 0
+                if list_id:
+                    if new_status == 1:
+                        cursor.execute(
+                            "UPDATE lists SET add_to_library = ?, last_checked = '1970-01-01T00:00:00.000Z' WHERE list_id = ?",
+                            (new_status, list_id)
+                        )
+                    else:
+                        cursor.execute(
+                            "UPDATE lists SET add_to_library = ? WHERE list_id = ?",
+                            (new_status, list_id)
+                        )
+                    updated = cursor.rowcount
+
+                if updated == 0 and slug:
+                    if new_status == 1:
+                        cursor.execute(
+                            "UPDATE lists SET add_to_library = ?, last_checked = '1970-01-01T00:00:00.000Z' WHERE slug = ? AND source = ?",
+                            (new_status, slug, source)
+                        )
+                    else:
+                        cursor.execute(
+                            "UPDATE lists SET add_to_library = ? WHERE slug = ? AND source = ?",
+                            (new_status, slug, source)
+                        )
+                    updated = cursor.rowcount
+
+                if updated == 0 and is_ext_index and list_id:
+                    idx_slug = str(list_id).replace("tmdb:index:", "")
+                    cursor.execute(
+                        "INSERT OR REPLACE INTO lists (list_id, source, user, owned_by_user, slug, name, description, last_checked, item_count_movies, item_count_shows, add_to_library) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (list_id, "tmdb", "tmdb", 0, idx_slug, name, f"External Index: {name}", "1970-01-01T00:00:00.000Z", 0, 0, new_status)
+                    )
+                conn.commit()
+
+            log(f"[Orac] Web UI toggled library status for '{name}' ({list_id}) to {new_status}. Triggering list resync...", level=LOGINFO)
+
+            # 3. Force a background list & library resync
+            trakt_user = await get_t_user(app)
+            asyncio.create_task(sync_lists_and_items(
+                app.state.trakt_handler, app.state.tmdb_handler,
+                app.state.movies_static_db_path, app.state.movies_dynamic_db_path,
+                app.state.tvshows_static_db_path, app.state.tvshows_dynamic_db_path,
+                app.state.lists_db_path, app.state.trakt_update_queue_path,
+                app.state.trakt_queue_worker, username=trakt_user,
+                external_indexes_db_path=app.state.ext_indexes_db_path,
+                config_db_path=app.state.config_db_path,
+                tags_db_path=app.state.tags_db_path
+            ))
+
+            return JSONResponse(status_code=200, content={
+                "success": True,
+                "list_id": list_id,
+                "add_to_library": new_status
+            })
+        except Exception as e:
+            log(f"Error toggling list library status: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
     @app.get("/api/web/list_items")
     async def web_list_items_api(list_id: str):
         try:

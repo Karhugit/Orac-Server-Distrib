@@ -354,50 +354,51 @@ def update_list_library_status(params, db_path, ext_indexes_db_path=None):
     
     # Always resolve list_id from DB because we moved to a Source:Type:Identifier schema
     # and we can't reconstruct it reliably from just user + slug.
-    list_id = None
+    list_id = params.get('list_id')
     list_name = params.get('list_name')
     
-    try:
-        with db_connect(db_path) as conn:
-            cursor = conn.cursor()
-            
-            # 1. Try exact slug match
-            cursor.execute("SELECT list_id, name FROM lists WHERE slug = ?", (slug,))
-            rows = cursor.fetchall()
-            
-            if len(rows) == 1:
-                list_id = rows[0][0]
-            elif len(rows) > 1:
-                # Collision (e.g. Watchlist). Disambiguate by name if possible.
-                if list_name:
-                    for r_id, r_name in rows:
-                        if r_name == list_name:
-                            list_id = r_id
-                            break
-                    # If no name match, default to first (Trakt usually)
-                    if not list_id:
-                        log(f"[Orac] Ambiguous slug '{slug}' and no name match for '{list_name}'. Defaulting to {rows[0][0]}", level=LOGWARNING)
-                        list_id = rows[0][0]
-                else:
+    if not list_id:
+        try:
+            with db_connect(db_path) as conn:
+                cursor = conn.cursor()
+                
+                # 1. Try exact slug match
+                cursor.execute("SELECT list_id, name FROM lists WHERE slug = ?", (slug,))
+                rows = cursor.fetchall()
+                
+                if len(rows) == 1:
                     list_id = rows[0][0]
-            
-            # 2. Try calculated slug (for external indexes or rough matches) if no match yet
-            if not list_id:
-                simple_slug = slug.lower().replace(' ', '-')
-                cursor.execute("SELECT list_id FROM lists WHERE slug = ?", (simple_slug,))
-                row = cursor.fetchone()
-                if row:
-                    list_id = row[0]
-            
-            # 3. Try name match (case-insensitive)
-            if not list_id:
-                cursor.execute("SELECT list_id FROM lists WHERE name = ? COLLATE NOCASE", (slug,))
-                row = cursor.fetchone()
-                if row:
-                    list_id = row[0]
+                elif len(rows) > 1:
+                    # Collision (e.g. Watchlist). Disambiguate by name if possible.
+                    if list_name:
+                        for r_id, r_name in rows:
+                            if r_name == list_name:
+                                list_id = r_id
+                                break
+                        # If no name match, default to first (Trakt usually)
+                        if not list_id:
+                            log(f"[Orac] Ambiguous slug '{slug}' and no name match for '{list_name}'. Defaulting to {rows[0][0]}", level=LOGWARNING)
+                            list_id = rows[0][0]
+                    else:
+                        list_id = rows[0][0]
+                
+                # 2. Try calculated slug (for external indexes or rough matches) if no match yet
+                if not list_id:
+                    simple_slug = slug.lower().replace(' ', '-')
+                    cursor.execute("SELECT list_id FROM lists WHERE slug = ?", (simple_slug,))
+                    row = cursor.fetchone()
+                    if row:
+                        list_id = row[0]
+                
+                # 3. Try name match (case-insensitive)
+                if not list_id:
+                    cursor.execute("SELECT list_id FROM lists WHERE name = ? COLLATE NOCASE", (slug,))
+                    row = cursor.fetchone()
+                    if row:
+                        list_id = row[0]
 
-    except Exception as e:
-        log(f"[Orac] Error resolving list_id for slug '{slug}': {e}", level=LOGERROR)
+        except Exception as e:
+            log(f"[Orac] Error resolving list_id for slug '{slug}': {e}", level=LOGERROR)
 
     if list_id:
         log(f"[Orac] Resolved list '{slug}' to list_id: {list_id}", level=LOGDEBUG)
@@ -408,19 +409,15 @@ def update_list_library_status(params, db_path, ext_indexes_db_path=None):
     try:
         with db_connect(db_path) as conn:
             cursor = conn.cursor()
-            
-            # Check if this is a personal list (owned_by_user = true)
-            cursor.execute("SELECT owned_by_user FROM lists WHERE list_id = ?", (list_id,))
-            row = cursor.fetchone()
-            
-            if row and row[0] == 1:  # owned_by_user = true
-                if add_to_library == 0:
-                    log(f"[Orac] Cannot remove personal list '{list_id}' from library. Personal lists must always be in library.", level=LOGWARNING)
-                    return False
-            
-            cursor.execute("UPDATE lists SET add_to_library = ? WHERE list_id = ?", (add_to_library, list_id))
+            if add_to_library == 1:
+                cursor.execute(
+                    "UPDATE lists SET add_to_library = ?, last_checked = '1970-01-01T00:00:00.000Z' WHERE list_id = ?",
+                    (add_to_library, list_id)
+                )
+            else:
+                cursor.execute("UPDATE lists SET add_to_library = ? WHERE list_id = ?", (add_to_library, list_id))
             conn.commit()
-        log(f"[Orac] Updated add_to_library status for list_id {list_id} to {add_to_library}", level=LOGDEBUG)
+        log(f"[Orac] Updated add_to_library status for list_id {list_id} to {add_to_library}", level=LOGINFO)
     except Exception as e:
         log(f"[Orac] Error updating add_to_library status for list_id {list_id}: {e}", level=LOGERROR)
         return False

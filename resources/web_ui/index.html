@@ -631,6 +631,10 @@
         .badge.punchplay { background: rgba(251, 146, 60, 0.15); color: #fb923c; border: 1px solid rgba(251, 146, 60, 0.35); }
         .badge.in-library { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.68rem; }
         .badge.not-in-library { background: rgba(255, 255, 255, 0.05); color: var(--text-muted); border: 1px solid var(--border-glass); font-size: 0.68rem; }
+        .badge.lib-toggle-btn { cursor: pointer; transition: all 0.18s ease; user-select: none; display: inline-flex; align-items: center; gap: 0.3rem; }
+        .badge.lib-toggle-btn.in-library:hover { background: rgba(16, 185, 129, 0.28); border-color: rgba(16, 185, 129, 0.6); transform: translateY(-1px); }
+        .badge.lib-toggle-btn.not-in-library:hover { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: rgba(56, 189, 248, 0.45); transform: translateY(-1px); }
+        .badge.lib-toggle-btn.syncing { opacity: 0.7; pointer-events: none; }
 
         .score-val {
             font-family: 'Fira Code', monospace;
@@ -4902,9 +4906,12 @@ Orac Server Port: 8000 (default)</div>
                 row.title = `Click to view items in ${escapeHtml(list.name || '')}`;
 
                 const inLib = list.add_to_library === 1 || list.add_to_library === true || list.add_to_library === '1' || list.add_to_library === 'true';
+                const libTooltip = inLib
+                    ? 'Click to remove this list from library and resync'
+                    : 'Click to add this list to library and resync';
                 const libBadge = inLib 
-                    ? '<span class="badge in-library">In Library</span>' 
-                    : '<span class="badge not-in-library">Not in Lib</span>';
+                    ? `<button type="button" class="badge in-library lib-toggle-btn" title="${libTooltip}" onclick="toggleListLibraryStatus(event, '${escapeJs(listId)}', '${escapeJs(list.slug || '')}', '${escapeJs(list.name || '')}', '${escapeJs(list.source || '')}', '${escapeJs(list.user || '')}', true)">In Library</button>` 
+                    : `<button type="button" class="badge not-in-library lib-toggle-btn" title="${libTooltip}" onclick="toggleListLibraryStatus(event, '${escapeJs(listId)}', '${escapeJs(list.slug || '')}', '${escapeJs(list.name || '')}', '${escapeJs(list.source || '')}', '${escapeJs(list.user || '')}', false)">Not in Lib</button>`;
                 
                 const ownerName = list.owner || list.user || '—';
                 const itemCount = (list.item_count !== undefined && list.item_count !== null) ? list.item_count : '—';
@@ -4918,6 +4925,56 @@ Orac Server Port: 8000 (default)</div>
                 `;
                 container.appendChild(row);
             });
+        }
+
+        async function toggleListLibraryStatus(event, listId, slug, name, source, user, currentInLib) {
+            if (event) {
+                event.stopPropagation();
+                event.preventDefault();
+            }
+            const btn = event ? event.currentTarget : null;
+            if (btn) {
+                btn.classList.add('syncing');
+                btn.textContent = 'Syncing...';
+            }
+
+            const newStatus = currentInLib ? 0 : 1;
+            try {
+                const resp = await fetch('/api/web/lists/toggle_library', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        list_id: listId,
+                        slug: slug,
+                        name: name,
+                        source: source,
+                        user: user,
+                        add_to_library: newStatus
+                    })
+                });
+                const data = await resp.json();
+                if (!resp.ok || !data.success) {
+                    throw new Error(data.error || 'Failed to update list library status');
+                }
+
+                // Update local cache immediately for snappy UI response
+                const match = rawMyLists.find(l => (l.list_id || `${l.source}:${l.slug || l.name}`) === listId);
+                if (match) {
+                    match.add_to_library = newStatus;
+                }
+                renderMyLists();
+                fetchLibraryLists();
+
+                // Refresh again after background resync has had time to process items
+                setTimeout(() => {
+                    fetchLibraryLists();
+                    fetchMyLists();
+                }, 4000);
+            } catch (err) {
+                console.error('Error toggling list library status:', err);
+                alert('Failed to switch library status: ' + err.message);
+                renderMyLists();
+            }
         }
 
         function renderNextEpisodes(episodes) {

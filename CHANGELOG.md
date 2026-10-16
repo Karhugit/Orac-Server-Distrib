@@ -4,6 +4,11 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.4.1] — 2026-10-17
+
+### Added
+- **Interactive List Library Status Toggle & Auto-Resync** — Made the **In Library** / **Not in Lib** status badge in the List Manager tab clickable. Clicking a list's library status button switches its `add_to_library` status, resets its sync watermark when enabled, refreshes both List Manager panes immediately, and triggers a forced background library resync.
+
 ## [1.4.0] — 2026-10-17
 
 ### Added
