@@ -45,13 +45,17 @@ def add_external_index(params, external_indexes_db_path):
                     WHERE id = ? AND media_type = ?
                 """, (original_label, item_type))
                 
+            raw_params = dict(params.get('parameters', {}) or {})
+            if 'sort_by' in raw_params and isinstance(raw_params['sort_by'], str):
+                raw_params['sort_by'] = raw_params['sort_by'].lstrip('&').removeprefix('sort_by=')
+
             cursor.execute("""
                 INSERT OR REPLACE INTO external_indexes (id, media_type, parameters, add_to_library)
                 VALUES (?, ?, ?, ?)
             """, (
                 label,
                 item_type,
-                json.dumps(params.get('parameters', {})),
+                json.dumps(raw_params),
                 params.get('add_to_library', False)
             ))
             conn.commit()  # Explicitly commit the transaction

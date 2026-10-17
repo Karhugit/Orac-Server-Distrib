@@ -276,8 +276,8 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
             if source == 'web':
                  log(f"[Orac] List {list_name} is web-sourced. Serving from local database.", level=LOGDEBUG)
             
-            # If list source is in ('web', 'mdblist', 'simkl', 'punchplay'), we want to preserve insertion/rank order
-            preserve = source in ('web', 'mdblist', 'simkl', 'punchplay')
+            # If list source is in ('web', 'mdblist', 'simkl', 'punchplay', 'tmdb') or external_index, we want to preserve insertion/rank order
+            preserve = source in ('web', 'mdblist', 'simkl', 'punchplay', 'tmdb') or list_user == 'external_index' or (list_id and str(list_id).startswith('tmdb:index:'))
 
             
             if item_type in ["movie", "all"]:

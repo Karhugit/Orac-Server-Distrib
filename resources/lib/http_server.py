@@ -2453,6 +2453,7 @@ def app_factory(
                     SELECT media_type, tmdb_id, trakt_id 
                     FROM list_items 
                     WHERE list_id = ?
+                    ORDER BY id ASC
                 """, (list_id,))
                 list_rows = [dict(r) for r in cursor.fetchall()]
 

@@ -4,6 +4,12 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.4.4] — 2026-10-17
+
+### Fixed
+- **External Index & Library List Ordering** — Fixed list item ordering in `update_list_in_db` (`trakt_list_sync.py`) and `GET /api/web/list_items` (`http_server.py`) so items in the List Manager and Kodi preserve their exact TMDb/source order instead of sorting negative placeholder `trakt_id`s to the top via SQLite index scan.
+- **External Index Language & Sort Parameter Consistency** — Added consistent default `language=en-US` in `fetch_external_movies_index` and `fetch_external_shows_index`, enabled `preserve_order` for external indexes in `list_handler.py`, and sanitized legacy `&sort_by=` prefixes when saving external indexes.
+
 ## [1.4.3] — 2026-10-17
 
 ### Fixed

@@ -905,12 +905,15 @@ async def resolve_tmdb_to_trakt(tmdb_id, media_type, trakt_handler, static_curso
 
 async def fetch_external_movies_index(trakt_handler, tmdb_handler, index, movie_static_db_path):
     try:
-        params = index['parameters']
+        params = dict(index['parameters'])
         # Parse date parameters
-        for key, value in params.items():
+        for key, value in list(params.items()):
             parsed_date = parse_date_param(value)
             if parsed_date:
                 params[key] = parsed_date
+
+        if 'language' not in params:
+            params['language'] = 'en-US'
 
         # We want to fetch enough items. Discover usually returns 20 per page.
         # Let's fetch 5 pages to get up to 100 items.
@@ -976,12 +979,15 @@ async def fetch_external_movies_index(trakt_handler, tmdb_handler, index, movie_
 
 async def fetch_external_shows_index(trakt_handler, tmdb_handler, index, tvshows_static_db_path):
     try:
-        params = index['parameters']
+        params = dict(index['parameters'])
         # Parse date parameters
-        for key, value in params.items():
+        for key, value in list(params.items()):
             parsed_date = parse_date_param(value)
             if parsed_date:
                 params[key] = parsed_date
+
+        if 'language' not in params:
+            params['language'] = 'en-US'
 
         all_tmdb_items = []
         for page in range(1, 6):
