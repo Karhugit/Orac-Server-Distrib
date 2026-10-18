@@ -3284,7 +3284,7 @@ def app_factory(
     @app.put("/add_to_list")
     async def p_add_to_list(request: Request):
         query = parse_qs_fastapi(request)
-        result = add_to_list(query, app.state.trakt_handler, app.state.tmdb_handler, app.state.lists_db_path, app.state.movies_static_db_path, app.state.tvshows_static_db_path, app.state.trakt_update_queue_path)
+        result = add_to_list(query, app.state.trakt_handler, app.state.tmdb_handler, app.state.lists_db_path, app.state.movies_static_db_path, app.state.tvshows_static_db_path, app.state.trakt_update_queue_path, movies_dynamic_db_path=app.state.movies_dynamic_db_path)
         return JSONResponse(status_code=200 if result.get("status") == "success" else 400, content=result)
 
     @app.put("/remove_from_list")

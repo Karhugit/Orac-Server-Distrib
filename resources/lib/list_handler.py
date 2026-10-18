@@ -912,16 +912,18 @@ async def _fetch_punchplay_list_external(slug, item_type, tmdb_handler, movies_s
         return []
 
 
-def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_static_db_path, tvshows_static_db_path, trakt_update_queue_path):
+def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_static_db_path, tvshows_static_db_path, trakt_update_queue_path, movies_dynamic_db_path=None):
     list_name = payload.get("list_name", [None])[0]
     user = payload.get("user", [None])[0]
     slug = payload.get("slug", [None])[0]
     tmdb_id_str = payload.get("tmdb_id", [None])[0]
-    item_type = payload.get("item_type", [None])[0]  # 'movie' or 'tvshow'
+    raw_item_type = payload.get("item_type", [None])[0]  # 'movie', 'tvshow', 'tv', or 'show'
     requested_source = payload.get("source", [None])[0]  # explicit source from caller (e.g. 'tmdb', 'trakt')
 
-    if not list_name or not user or not tmdb_id_str or not item_type:
+    if not list_name or not user or not tmdb_id_str or not raw_item_type:
         return {'status': 'error', 'message': 'Missing name, type, or tmdb_id'}
+
+    item_type = 'movie' if str(raw_item_type).lower() == 'movie' else 'tvshow'
 
     try:
         tmdb_id = int(tmdb_id_str)
@@ -929,7 +931,7 @@ def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_stat
         return {'status': 'error', 'message': 'Invalid tmdb_id format'}
 
     trakt_id = None
-    # Step 1: Ensure the item exists in the static DB, add it if not.
+    # Step 1: Ensure the item exists in the static DB, add it in background if not.
     try:
         if item_type == 'movie':
             with db_connect(movies_static_db_path) as conn:
@@ -938,37 +940,28 @@ def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_stat
                 row = cursor.fetchone()
                 if not row:
                     log(f"Movie with TMDb ID {tmdb_id} not in DB. Fetching from Trakt/TMDb.", LOGINFO)
-                    # Fetch full movie details from Trakt to add it
-                    response = trakt_handler._get(f"/search/tmdb/{tmdb_id}?type=movie&extended=full")
-                    if response.status_code == 200 and response.json():
-                        movie_data = response.json()[0].get('movie')
-                        if movie_data:
-                            trakt_id = movie_data['ids']['trakt']
-                            media_id = {"trakt": trakt_id, "tmdb": tmdb_id}
-                            # Use trakt_update_queue_path as connection for dynamic db since it's likely just a writable cursor needed
-                            # Wait, dynamic_db is passed to add_movie? No, add_movie takes cursor, dynamic_cursor.
-                            # We can't easily get dynamic_db connection here without path? 
-                            # Oops, add_to_list signature has movies_static_db_path but not dynamic?
-                            # Ah, handle_list_request doesn't use dynamic for add_to_list anyway, wait. 
-                            # add_to_list function signature (line 558) DOES NOT have dynamic DB paths.
-                            # It imports add_movie which requires it.
-                            # But wait, original code (line 590) did: `with db_connect(movies_dynamic_db_path) as dynamic_conn:`
-                            # BUT `movies_dynamic_db_path` is NOT passed in arguments!
-                            # This means original code would have crashed? Or it relies on global import?
-                            # checking line 558... arguments are: payload, trakt_handler, tmdb_handler, lists_db_path, movies_static_db_path, tvshows_static_db_path, trakt_update_queue_path
-                            # It seems I missed that. But line 590 in original explicitly uses `movies_dynamic_db_path`.
-                            # Maybe it's a global variable? `SimpleHTTPRequestHandler` has it. 
-                            # But `list_handler.py` is a module.
-                            # Let's assume for now we skip the ADDING to DB part if it's missing and provider is TMDB.
-                            # If provider is Trakt, we need it.
-                            # Let's fallback to just setting trakt_id to None if we can't fetch it or if DB is missing.
+                    movie_data = None
+                    if trakt_handler:
+                        try:
+                            response = trakt_handler._get(f"/search/tmdb/{tmdb_id}?type=movie&extended=full")
+                            if response and response.status_code == 200 and response.json():
+                                movie_data = response.json()[0].get('movie')
+                                if movie_data:
+                                    trakt_id = movie_data.get('ids', {}).get('trakt')
+                        except Exception:
                             pass
-                        else:
-                            # raise Exception("Movie data not found in Trakt response.")
-                            pass
-                    else:
-                        # raise Exception(f"Failed to fetch movie details from Trakt: {response.status_code}")
-                        pass
+                    if not trakt_id:
+                        trakt_id = -tmdb_id
+                    if not movie_data:
+                        movie_data = {"ids": {"trakt": trakt_id, "tmdb": tmdb_id}, "title": f"Movie {tmdb_id}"}
+                    if movies_dynamic_db_path and tmdb_handler:
+                        import threading
+                        from resources.lib.trakt_list_sync import _add_movie_in_thread
+                        threading.Thread(
+                            target=_add_movie_in_thread,
+                            args=(movie_data, movies_static_db_path, movies_dynamic_db_path, tmdb_handler),
+                            daemon=True
+                        ).start()
                 else:
                     trakt_id = row[0]
         elif item_type == 'tvshow':
@@ -977,7 +970,29 @@ def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_stat
                 cursor.execute("SELECT show_trakt_id FROM shows WHERE show_tmdb_id = ?", (tmdb_id,))
                 row = cursor.fetchone()
                 if not row:
-                    pass # Similar issue with dynamic DB path
+                    log(f"Show with TMDb ID {tmdb_id} not in DB. Fetching from Trakt/TMDb.", LOGINFO)
+                    show_data = None
+                    if trakt_handler:
+                        try:
+                            response = trakt_handler._get(f"/search/tmdb/{tmdb_id}?type=show&extended=full")
+                            if response and response.status_code == 200 and response.json():
+                                show_data = response.json()[0].get('show')
+                                if show_data:
+                                    trakt_id = show_data.get('ids', {}).get('trakt')
+                        except Exception:
+                            pass
+                    if not trakt_id:
+                        trakt_id = -tmdb_id
+                    if not show_data:
+                        show_data = {"ids": {"trakt": trakt_id, "tmdb": tmdb_id}, "title": f"Show {tmdb_id}"}
+                    if tmdb_handler:
+                        import threading
+                        from resources.lib.trakt_list_sync import _add_show_in_thread
+                        threading.Thread(
+                            target=_add_show_in_thread,
+                            args=(show_data, tvshows_static_db_path, trakt_update_queue_path, trakt_handler, tmdb_handler),
+                            daemon=True
+                        ).start()
                 else:
                     trakt_id = row[0]
 
@@ -1012,23 +1027,11 @@ def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_stat
             list_id = f"{provider}:personal:{slug}"
             log(f"[Orac] List '{slug}' not found locally for add_to_list. Using fallback ID: {list_id}", level=LOGWARNING)
 
-        if not trakt_id and provider == 'trakt':
-             # Try one last time to query Trakt directly if allowed?
-             # For now, if we fail to get Trakt ID, we can't queue to Trakt reliably without it?
-             # Actually queue payload uses TMDB ID. Trakt ID in queue table is user ID.
-             # So we can proceed!
-             pass
-        
         # Step 2: Add item to the list_items table and update list count
         with db_connect(lists_db_path) as conn:
             cursor = conn.cursor()
-            # Add item to list
-            if item_type == 'tvshow':
-                db_item_type = 'show'
-            else:
-                db_item_type = item_type
-            
-            # Use 0 or NULL for trakt_id if missing?
+            db_item_type = 'show' if item_type == 'tvshow' else 'movie'
+
             t_id_val = str(trakt_id) if (trakt_id is not None and str(trakt_id).lower() not in ('none', 'null', '')) else None
             tmdb_id_val = str(tmdb_id) if (tmdb_id is not None and str(tmdb_id).lower() not in ('none', 'null', '')) else None
 
@@ -1036,7 +1039,7 @@ def add_to_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies_stat
                            (list_id, db_item_type, t_id_val, tmdb_id_val))
 
             # Only update the count if a new row was inserted
-            if conn.total_changes > 0:
+            if cursor.rowcount > 0:
                 log(f"Item {tmdb_id} added to list {list_id}. Updating count.", LOGINFO)
                 if db_item_type == 'movie':
                     cursor.execute("UPDATE lists SET item_count_movies = item_count_movies + 1 WHERE list_id = ?;", (list_id,))
@@ -1075,11 +1078,13 @@ def remove_from_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies
     user = payload.get("user", [None])[0]
     slug = payload.get("slug", [None])[0]
     tmdb_id_str = payload.get("tmdb_id", [None])[0]
-    item_type = payload.get("item_type", [None])[0]  # 'movie' or 'tvshow'
+    raw_item_type = payload.get("item_type", [None])[0]  # 'movie', 'tvshow', 'tv', or 'show'
     requested_source = payload.get("source", [None])[0]  # explicit source from caller
 
-    if not list_name or not user or not tmdb_id_str or not item_type:
+    if not list_name or not user or not tmdb_id_str or not raw_item_type:
         return {'status': 'error', 'message': 'Missing name, type, or tmdb_id'}
+
+    item_type = 'movie' if str(raw_item_type).lower() == 'movie' else 'tvshow'
 
     try:
         tmdb_id = int(tmdb_id_str)
@@ -1088,6 +1093,26 @@ def remove_from_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies
 
     try:
         trakt_id = None
+        try:
+            if item_type == 'movie':
+                with db_connect(movies_static_db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT trakt_id FROM movies WHERE tmdb_id = ?", (tmdb_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        trakt_id = row[0]
+            else:
+                with db_connect(tvshows_static_db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT show_trakt_id FROM shows WHERE show_tmdb_id = ?", (tmdb_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        trakt_id = row[0]
+        except Exception:
+            pass
+
+        trakt_id_str = str(trakt_id) if trakt_id else '0'
+
         # Resolve provider first — requested_source takes priority over DB lookup
         provider = requested_source or 'trakt'
         list_id = None
@@ -1116,16 +1141,15 @@ def remove_from_list(payload, trakt_handler, tmdb_handler, lists_db_path, movies
         if list_id:
             with db_connect(lists_db_path) as conn:
                 cursor = conn.cursor()
-                if item_type == 'tvshow':
-                    db_item_type = 'show'
-                else:
-                    db_item_type = item_type
+                db_item_type = 'show' if item_type == 'tvshow' else 'movie'
     
-                cursor.execute("DELETE FROM list_items WHERE list_id = ? AND media_type = ? AND tmdb_id = ?;",
-                               (list_id, db_item_type, str(tmdb_id)))
+                cursor.execute("""
+                    DELETE FROM list_items
+                    WHERE list_id = ? AND media_type = ? AND (tmdb_id = ? OR (? != '0' AND trakt_id = ?));
+                """, (list_id, db_item_type, str(tmdb_id), trakt_id_str, trakt_id_str))
     
                 # Only update the count if a row was deleted
-                if conn.total_changes > 0:
+                if cursor.rowcount > 0:
                     log(f"Item {tmdb_id} removed from list {list_id}. Updating count.", LOGINFO)
                     if db_item_type == 'movie':
                         cursor.execute("UPDATE lists SET item_count_movies = item_count_movies - 1 WHERE list_id = ? AND item_count_movies > 0;", (list_id,))

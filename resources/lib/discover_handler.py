@@ -46,6 +46,7 @@ def handle_discover_request(item_type, query_params, tmdb_handler, ext_indexes_c
         # Whitelist of valid TMDb discover parameters to avoid sending invalid ones.
         valid_tmdb_params = [
             'sort_by', 'with_genres', 'primary_release_date.gte', 'primary_release_date.lte',
+            'release_date.gte', 'release_date.lte', 'with_release_type', 'region',
             'air_date.gte', 'air_date.lte', 'first_air_date.gte', 'first_air_date.lte',
             'vote_average.gte', 'vote_average.lte', 'with_keywords', 'with_original_language',
             'with_networks', 'without_genres', 'with_status',
@@ -119,7 +120,8 @@ def handle_discover_request(item_type, query_params, tmdb_handler, ext_indexes_c
                     'poster_path': tmdb_handler._build_url(show.get('poster_path'), 'w780'),
                     'fanart_path': tmdb_handler._build_url(show.get('backdrop_path'), 'w1280'),
                     'rating': show.get('vote_average'),
-                    'votes': show.get('vote_count')
+                    'votes': show.get('vote_count'),
+                    'genre_ids': show.get('genre_ids', [])
                 })
         elif item_type == 'movie':
             for movie in final_results:
@@ -135,7 +137,8 @@ def handle_discover_request(item_type, query_params, tmdb_handler, ext_indexes_c
                     'poster_path': tmdb_handler._build_url(movie.get('poster_path'), 'w780'),
                     'fanart_path': tmdb_handler._build_url(movie.get('backdrop_path'), 'w1280'),
                     'rating': movie.get('vote_average'),
-                    'votes': movie.get('vote_count')
+                    'votes': movie.get('vote_count'),
+                    'genre_ids': movie.get('genre_ids', [])
                 })
         
         return 200, json.dumps(formatted_results), "application/json"

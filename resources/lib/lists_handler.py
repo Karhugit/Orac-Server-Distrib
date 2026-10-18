@@ -152,21 +152,21 @@ def get_add_options(db_path, item_type, tmdb_id, movies_static_db_path, tvshows_
         log("[Orac] get_add_options called without a tmdb_id.", level=LOGERROR)
         return []
 
-    if not username:
-        log("[Orac] get_add_options called without a username.", level=LOGERROR)
-        return []
+    norm_type = 'movie' if str(item_type).lower() == 'movie' else 'tvshow'
+    db_media_type = 'movie' if norm_type == 'movie' else 'show'
+    tmdb_id_str = str(tmdb_id)
 
     trakt_id = None
-    # Step 1: Get the trakt_id from the tmdb_id
+    # Step 1: Get the trakt_id from the tmdb_id if present in static DB
     try:
-        if item_type == 'movie':
+        if norm_type == 'movie':
             with db_connect(movies_static_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT trakt_id FROM movies WHERE tmdb_id = ?", (tmdb_id,))
                 row = cursor.fetchone()
                 if row:
                     trakt_id = row[0]
-        elif item_type == 'tvshow':
+        else:
             with db_connect(tvshows_static_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT show_trakt_id FROM shows WHERE show_tmdb_id = ?", (tmdb_id,))
@@ -175,63 +175,10 @@ def get_add_options(db_path, item_type, tmdb_id, movies_static_db_path, tvshows_
                     trakt_id = row[0]
     except Exception as e:
         log(f"[Orac] Error getting trakt_id for tmdb_id {tmdb_id}: {e}", level=LOGERROR)
-        return []
 
-    if not trakt_id and tmdb_handler:
-        log(f"[Orac] trakt_id not found locally for tmdb_id {tmdb_id}. Attempting fetch via TMDB handler.", level=LOGINFO)
-        try:
-             # Fetch external IDs from TMDB
-             external_ids = tmdb_handler.get_external_ids(tmdb_id, item_type)
-             if external_ids and 'imdb_id' in external_ids: # TMDB handler usually returns dict with external ids
-                 # Wait, we need trakt_id, but TMDB API returns imdb_id, tvdb_id etc. 
-                 # Trakt ID is NOT usually returned by TMDB API. 
-                 # We generally rely on the fact that we can search Trakt by TMDB ID/IMDB ID, 
-                 # OR we just need to ensure the item EXISTS in our system.
-                 # Actually, list_items table uses trakt_id.
-                 # So we need to resolve TMDB ID -> Trakt ID. 
-                 # The tmdb_handler interacts with TMDB API. TMDB does not know Trakt IDs.
-                 # We need a Trakt lookup.
-                 
-                 # Let's check if we can get it from correct source.
-                 # If we are using Trakt lists, we really need the Trakt ID.
-                 # But if we don't have it, we can't add it to a Trakt list easily without querying Trakt.
-                 # Does `tmdb_handler` have a way to get Trakt ID? No.
-                 # We need `trakt_handler`.
-                 pass
-        except Exception as e:
-            log(f"[Orac] Error fetching external IDs: {e}", level=LOGERROR)
+    trakt_id_str = str(trakt_id) if trakt_id else '0'
 
-    # RE-EVALUATION: TMDB Handler cannot give us Trakt ID. We need Trakt Handler for that.
-    # However, the user request and logs suggest we are missing `trakt_id`.
-    # Code uses `trakt_id` to Query `list_items`.
-    # If we can't find `trakt_id` locally, we can't check if it's in the list.
-    # BUT, if it's not in the local DB, it's definitely NOT in any local list_items checks (unless logic is flawed).
-    # So if trakt_id is missing, it's effectively "not in any list".
-    
-    # ISSUE: We need `trakt_id` to return it? No, the return value is a list of LISTS.
-    # The query is `SELECT ... WHERE list_id NOT IN (SELECT list_id FROM list_items WHERE trakt_id = ?)`
-    
-    # If `trakt_id` is None, the `NOT IN` clause effectively works on "None", which matches nothing.
-    # So `list_id NOT IN (empty set)` is TRUE for all lists.
-    # So if we assume `trakt_id` is None (or dummy) for a new item, we effectively say "This item is in NO lists".
-    # This is correct! It's a new item.
-    
-    # However, do we need the `trakt_id` for anything else?
-    # The current code returns `[]` if `trakt_id` is found.
-    # We should just proceed with `trakt_id = 0` (or similar) if not found, 
-    # effectively assuming it's not in any list.
-    
-    # WAIT! When we actually perform `add_to_list`, we WILL need the ID.
-    # But `get_add_options` just returns the UI choices.
-    
-    # Let's change logic: If `trakt_id` is missing, assume it's not in any list, and return ALL owned lists.
-    
-    if not trakt_id:
-        log(f"[Orac] trakt_id not found locally for tmdb_id {tmdb_id}. Assuming item is not in any list.", level=LOGINFO)
-        # Use a dummy ID that won't match any real trakt_id in list_items
-        trakt_id = 0 
-
-    # Step 2: Get all personal lists that do NOT contain this trakt_id
+    # Step 2: Get all personal lists that do NOT contain this item (matched by tmdb_id or trakt_id)
     formatted_lists = []
     try:
         with db_connect(db_path) as conn:
@@ -239,25 +186,32 @@ def get_add_options(db_path, item_type, tmdb_id, movies_static_db_path, tvshows_
             cursor = conn.cursor()
 
             cursor.execute("""
-                SELECT name, user, slug, source, item_count_movies + item_count_shows AS item_count
+                SELECT list_id, name, user, slug, source, item_count_movies + item_count_shows AS item_count
                 FROM lists
                 WHERE owned_by_user = true AND list_id NOT IN (
-                    SELECT list_id FROM list_items WHERE trakt_id = ?
+                    SELECT list_id FROM list_items
+                    WHERE media_type = ? AND (tmdb_id = ? OR (? != '0' AND trakt_id = ?))
                 )
-            """, (str(trakt_id),))
+            """, (db_media_type, tmdb_id_str, trakt_id_str, trakt_id_str))
 
             rows = cursor.fetchall()
             for row in rows:
-                formatted_lists.append(dict(row))
+                d = dict(row)
+                slug_val = (d.get('slug') or '').lower()
+                if norm_type == 'movie' and slug_val == 'collection-tvshows':
+                    continue
+                if norm_type == 'tvshow' and slug_val == 'collection-movies':
+                    continue
+                formatted_lists.append(d)
     except Exception as e:
         log(f"[Orac] Error getting add options: {e}", level=LOGERROR)
         return []
 
-# For trakt lists, we need to check the user status and number of items as you can only have 100 items in a trakt list.
+    # For trakt lists, check number of items as free Trakt custom lists have a 100-item limit
     valid_trakt_lists = []
     if formatted_lists:
         for lst in formatted_lists:
-            if lst['source'] == 'trakt':
+            if lst['source'] == 'trakt' and lst.get('slug') not in ('watchlist', 'favorites', 'collection-movies', 'collection-tvshows'):
                 if lst['item_count'] < 100:
                     valid_trakt_lists.append(lst)
             else:
@@ -265,8 +219,7 @@ def get_add_options(db_path, item_type, tmdb_id, movies_static_db_path, tvshows_
 
     formatted_lists = valid_trakt_lists
 
-
-    log(f"[Orac] Found {len(formatted_lists)} lists to add item {trakt_id} to.", level=LOGDEBUG)
+    log(f"[Orac] Found {len(formatted_lists)} lists to add item (tmdb={tmdb_id_str}, trakt={trakt_id_str}) to.", level=LOGDEBUG)
     return formatted_lists
 
 def get_remove_options(db_path, item_type, tmdb_id, movies_static_db_path, tvshows_static_db_path, username=None, tmdb_handler=None):
@@ -278,21 +231,21 @@ def get_remove_options(db_path, item_type, tmdb_id, movies_static_db_path, tvsho
         log("[Orac] get_remove_options called without a tmdb_id.", level=LOGERROR)
         return []
 
-    if not username:
-        log("[Orac] get_remove_options called without a username.", level=LOGERROR)
-        return []
+    norm_type = 'movie' if str(item_type).lower() == 'movie' else 'tvshow'
+    db_media_type = 'movie' if norm_type == 'movie' else 'show'
+    tmdb_id_str = str(tmdb_id)
 
     trakt_id = None
-    # Step 1: Get the trakt_id from the tmdb_id
+    # Step 1: Get the trakt_id from the tmdb_id if present in static DB
     try:
-        if item_type == 'movie':
+        if norm_type == 'movie':
             with db_connect(movies_static_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT trakt_id FROM movies WHERE tmdb_id = ?", (tmdb_id,))
                 row = cursor.fetchone()
                 if row:
                     trakt_id = row[0]
-        elif item_type == 'tvshow':
+        else:
             with db_connect(tvshows_static_db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT show_trakt_id FROM shows WHERE show_tmdb_id = ?", (tmdb_id,))
@@ -301,15 +254,10 @@ def get_remove_options(db_path, item_type, tmdb_id, movies_static_db_path, tvsho
                     trakt_id = row[0]
     except Exception as e:
         log(f"[Orac] Error getting trakt_id for tmdb_id {tmdb_id}: {e}", level=LOGERROR)
-        return []
 
-    if not trakt_id:
-        log(f"[Orac] Could not find trakt_id for tmdb_id {tmdb_id} of type {item_type}. Assuming not in any list.", level=LOGINFO)
-        # If we can't find the ID, we can't be in any list (locally known).
-        # So return empty list.
-        return []
+    trakt_id_str = str(trakt_id) if trakt_id else '0'
 
-    # Step 2: Get all personal lists that contain this trakt_id
+    # Step 2: Get all personal lists that contain this item (matched by tmdb_id or trakt_id)
     formatted_lists = []
     try:
         with db_connect(db_path) as conn:
@@ -317,12 +265,13 @@ def get_remove_options(db_path, item_type, tmdb_id, movies_static_db_path, tvsho
             cursor = conn.cursor()
 
             cursor.execute("""
-                SELECT name, user, slug, source, item_count_movies + item_count_shows AS item_count
+                SELECT list_id, name, user, slug, source, item_count_movies + item_count_shows AS item_count
                 FROM lists
                 WHERE owned_by_user = true AND list_id IN (
-                    SELECT list_id FROM list_items WHERE trakt_id = ?
+                    SELECT list_id FROM list_items
+                    WHERE media_type = ? AND (tmdb_id = ? OR (? != '0' AND trakt_id = ?))
                 )
-            """, (str(trakt_id),))
+            """, (db_media_type, tmdb_id_str, trakt_id_str, trakt_id_str))
 
             rows = cursor.fetchall()
             for row in rows:
@@ -330,7 +279,7 @@ def get_remove_options(db_path, item_type, tmdb_id, movies_static_db_path, tvsho
     except Exception as e:
         log(f"[Orac] Error getting remove options: {e}", level=LOGERROR)
         return []
-    log(f"[Orac] Found {len(formatted_lists)} lists to remove item {trakt_id} from.", level=LOGDEBUG)
+    log(f"[Orac] Found {len(formatted_lists)} lists to remove item (tmdb={tmdb_id_str}, trakt={trakt_id_str}) from.", level=LOGDEBUG)
     return formatted_lists
 
 def update_list_library_status(params, db_path, ext_indexes_db_path=None):

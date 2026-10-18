@@ -4,6 +4,15 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.4.5] — 2026-10-19
+
+### Added
+- **Discover Studio TMDb Presets & Relative Dates** — Replaced Movie presets and added dynamic TV Show presets (`Popular`, `Now Playing`, `Upcoming`, `Top Rated`, `New Digital Releases`, `Box Office`, `Airing Today`, `On The Air`, `New Shows`, `Returning Series`) powered by rolling `T`/`T-N`/`T+N` relative date support in `date_utils.py` and `discover_handler.py`. Highlighted the active preset chip with automatic reset when running custom filter queries.
+- **Live Multi-Genre Result Refinement** — Included `genre_ids` in `/discover` responses so loaded preset/discover items display per-genre item counts in brackets and can be refined in-place by clicking one or more genre chips (with `Match: Any | All` toggle).
+- **Searchable Streaming Services Dropdown** — Replaced the Watch Providers chip wall with a compact searchable multi-select dropdown (with major streaming services pinned at the top) and removable selected provider pills.
+- **Hover Card Lists Manager** — Replaced the `Scrape` action on hovered media cards and the Item Details modal with a **Lists Manager** menu (`+ Add to List` / `- Remove from List`) backed by `/lists?name=add_list_options`, `/lists?name=remove_list_options`, `/add_to_list`, and `/remove_from_list` with full `tmdb_id` matching support for newly discovered items.
+- **Simkl PIN Auth Link** — Added an explicit clickable `https://simkl.com/pin` link in the Simkl authorisation modal.
+
 ## [1.4.4] — 2026-10-17
 
 ### Fixed

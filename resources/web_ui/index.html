@@ -849,6 +849,88 @@
             color: #f3e8ff;
         }
 
+        .provider-dropdown-wrapper {
+            position: relative;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .provider-dropdown-btn {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--border-glass);
+            border-radius: 0.65rem;
+            color: var(--text-main);
+            padding: 0.5rem 0.85rem;
+            font-size: 0.85rem;
+            font-family: inherit;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            min-width: 240px;
+            transition: border-color var(--animation-timing);
+        }
+
+        .provider-dropdown-btn:hover,
+        .provider-dropdown-btn.open {
+            border-color: #c084fc;
+        }
+
+        .provider-dropdown-menu {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            width: 310px;
+            max-height: 320px;
+            background: rgba(15, 23, 42, 0.97);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border-glass);
+            border-radius: 0.75rem;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65);
+            z-index: 250;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .provider-dropdown-menu.open {
+            display: flex;
+        }
+
+        .provider-option-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.48rem 0.75rem;
+            font-size: 0.82rem;
+            color: var(--text-main);
+            cursor: pointer;
+            border-radius: 0.45rem;
+            transition: background 0.15s ease;
+            user-select: none;
+        }
+
+        .provider-option-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .provider-option-item.selected {
+            background: rgba(168, 85, 247, 0.2);
+            color: #f3e8ff;
+            font-weight: 600;
+        }
+
+        .preset-chip.active {
+            background: var(--primary-gradient);
+            border-color: transparent;
+            color: #ffffff;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+        }
+
         .btn-primary, .btn-secondary, .btn-success, .btn-danger {
             display: inline-flex;
             align-items: center;
@@ -1815,22 +1897,27 @@
 
                         <div class="filter-group" style="flex-grow: 1;">
                             <label class="filter-label">Quick Presets</label>
-                            <div style="display: flex; flex-wrap: wrap; gap: 0.4rem;">
-                                <button class="filter-chip" onclick="applyPreset('trending')">🔥 Trending Hits</button>
-                                <button class="filter-chip" onclick="applyPreset('top_rated')">⭐ Top Rated (8.0+)</button>
-                                <button class="filter-chip" onclick="applyPreset('recent')">🆕 Recent Releases</button>
-                                <button class="filter-chip" onclick="applyPreset('netflix')">🍿 Netflix Top</button>
-                                <button class="filter-chip" onclick="applyPreset('apple')">🍏 Apple TV+</button>
-                                <button class="filter-chip" onclick="applyPreset('prime')">📦 Prime Video</button>
-                                <button class="filter-chip" onclick="applyPreset('disney')">✨ Disney+</button>
-                                <button class="filter-chip" onclick="applyPreset('nineties')">📼 90s Classics</button>
+                            <div style="display: flex; flex-wrap: wrap; gap: 0.4rem;" id="discover-presets-container">
+                                <button class="filter-chip" onclick="applyPreset('popular')">🔥 Popular</button>
+                                <button class="filter-chip" onclick="applyPreset('now_playing')">🎟️ Now Playing (Theatres)</button>
+                                <button class="filter-chip" onclick="applyPreset('upcoming')">📅 Upcoming</button>
+                                <button class="filter-chip" onclick="applyPreset('top_rated')">⭐ Top Rated</button>
+                                <button class="filter-chip" onclick="applyPreset('new_digital')">🎬 New Digital Releases</button>
+                                <button class="filter-chip" onclick="applyPreset('box_office')">💰 Box Office</button>
                             </div>
                         </div>
                     </div>
 
                     <!-- Row 2: Genres Multi-Select -->
                     <div class="filter-group">
-                        <label class="filter-label">Genres (Click to toggle)</label>
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;">
+                            <label class="filter-label">Genres (Click to toggle &amp; refine loaded results)</label>
+                            <div style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; color: var(--text-muted);">
+                                <span>Match:</span>
+                                <button type="button" id="genre-match-any-btn" class="filter-chip active" style="padding: 0.15rem 0.55rem; font-size: 0.7rem;" onclick="setGenreMatchMode('any')">Any</button>
+                                <button type="button" id="genre-match-all-btn" class="filter-chip" style="padding: 0.15rem 0.55rem; font-size: 0.7rem;" onclick="setGenreMatchMode('all')">All</button>
+                            </div>
+                        </div>
                         <div class="chip-container" id="discover-genres-container">
                             <!-- Populated dynamically -->
                         </div>
@@ -1839,20 +1926,32 @@
                     <!-- Row 3: Watch Providers / Streaming Networks -->
                     <div class="filter-group">
                         <label class="filter-label">Watch Providers (Streaming Services)</label>
-                        <div class="chip-container" id="discover-providers-container">
-                            <!-- Populated dynamically -->
+                        <div class="provider-dropdown-wrapper" id="provider-dropdown-wrapper">
+                            <button type="button" class="provider-dropdown-btn" id="provider-dropdown-btn" onclick="toggleProviderDropdown(event)">
+                                <span id="provider-dropdown-label">Select Streaming Services...</span>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </button>
+                            <div class="provider-dropdown-menu" id="provider-dropdown-menu" onclick="event.stopPropagation()">
+                                <div style="padding: 0.55rem; border-bottom: 1px solid var(--border-glass);">
+                                    <input type="text" id="provider-search-input" class="form-input" placeholder="Search streaming services..." style="width: 100%; padding: 0.4rem 0.65rem; font-size: 0.8rem; box-sizing: border-box;" oninput="filterProviderDropdownList()">
+                                </div>
+                                <div id="discover-providers-container" style="overflow-y: auto; max-height: 245px; padding: 0.35rem; display: flex; flex-direction: column; gap: 0.15rem;">
+                                    <!-- Populated dynamically -->
+                                </div>
+                            </div>
+                            <div id="selected-providers-pills" style="display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;"></div>
                         </div>
                     </div>
 
                     <!-- Row 4: Parameters & Sort -->
                     <div class="filter-row">
                         <div class="filter-group">
-                            <label class="filter-label">Release Year From</label>
-                            <input type="number" id="filter-year-gte" class="form-input" placeholder="e.g. 1990" min="1900" max="2099" style="width: 110px;">
+                            <label class="filter-label" title="Enter a year (e.g. 2024), a date (YYYY-MM-DD), or a rolling relative date like T-30">Release Date From</label>
+                            <input type="text" id="filter-year-gte" class="form-input" placeholder="e.g. 2024 or T-30" style="width: 130px;">
                         </div>
                         <div class="filter-group">
-                            <label class="filter-label">Release Year To</label>
-                            <input type="number" id="filter-year-lte" class="form-input" placeholder="e.g. 2026" min="1900" max="2099" style="width: 110px;">
+                            <label class="filter-label" title="Enter a year (e.g. 2026), a date (YYYY-MM-DD), or a rolling relative date like T-1 or T+30">Release Date To</label>
+                            <input type="text" id="filter-year-lte" class="form-input" placeholder="e.g. 2026 or T-1" style="width: 130px;">
                         </div>
                         <div class="filter-group">
                             <label class="filter-label">Min Rating (0 - 10)</label>
@@ -1882,6 +1981,7 @@
                                 <option value="vote_average.desc">Rating Descending</option>
                                 <option value="primary_release_date.desc">Release Date (Newest)</option>
                                 <option value="primary_release_date.asc">Release Date (Oldest)</option>
+                                <option value="revenue.desc">Box Office Revenue Descending</option>
                                 <option value="vote_count.desc">Most Voted</option>
                             </select>
                         </div>
@@ -2636,7 +2736,7 @@ Orac Server Port: 8000 (default)</div>
             
             <div id="simkl-auth-body" style="display: flex; flex-direction: column; gap: 1.25rem; align-items: center; width: 100%;">
                 <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
-                    Click the button below to approve Orac on Simkl, or scan the QR code and enter the PIN.
+                    Click the button below, scan the QR code, or visit <a href="https://simkl.com/pin" target="_blank" rel="noopener noreferrer" style="color: #38bdf8; text-decoration: underline;">https://simkl.com/pin</a> and enter your PIN code to approve Orac on Simkl.
                 </p>
 
                 <div id="simkl-code-display" style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-glass); border-radius: 0.75rem; padding: 0.75rem 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; width: 100%; box-sizing: border-box;">
@@ -2848,6 +2948,24 @@ Orac Server Port: 8000 (default)</div>
         </div>
     </div>
 
+    <!-- Lists Manager Modal Overlay -->
+    <div id="lists-manager-modal" class="modal-overlay" onclick="closeListsManagerModal(event)" style="z-index: 1200;">
+        <div class="modal-container" style="max-width: 520px; height: auto; max-height: 80vh; padding: 1.5rem; gap: 1rem;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="margin-bottom: 0; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-glass);">
+                <div style="display: flex; flex-direction: column; gap: 0.2rem; overflow: hidden;">
+                    <h3 id="lists-manager-modal-title" style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-main);">Lists Manager</h3>
+                    <span id="lists-manager-modal-subtitle" style="font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></span>
+                </div>
+                <button class="modal-close-btn" onclick="toggleListsManagerModal(false)">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div id="lists-manager-status" style="display: none; padding: 0.65rem 0.85rem; border-radius: 0.55rem; font-size: 0.82rem; font-weight: 500;"></div>
+            <div id="lists-manager-options-container" style="display: flex; flex-direction: column; gap: 0.5rem; overflow-y: auto; max-height: 55vh; padding-right: 0.25rem;">
+            </div>
+        </div>
+    </div>
+
     <!-- Details / Reviews Modal Overlay -->
     <div id="details-modal" class="modal-overlay" onclick="closeDetailsModal(event)" style="z-index: 1100;">
         <div class="modal-container" style="max-width: 850px; height: 85%; padding: 1.75rem; gap: 1.5rem;" onclick="event.stopPropagation()">
@@ -2860,12 +2978,12 @@ Orac Server Port: 8000 (default)</div>
             
             <div style="display: flex; flex-direction: row; gap: 1.5rem; height: 100%; min-height: 0; overflow: hidden;">
                 <!-- Left: Poster and Quick Info -->
-                <div style="flex-shrink: 0; width: 180px; display: flex; flex-direction: column; gap: 1rem;">
+                <div style="flex-shrink: 0; width: 180px; display: flex; flex-direction: column; gap: 0.75rem;">
                     <img id="details-poster" src="" alt="Poster" style="width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 0.8rem; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border: 1px solid var(--border-glass);" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';">
-                    <button id="details-scrape-btn" class="action-btn scrape" style="width: 100%; padding: 0.6rem; font-size: 0.85rem;" onclick="handleDetailsModalScrape()">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
-                        Scrape Streams
-                    </button>
+                    <div style="display: flex; flex-direction: column; gap: 0.45rem;">
+                        <button class="action-btn scrape" style="width: 100%; padding: 0.55rem; font-size: 0.8rem;" onclick="handleDetailsModalListAction('add')">+ Add to List</button>
+                        <button class="action-btn remove" style="width: 100%; padding: 0.55rem; font-size: 0.8rem;" onclick="handleDetailsModalListAction('remove')">- Remove from List</button>
+                    </div>
                     <div style="display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.8rem;">
                         <div><span style="color: var(--text-muted);">Year:</span> <strong id="details-year" style="color: var(--text-main);"></strong></div>
                         <div><span style="color: var(--text-muted);">Rating:</span> <strong id="details-rating" style="color: var(--text-main);"></strong></div>
@@ -5081,95 +5199,360 @@ Orac Server Port: 8000 (default)</div>
             }
         }
 
+        let activePresetKey = '';
+
+        function renderDiscoverPresets() {
+            const container = document.getElementById('discover-presets-container');
+            if (!container) return;
+            const presets = discoverMediaType === 'movie'
+                ? [
+                    { key: 'popular', label: '🔥 Popular' },
+                    { key: 'now_playing', label: '🎟️ Now Playing (Theatres)' },
+                    { key: 'upcoming', label: '📅 Upcoming' },
+                    { key: 'top_rated', label: '⭐ Top Rated' },
+                    { key: 'new_digital', label: '🎬 New Digital Releases' },
+                    { key: 'box_office', label: '💰 Box Office' }
+                ]
+                : [
+                    { key: 'tv_popular', label: '🔥 Popular' },
+                    { key: 'tv_airing_today', label: '📺 Airing Today' },
+                    { key: 'tv_on_the_air', label: '📡 On The Air (Next 7 Days)' },
+                    { key: 'tv_new_shows', label: '🆕 New Shows (Last 30 Days)' },
+                    { key: 'tv_top_rated', label: '⭐ Top Rated' },
+                    { key: 'tv_returning', label: '🔄 Returning Series' }
+                ];
+
+            container.innerHTML = presets.map(p => `
+                <button class="filter-chip preset-chip ${activePresetKey === p.key ? 'active' : ''}" data-preset="${p.key}" onclick="applyPreset('${p.key}')">${p.label}</button>
+            `).join('');
+        }
+
+        function renderDiscoverSortOptions() {
+            const sortSelect = document.getElementById('filter-sort-by');
+            if (!sortSelect) return;
+            const currentVal = sortSelect.value;
+            if (discoverMediaType === 'movie') {
+                sortSelect.innerHTML = `
+                    <option value="popularity.desc">Popularity Descending</option>
+                    <option value="vote_average.desc">Rating Descending</option>
+                    <option value="primary_release_date.desc">Release Date (Newest)</option>
+                    <option value="primary_release_date.asc">Release Date (Oldest)</option>
+                    <option value="revenue.desc">Box Office Revenue Descending</option>
+                    <option value="vote_count.desc">Most Voted</option>
+                `;
+            } else {
+                sortSelect.innerHTML = `
+                    <option value="popularity.desc">Popularity Descending</option>
+                    <option value="vote_average.desc">Rating Descending</option>
+                    <option value="first_air_date.desc">First Air Date (Newest)</option>
+                    <option value="first_air_date.asc">First Air Date (Oldest)</option>
+                    <option value="vote_count.desc">Most Voted</option>
+                `;
+            }
+            if (Array.from(sortSelect.options).some(o => o.value === currentVal)) {
+                sortSelect.value = currentVal;
+            } else {
+                sortSelect.value = 'popularity.desc';
+            }
+        }
+
+        let genreMatchMode = 'any';
+
+        function setGenreMatchMode(mode) {
+            genreMatchMode = mode;
+            const anyBtn = document.getElementById('genre-match-any-btn');
+            const allBtn = document.getElementById('genre-match-all-btn');
+            if (anyBtn) anyBtn.classList.toggle('active', mode === 'any');
+            if (allBtn) allBtn.classList.toggle('active', mode === 'all');
+            if (lastDiscoverResults && lastDiscoverResults.length > 0) {
+                filterDisplayedDiscoverResults();
+            }
+        }
+
         function setDiscoverMediaType(type) {
             discoverMediaType = type;
             document.getElementById('type-movie-btn').classList.toggle('active', type === 'movie');
             document.getElementById('type-tv-btn').classList.toggle('active', type === 'tv');
+            activePresetKey = '';
             activeGenres.clear();
+            activeReleaseType = '';
+            activeTvDateField = 'first_air_date';
+            activeWithoutGenres = '';
+            activeWithStatus = '';
+            lastDiscoverResults = [];
+            renderDiscoverPresets();
+            renderDiscoverSortOptions();
             renderGenreChips();
+            renderProviderChips();
         }
 
         function renderGenreChips() {
             const container = document.getElementById('discover-genres-container');
             container.innerHTML = '';
             const list = discoverMediaType === 'movie' ? movieGenresList : tvGenresList;
+            const hasLoadedItems = Array.isArray(lastDiscoverResults) && lastDiscoverResults.length > 0;
             
             list.forEach(g => {
+                const genreIdNum = Number(g.id);
                 const chip = document.createElement('div');
                 chip.className = `filter-chip ${activeGenres.has(g.id) ? 'active' : ''}`;
-                chip.textContent = g.name;
+
+                if (hasLoadedItems) {
+                    const matchCount = lastDiscoverResults.filter(item =>
+                        Array.isArray(item.genre_ids) && item.genre_ids.map(Number).includes(genreIdNum)
+                    ).length;
+                    chip.textContent = `${g.name} (${matchCount})`;
+                    if (matchCount === 0 && !activeGenres.has(g.id)) {
+                        chip.style.opacity = '0.45';
+                    }
+                } else {
+                    chip.textContent = g.name;
+                }
+
                 chip.onclick = () => {
                     if (activeGenres.has(g.id)) activeGenres.delete(g.id);
                     else activeGenres.add(g.id);
                     chip.classList.toggle('active', activeGenres.has(g.id));
+                    if (Array.isArray(lastDiscoverResults) && lastDiscoverResults.length > 0) {
+                        filterDisplayedDiscoverResults();
+                    }
                 };
                 container.appendChild(chip);
             });
+        }
+
+        function filterDisplayedDiscoverResults() {
+            const badge = document.getElementById('discover-results-badge');
+            if (!Array.isArray(lastDiscoverResults) || lastDiscoverResults.length === 0) {
+                return;
+            }
+            if (activeGenres.size === 0) {
+                if (badge) badge.textContent = `${lastDiscoverResults.length} items`;
+                renderDiscoverResults(lastDiscoverResults);
+                return;
+            }
+            const selectedGenreIds = Array.from(activeGenres).map(Number);
+            const filtered = lastDiscoverResults.filter(item => {
+                const itemGenres = Array.isArray(item.genre_ids) ? item.genre_ids.map(Number) : [];
+                if (genreMatchMode === 'all') {
+                    return selectedGenreIds.every(gid => itemGenres.includes(gid));
+                }
+                return selectedGenreIds.some(gid => itemGenres.includes(gid));
+            });
+            if (badge) {
+                badge.textContent = `${filtered.length} / ${lastDiscoverResults.length} items`;
+            }
+            renderDiscoverResults(filtered);
+        }
+
+        const POPULAR_PROVIDER_IDS = [8, 9, 337, 350, 1899, 15, 531, 386, 283, 192];
+
+        function getProviderId(p) {
+            return Number(p.id !== undefined ? p.id : p.provider_id);
+        }
+
+        function toggleProviderDropdown(event) {
+            event.stopPropagation();
+            const menu = document.getElementById('provider-dropdown-menu');
+            const btn = document.getElementById('provider-dropdown-btn');
+            if (!menu || !btn) return;
+            const isOpen = menu.classList.toggle('open');
+            btn.classList.toggle('open', isOpen);
+            if (isOpen) {
+                const searchInput = document.getElementById('provider-search-input');
+                if (searchInput) {
+                    searchInput.value = '';
+                    filterProviderDropdownList();
+                    setTimeout(() => searchInput.focus(), 20);
+                }
+            }
+        }
+
+        document.addEventListener('click', (e) => {
+            const wrapper = document.getElementById('provider-dropdown-wrapper');
+            const menu = document.getElementById('provider-dropdown-menu');
+            const btn = document.getElementById('provider-dropdown-btn');
+            if (wrapper && menu && menu.classList.contains('open') && !wrapper.contains(e.target)) {
+                menu.classList.remove('open');
+                if (btn) btn.classList.remove('open');
+            }
+        });
+
+        function filterProviderDropdownList() {
+            renderProviderChips();
         }
 
         function renderProviderChips() {
             const container = document.getElementById('discover-providers-container');
-            container.innerHTML = '';
-            
-            watchProvidersList.slice(0, 15).forEach(p => {
-                const chip = document.createElement('div');
-                chip.className = `filter-chip provider-chip ${activeProviders.has(p.provider_id) ? 'active' : ''}`;
-                chip.textContent = p.name;
-                chip.onclick = () => {
-                    if (activeProviders.has(p.provider_id)) activeProviders.delete(p.provider_id);
-                    else activeProviders.add(p.provider_id);
-                    chip.classList.toggle('active', activeProviders.has(p.provider_id));
-                };
-                container.appendChild(chip);
+            const pillsContainer = document.getElementById('selected-providers-pills');
+            const labelEl = document.getElementById('provider-dropdown-label');
+            const searchInput = document.getElementById('provider-search-input');
+            if (!container) return;
+
+            const query = (searchInput ? searchInput.value : '').trim().toLowerCase();
+
+            // Filter by media type if flags are present
+            const filteredByType = (watchProvidersList || []).filter(p => {
+                if (discoverMediaType === 'movie' && p.for_movie === false) return false;
+                if (discoverMediaType === 'tv' && p.for_tv === false) return false;
+                return true;
             });
+
+            // Sort with popular providers pinned first, then alphabetically
+            const sortedProviders = [...filteredByType].sort((a, b) => {
+                const idA = getProviderId(a);
+                const idB = getProviderId(b);
+                const popA = POPULAR_PROVIDER_IDS.indexOf(idA);
+                const popB = POPULAR_PROVIDER_IDS.indexOf(idB);
+                if (popA !== -1 && popB !== -1) return popA - popB;
+                if (popA !== -1) return -1;
+                if (popB !== -1) return 1;
+                return String(a.name || '').localeCompare(String(b.name || ''));
+            });
+
+            const matchingProviders = query
+                ? sortedProviders.filter(p => String(p.name || '').toLowerCase().includes(query))
+                : sortedProviders;
+
+            container.innerHTML = '';
+            if (matchingProviders.length === 0) {
+                container.innerHTML = '<div style="padding: 0.75rem; color: var(--text-muted); font-size: 0.8rem; text-align: center; font-style: italic;">No matching services</div>';
+            } else {
+                matchingProviders.forEach(p => {
+                    const pid = getProviderId(p);
+                    const isSelected = activeProviders.has(pid);
+                    const item = document.createElement('div');
+                    item.className = `provider-option-item ${isSelected ? 'selected' : ''}`;
+                    item.innerHTML = `
+                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(p.name)}</span>
+                        <span style="font-size: 0.75rem; color: ${isSelected ? '#c084fc' : 'var(--text-muted)'};">${isSelected ? '✓' : ''}</span>
+                    `;
+                    item.onclick = (e) => {
+                        e.stopPropagation();
+                        if (activeProviders.has(pid)) activeProviders.delete(pid);
+                        else activeProviders.add(pid);
+                        renderProviderChips();
+                    };
+                    container.appendChild(item);
+                });
+            }
+
+            if (labelEl) {
+                labelEl.textContent = activeProviders.size > 0
+                    ? `${activeProviders.size} Service${activeProviders.size > 1 ? 's' : ''} Selected`
+                    : 'Select Streaming Services...';
+            }
+
+            if (pillsContainer) {
+                pillsContainer.innerHTML = '';
+                activeProviders.forEach(pid => {
+                    const prov = (watchProvidersList || []).find(p => getProviderId(p) === pid);
+                    const name = prov ? prov.name : `Provider #${pid}`;
+                    const pill = document.createElement('div');
+                    pill.className = 'filter-chip provider-chip active';
+                    pill.style.cssText = 'display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.65rem;';
+                    pill.innerHTML = `<span>${escapeHtml(name)}</span><span style="font-size: 0.85rem; line-height: 1; opacity: 0.8;">&times;</span>`;
+                    pill.title = 'Click to remove';
+                    pill.onclick = () => {
+                        activeProviders.delete(pid);
+                        renderProviderChips();
+                    };
+                    pillsContainer.appendChild(pill);
+                });
+            }
         }
+
+        let activeReleaseType = '';
+        let activeTvDateField = 'first_air_date';
+        let activeWithoutGenres = '';
+        let activeWithStatus = '';
 
         function applyPreset(presetKey) {
             resetDiscoverFilters(false);
-            const nowYear = new Date().getFullYear();
+            activePresetKey = presetKey;
+            renderDiscoverPresets();
             
             switch (presetKey) {
-                case 'trending':
+                // Movie presets
+                case 'popular':
                     document.getElementById('filter-sort-by').value = 'popularity.desc';
-                    document.getElementById('filter-vote-gte').value = '6.5';
+                    break;
+                case 'now_playing':
+                    document.getElementById('filter-year-gte').value = 'T-42';
+                    document.getElementById('filter-year-lte').value = 'T-0';
+                    document.getElementById('filter-sort-by').value = 'popularity.desc';
+                    activeReleaseType = '2|3';
+                    break;
+                case 'upcoming':
+                    document.getElementById('filter-year-gte').value = 'T+1';
+                    document.getElementById('filter-year-lte').value = 'T+30';
+                    document.getElementById('filter-sort-by').value = 'popularity.desc';
+                    activeReleaseType = '2|3';
                     break;
                 case 'top_rated':
                     document.getElementById('filter-sort-by').value = 'vote_average.desc';
-                    document.getElementById('filter-vote-gte').value = '8.0';
+                    document.getElementById('filter-vote-gte').value = '7.5';
                     document.getElementById('filter-votes-gte').value = '300';
                     break;
-                case 'recent':
-                    document.getElementById('filter-year-gte').value = (nowYear - 1).toString();
-                    document.getElementById('filter-sort-by').value = 'primary_release_date.desc';
+                case 'new_digital':
+                    document.getElementById('filter-year-gte').value = 'T-45';
+                    document.getElementById('filter-year-lte').value = 'T-0';
+                    document.getElementById('filter-sort-by').value = 'popularity.desc';
+                    activeReleaseType = '4';
                     break;
-                case 'netflix':
-                    activeProviders.add(8);
-                    renderProviderChips();
+                case 'box_office':
+                    document.getElementById('filter-sort-by').value = 'revenue.desc';
+                    document.getElementById('filter-votes-gte').value = '100';
                     break;
-                case 'apple':
-                    activeProviders.add(350);
-                    renderProviderChips();
+
+                // TV Show presets
+                case 'tv_popular':
+                    document.getElementById('filter-sort-by').value = 'popularity.desc';
                     break;
-                case 'prime':
-                    activeProviders.add(9);
-                    renderProviderChips();
+                case 'tv_airing_today':
+                    document.getElementById('filter-year-gte').value = 'T-0';
+                    document.getElementById('filter-year-lte').value = 'T-0';
+                    document.getElementById('filter-sort-by').value = 'popularity.desc';
+                    activeTvDateField = 'air_date';
+                    activeWithoutGenres = '10763|10767';
                     break;
-                case 'disney':
-                    activeProviders.add(337);
-                    renderProviderChips();
+                case 'tv_on_the_air':
+                    document.getElementById('filter-year-gte').value = 'T-0';
+                    document.getElementById('filter-year-lte').value = 'T+7';
+                    document.getElementById('filter-sort-by').value = 'popularity.desc';
+                    activeTvDateField = 'air_date';
+                    activeWithoutGenres = '10763|10767';
                     break;
-                case 'nineties':
-                    document.getElementById('filter-year-gte').value = '1990';
-                    document.getElementById('filter-year-lte').value = '1999';
-                    document.getElementById('filter-vote-gte').value = '7.0';
+                case 'tv_new_shows':
+                    document.getElementById('filter-year-gte').value = 'T-31';
+                    document.getElementById('filter-year-lte').value = 'T-1';
+                    document.getElementById('filter-sort-by').value = 'popularity.desc';
+                    activeTvDateField = 'first_air_date';
+                    activeWithoutGenres = '10751|10766';
+                    break;
+                case 'tv_top_rated':
+                    document.getElementById('filter-sort-by').value = 'vote_average.desc';
+                    document.getElementById('filter-vote-gte').value = '7.5';
+                    document.getElementById('filter-votes-gte').value = '200';
+                    break;
+                case 'tv_returning':
+                    document.getElementById('filter-sort-by').value = 'popularity.desc';
+                    activeWithStatus = '0';
                     break;
             }
-            runDiscoverQuery();
+            renderGenreChips();
+            renderProviderChips();
+            runDiscoverQuery(true);
         }
 
         function resetDiscoverFilters(reRender = true) {
+            activePresetKey = '';
             activeGenres.clear();
             activeProviders.clear();
+            activeReleaseType = '';
+            activeTvDateField = 'first_air_date';
+            activeWithoutGenres = '';
+            activeWithStatus = '';
             document.getElementById('filter-year-gte').value = '';
             document.getElementById('filter-year-lte').value = '';
             document.getElementById('filter-vote-gte').value = '';
@@ -5177,28 +5560,54 @@ Orac Server Port: 8000 (default)</div>
             document.getElementById('filter-language').value = 'en';
             document.getElementById('filter-sort-by').value = 'popularity.desc';
             if (reRender) {
+                renderDiscoverPresets();
                 renderGenreChips();
                 renderProviderChips();
+                if (Array.isArray(lastDiscoverResults) && lastDiscoverResults.length > 0) {
+                    filterDisplayedDiscoverResults();
+                }
             }
+        }
+
+        function formatDateOrRelativeInput(val, isStart) {
+            const v = (val || '').trim();
+            if (!v) return '';
+            if (/^[Tt]([+-]\d+)?$/.test(v)) {
+                return v.toUpperCase() === 'T' ? 'T-0' : v.toUpperCase();
+            }
+            if (/^\d{4}$/.test(v)) {
+                return isStart ? `${v}-01-01` : `${v}-12-31`;
+            }
+            return v;
         }
 
         function buildDiscoverParams() {
             const params = {};
             
             if (activeGenres.size > 0) {
-                params['with_genres'] = Array.from(activeGenres).join(',');
+                params['with_genres'] = Array.from(activeGenres).join(genreMatchMode === 'all' ? ',' : '|');
+            } else if (activeWithoutGenres) {
+                params['without_genres'] = activeWithoutGenres;
             }
             if (activeProviders.size > 0) {
                 params['with_watch_providers'] = Array.from(activeProviders).join('|');
                 params['watch_region'] = 'US';
             }
+            if (discoverMediaType === 'movie' && activeReleaseType) {
+                params['with_release_type'] = activeReleaseType;
+            }
+            if (discoverMediaType === 'tv' && activeWithStatus) {
+                params['with_status'] = activeWithStatus;
+            }
 
-            const yGte = document.getElementById('filter-year-gte').value.trim();
-            const yLte = document.getElementById('filter-year-lte').value.trim();
-            const prefix = discoverMediaType === 'movie' ? 'primary_release_date' : 'first_air_date';
+            const yGte = formatDateOrRelativeInput(document.getElementById('filter-year-gte').value, true);
+            const yLte = formatDateOrRelativeInput(document.getElementById('filter-year-lte').value, false);
+            const prefix = discoverMediaType === 'movie'
+                ? (activeReleaseType ? 'release_date' : 'primary_release_date')
+                : (activeTvDateField || 'first_air_date');
 
-            if (yGte) params[`${prefix}.gte`] = `${yGte}-01-01`;
-            if (yLte) params[`${prefix}.lte`] = `${yLte}-12-31`;
+            if (yGte) params[`${prefix}.gte`] = yGte;
+            if (yLte) params[`${prefix}.lte`] = yLte;
 
             const vGte = document.getElementById('filter-vote-gte').value.trim();
             if (vGte) params['vote_average.gte'] = vGte;
@@ -5215,7 +5624,16 @@ Orac Server Port: 8000 (default)</div>
             return params;
         }
 
-        async function runDiscoverQuery() {
+        async function runDiscoverQuery(fromPreset = false) {
+            if (!fromPreset && activePresetKey) {
+                activePresetKey = '';
+                activeReleaseType = '';
+                activeTvDateField = 'first_air_date';
+                activeWithoutGenres = '';
+                activeWithStatus = '';
+                renderDiscoverPresets();
+            }
+
             const container = document.getElementById('discover-results-container');
             const spinner = document.getElementById('discover-loading-spinner');
             const badge = document.getElementById('discover-results-badge');
@@ -5239,8 +5657,8 @@ Orac Server Port: 8000 (default)</div>
 
                 if (Array.isArray(data)) {
                     lastDiscoverResults = data;
-                    badge.textContent = `${data.length} items`;
-                    renderDiscoverResults(data);
+                    renderGenreChips();
+                    filterDisplayedDiscoverResults();
                 } else {
                     container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--log-error);">${data.error || 'Failed to fetch discover results'}</div>`;
                 }
@@ -5273,6 +5691,7 @@ Orac Server Port: 8000 (default)</div>
                 const posterUrl = resolvePosterUrl(item.poster_path);
                 card.dataset.posterUrl = posterUrl;
                 card.onclick = (e) => handleDetailsClick(e);
+                card.onmouseleave = () => resetCardActionsMenu(card);
 
                 const safeTitle = escapeHtml(card.dataset.title);
                 const safeRating = escapeHtml(card.dataset.rating);
@@ -5283,8 +5702,14 @@ Orac Server Port: 8000 (default)</div>
                     <div class="media-poster-container">
                         <img src="${posterUrl}" alt="${safeTitle} Poster" class="media-poster" loading="lazy" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';">
                         <div class="media-card-actions">
-                            <button class="action-btn details" onclick="handleDetailsClick(event)">Details</button>
-                            <button class="action-btn scrape" onclick="handleScrapeClick(event)">Scrape</button>
+                            <div class="card-menu-main" style="display: flex; gap: 0.4rem; justify-content: center; flex-wrap: wrap;">
+                                <button class="action-btn details" onclick="handleDetailsClick(event)">Details</button>
+                                <button class="action-btn index" onclick="handleListsManagerClick(event)">Lists Manager</button>
+                            </div>
+                            <div class="card-menu-lists" style="display: none; flex-direction: column; gap: 0.35rem; width: 88%;">
+                                <button class="action-btn scrape" style="width: 100%;" onclick="handleAddToListClick(event)">+ Add to List</button>
+                                <button class="action-btn remove" style="width: 100%;" onclick="handleRemoveFromListClick(event)">- Remove from List</button>
+                            </div>
                         </div>
                     </div>
                     <div class="media-info">
@@ -5977,6 +6402,7 @@ Orac Server Port: 8000 (default)</div>
                 const posterUrl = resolvePosterUrl(item.poster_path);
                 card.dataset.posterUrl = posterUrl;
                 card.onclick = (e) => handleDetailsClick(e);
+                card.onmouseleave = () => resetCardActionsMenu(card);
                 
                 const safeTitle = escapeHtml(item.title || 'Unknown');
                 const safeRating = escapeHtml(card.dataset.rating);
@@ -5987,9 +6413,15 @@ Orac Server Port: 8000 (default)</div>
                     <div class="media-poster-container">
                         <img src="${posterUrl}" alt="${safeTitle} Poster" class="media-poster" loading="lazy" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';">
                         <div class="media-card-actions">
-                            <button class="action-btn details" onclick="handleDetailsClick(event)">Details</button>
-                            <button class="action-btn scrape" onclick="handleScrapeClick(event)">Scrape</button>
-                            ${!isIndex ? `<button class="action-btn remove" onclick="handleRemoveClick(event)">Remove</button>` : ''}
+                            <div class="card-menu-main" style="display: flex; gap: 0.4rem; justify-content: center; flex-wrap: wrap;">
+                                <button class="action-btn details" onclick="handleDetailsClick(event)">Details</button>
+                                <button class="action-btn index" onclick="handleListsManagerClick(event)">Lists Manager</button>
+                                ${!isIndex ? `<button class="action-btn remove" onclick="handleRemoveClick(event)">Remove</button>` : ''}
+                            </div>
+                            <div class="card-menu-lists" style="display: none; flex-direction: column; gap: 0.35rem; width: 88%;">
+                                <button class="action-btn scrape" style="width: 100%;" onclick="handleAddToListClick(event)">+ Add to List</button>
+                                <button class="action-btn remove" style="width: 100%;" onclick="handleRemoveFromListClick(event)">- Remove from List</button>
+                            </div>
                         </div>
                     </div>
                     <div class="media-info">
@@ -6003,6 +6435,204 @@ Orac Server Port: 8000 (default)</div>
                 `;
                 container.appendChild(card);
             });
+        }
+
+        function resetCardActionsMenu(card) {
+            if (!card) return;
+            const mainMenu = card.querySelector('.card-menu-main');
+            const listsMenu = card.querySelector('.card-menu-lists');
+            if (mainMenu) mainMenu.style.display = 'flex';
+            if (listsMenu) listsMenu.style.display = 'none';
+        }
+
+        function handleListsManagerClick(event) {
+            event.stopPropagation();
+            const card = event.currentTarget.closest('.media-card');
+            if (!card) return;
+            const mainMenu = card.querySelector('.card-menu-main');
+            const listsMenu = card.querySelector('.card-menu-lists');
+            if (mainMenu) mainMenu.style.display = 'none';
+            if (listsMenu) listsMenu.style.display = 'flex';
+        }
+
+        function normalizeListItemType(mediaType) {
+            const m = String(mediaType || '').toLowerCase();
+            if (m === 'tv' || m === 'show' || m === 'tvshow') return 'tvshow';
+            return 'movie';
+        }
+
+        function handleAddToListClick(event) {
+            event.stopPropagation();
+            const card = event.currentTarget.closest('.media-card');
+            if (!card) return;
+            resetCardActionsMenu(card);
+            openListsManagerModal('add', {
+                mediaType: card.dataset.mediaType,
+                tmdbId: card.dataset.tmdbId,
+                title: card.dataset.title,
+                year: card.dataset.year
+            });
+        }
+
+        function handleRemoveFromListClick(event) {
+            event.stopPropagation();
+            const card = event.currentTarget.closest('.media-card');
+            if (!card) return;
+            resetCardActionsMenu(card);
+            openListsManagerModal('remove', {
+                mediaType: card.dataset.mediaType,
+                tmdbId: card.dataset.tmdbId,
+                title: card.dataset.title,
+                year: card.dataset.year
+            });
+        }
+
+        function handleDetailsModalListAction(mode) {
+            if (!currentDetailsItem) return;
+            openListsManagerModal(mode, currentDetailsItem);
+        }
+
+        function toggleListsManagerModal(show) {
+            const modal = document.getElementById('lists-manager-modal');
+            if (!modal) return;
+            if (show) modal.classList.add('visible');
+            else modal.classList.remove('visible');
+        }
+
+        function closeListsManagerModal(event) {
+            if (event.target === document.getElementById('lists-manager-modal')) {
+                toggleListsManagerModal(false);
+            }
+        }
+
+        async function openListsManagerModal(mode, item) {
+            const titleEl = document.getElementById('lists-manager-modal-title');
+            const subtitleEl = document.getElementById('lists-manager-modal-subtitle');
+            const statusEl = document.getElementById('lists-manager-status');
+            const container = document.getElementById('lists-manager-options-container');
+
+            const isAdd = mode === 'add';
+            titleEl.textContent = isAdd ? 'Add to List' : 'Remove from List';
+            subtitleEl.textContent = `${item.title || 'Unknown'}${item.year && item.year !== 'N/A' && item.year !== '0' ? ` (${item.year})` : ''}`;
+            statusEl.style.display = 'none';
+            container.innerHTML = `
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; color: var(--text-muted); gap: 0.65rem;">
+                    <div class="scrape-spinner" style="width: 24px; height: 24px;"></div>
+                    <span style="font-size: 0.82rem;">Loading lists...</span>
+                </div>
+            `;
+            toggleListsManagerModal(true);
+
+            const normType = normalizeListItemType(item.mediaType);
+            const endpointName = isAdd ? 'add_list_options' : 'remove_list_options';
+
+            try {
+                const res = await fetch(`/lists?name=${endpointName}&item_type=${encodeURIComponent(normType)}&tmdb_id=${encodeURIComponent(item.tmdbId || '')}`);
+                const lists = await res.json();
+
+                if (!Array.isArray(lists) || lists.length === 0) {
+                    container.innerHTML = `<div style="text-align: center; padding: 2rem 1rem; color: var(--text-muted); font-size: 0.88rem; font-style: italic;">${isAdd ? 'No available lists to add this item to.' : 'This item is not currently on any of your lists.'}</div>`;
+                    return;
+                }
+
+                container.innerHTML = '';
+                lists.forEach(lst => {
+                    const row = document.createElement('button');
+                    row.type = 'button';
+                    row.style.cssText = 'display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0.75rem 1rem; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-glass); border-radius: 0.65rem; color: var(--text-main); cursor: pointer; text-align: left; font-family: inherit; transition: all 0.18s ease;';
+                    row.onmouseenter = () => {
+                        row.style.background = isAdd ? 'rgba(16, 185, 129, 0.12)' : 'rgba(244, 63, 94, 0.12)';
+                        row.style.borderColor = isAdd ? 'rgba(16, 185, 129, 0.45)' : 'rgba(244, 63, 94, 0.45)';
+                    };
+                    row.onmouseleave = () => {
+                        row.style.background = 'rgba(255, 255, 255, 0.04)';
+                        row.style.borderColor = 'var(--border-glass)';
+                    };
+
+                    const src = String(lst.source || 'trakt').toLowerCase();
+                    const badgeClass = src === 'trakt' ? 'trakt' : 'platform';
+                    const countText = lst.item_count !== undefined && lst.item_count !== null ? `${lst.item_count} items` : '';
+
+                    row.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 0.65rem; min-width: 0;">
+                            <span class="badge ${badgeClass}" style="font-size: 0.65rem; padding: 0.15rem 0.45rem; flex-shrink: 0;">${escapeHtml(src.toUpperCase())}</span>
+                            <div style="display: flex; flex-direction: column; min-width: 0;">
+                                <span style="font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(lst.name || lst.slug || 'List')}</span>
+                                <span style="font-size: 0.72rem; color: var(--text-muted);">${escapeHtml(lst.user || '')}</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.65rem; flex-shrink: 0;">
+                            <span style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(countText)}</span>
+                            <span class="badge ${isAdd ? 'active' : 'inactive'}" style="font-size: 0.7rem; padding: 0.2rem 0.55rem;">${isAdd ? '+ Add' : '- Remove'}</span>
+                        </div>
+                    `;
+
+                    row.onclick = () => executeListItemAction(mode, item, lst, row);
+                    container.appendChild(row);
+                });
+            } catch (err) {
+                console.error('Error fetching list options:', err);
+                container.innerHTML = `<div style="text-align: center; padding: 1.5rem; color: var(--log-error); font-size: 0.85rem;">Failed to load list options: ${escapeHtml(err.message || String(err))}</div>`;
+            }
+        }
+
+        async function executeListItemAction(mode, item, lst, rowEl) {
+            const isAdd = mode === 'add';
+            const statusEl = document.getElementById('lists-manager-status');
+            const normType = normalizeListItemType(item.mediaType);
+            const endpoint = isAdd ? '/add_to_list' : '/remove_from_list';
+
+            if (rowEl) {
+                rowEl.disabled = true;
+                rowEl.style.opacity = '0.6';
+                rowEl.style.pointerEvents = 'none';
+            }
+
+            const params = new URLSearchParams({
+                tmdb_id: item.tmdbId || '',
+                user: lst.user || '',
+                slug: lst.slug || '',
+                list_name: lst.name || '',
+                item_type: normType,
+                source: lst.source || 'trakt'
+            });
+
+            try {
+                const res = await fetch(`${endpoint}?${params.toString()}`, { method: 'PUT' });
+                const data = await res.json();
+
+                if (res.ok && data.status === 'success') {
+                    statusEl.style.display = 'block';
+                    statusEl.style.background = 'rgba(16, 185, 129, 0.15)';
+                    statusEl.style.border = '1px solid rgba(16, 185, 129, 0.35)';
+                    statusEl.style.color = '#34d399';
+                    statusEl.textContent = data.message || (isAdd ? `Added to ${lst.name}` : `Removed from ${lst.name}`);
+
+                    if (rowEl) {
+                        rowEl.remove();
+                    }
+                    const container = document.getElementById('lists-manager-options-container');
+                    if (container && container.children.length === 0) {
+                        container.innerHTML = `<div style="text-align: center; padding: 1.5rem 1rem; color: var(--text-muted); font-size: 0.85rem; font-style: italic;">${isAdd ? 'No more lists available.' : 'Item is not on any other lists.'}</div>`;
+                    }
+
+                    if (typeof fetchMyLists === 'function') fetchMyLists();
+                    if (typeof fetchLibraryLists === 'function') fetchLibraryLists();
+                } else {
+                    throw new Error(data.message || 'Operation failed');
+                }
+            } catch (err) {
+                statusEl.style.display = 'block';
+                statusEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                statusEl.style.border = '1px solid rgba(244, 63, 94, 0.35)';
+                statusEl.style.color = '#fb7185';
+                statusEl.textContent = `Error: ${err.message || String(err)}`;
+                if (rowEl) {
+                    rowEl.disabled = false;
+                    rowEl.style.opacity = '1';
+                    rowEl.style.pointerEvents = 'auto';
+                }
+            }
         }
 
         let currentDetailsItem = null;
