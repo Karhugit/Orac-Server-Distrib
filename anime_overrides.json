@@ -1,0 +1,4 @@
+{
+  "_comment": "Local Custom Overrides for Orac Anime Dual-Indexing Bridge. Rules defined here take highest priority over AniBridge and Manami mappings.",
+  "overrides": []
+}

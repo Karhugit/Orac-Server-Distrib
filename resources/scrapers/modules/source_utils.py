@@ -119,20 +119,65 @@ def get_release_quality(release_info, release_link=None):
 
 def aliases_to_array(aliases, filter=None):
 	try:
+		if not aliases: return []
 		if all(isinstance(x, str) for x in aliases): return aliases
 		if not filter: filter = []
 		if isinstance(filter, str): filter = [filter]
-		return [x.get('title') for x in aliases if not filter or x.get('country') in filter]
+		out = []
+		for x in aliases:
+			if isinstance(x, str) and x:
+				out.append(x)
+			elif isinstance(x, dict) and x.get('title'):
+				if not filter or x.get('country') in filter:
+					out.append(x.get('title'))
+		return out
 	except:
 		from resources.lib import log_utils
 		log_utils.log("Error in aliases_to_array", level=log_utils.LOGERROR)
 		return []
 
+def _match_episode_hdlr(release_title, hdlr, aliases=None):
+	if re.search(r'%s' % hdlr, release_title, re.I):
+		return r'%s' % hdlr
+	candidate_eps = []
+	is_anime = False
+	if isinstance(aliases, list):
+		for item in aliases:
+			if isinstance(item, dict):
+				if item.get('is_anime'):
+					is_anime = True
+				if item.get('abs_ep') is not None:
+					try:
+						candidate_eps.append(int(item['abs_ep']))
+						is_anime = True
+					except (ValueError, TypeError):
+						pass
+	m_se = re.match(r'^S(\d+)E(\d+)$', str(hdlr), re.I)
+	if m_se and is_anime:
+		try:
+			ep_int = int(m_se.group(2))
+			if ep_int not in candidate_eps:
+				candidate_eps.append(ep_int)
+		except (ValueError, TypeError):
+			pass
+	elif str(hdlr).isdigit():
+		try:
+			candidate_eps.append(int(hdlr))
+		except (ValueError, TypeError):
+			pass
+	for ep_val in candidate_eps:
+		pat = r'(?:[.\s_-]-[.\s_-]|(?<![a-z0-9])e(?:p|pisode)?[.\s_-]?)0*%d(?:v\d+)?(?=[.\s_\-\[\(]|$)(?![0-9p])' % ep_val
+		if re.search(pat, release_title, re.I):
+			return pat
+	return None
+
 def check_title(title, aliases, release_title, hdlr, year, years=None): # non pack file title check, single eps and movies
+	matched_hdlr_pat = r'%s' % hdlr
 	if years: # for movies only, scraper to pass None for episodes
 		if not any(value in release_title for value in years): return False
 	else: 
-		if not re.search(r'%s' % hdlr, release_title, re.I): return False
+		matched_hdlr_pat = _match_episode_hdlr(release_title, hdlr, aliases)
+		if not matched_hdlr_pat: return False
 	aliases = aliases_to_array(aliases)
 	title_list = []
 	title_list_append = title_list.append
@@ -152,12 +197,12 @@ def check_title(title, aliases, release_title, hdlr, year, years=None): # non pa
 		title = title.replace('&', 'and').replace(year, '') # year only in meta title if an addon custom query added it
 		if title not in title_list: title_list_append(title)
 		release_title = re.sub(r'([(])(?=((19|20)[0-9]{2})).*?([)])', '\\2', release_title) #remove parenthesis only if surrounding a 4 digit date
-		t = re.split(r'%s' % hdlr, release_title, 1, re.I)[0].replace(year, '').replace('&', 'and')
+		t = re.split(matched_hdlr_pat, release_title, 1, re.I)[0].replace(year, '').replace('&', 'and')
 		if years:
 			for i in years: t = t.split(i)[0]
 		t = re.split(r'2160p|216op|4k|1080p|1o8op|108op|1o80p|720p|72op|480p|48op', t, 1, re.I)[0]
 		cleantitle_t = cleantitle.get(t)
-		if all(cleantitle.get(i) != cleantitle_t for i in title_list): return False
+		if all(cleantitle.get(i) != cleantitle_t and (not cleantitle.get(i) or cleantitle.get(i) not in cleantitle_t) for i in title_list): return False
 
 # filter to remove episode ranges that should be picked up in "filter_season_pack()" ex. "s01e01-08"
 		if hdlr != year: # equal for movies but not for shows

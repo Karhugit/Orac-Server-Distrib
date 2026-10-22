@@ -99,23 +99,45 @@ class ScraperManager:
         scraper_service = self.scrapers[provider]
         loop = asyncio.get_running_loop()
         
-        def _run_single():
+        def _run_single_with_data(target_data):
             if hasattr(scraper_service, 'scraper') and hasattr(scraper_service.scraper, 'sources'):
                 try:
-                    return scraper_service.scraper.__class__().sources(data, {})
+                    return scraper_service.scraper.__class__().sources(target_data, {})
                 except Exception:
                     pass
             if hasattr(scraper_service, 'scrape_sources'):
-                return scraper_service.scrape_sources(data)
+                return scraper_service.scrape_sources(target_data)
             elif hasattr(scraper_service, 'scraper') and hasattr(scraper_service.scraper, 'sources'):
-                return scraper_service.scraper.sources(data, {})
+                return scraper_service.scraper.sources(target_data, {})
             else:
                 scraper_obj = next((getattr(scraper_service, attr) for attr in dir(scraper_service) 
                                   if not attr.startswith('__') and hasattr(getattr(scraper_service, attr), 'sources')), None)
                 if scraper_obj:
-                    return scraper_obj.sources(data, {})
+                    return scraper_obj.sources(target_data, {})
                 log(f"ScraperManager: Provider '{provider}' has no valid synchronous 'sources' method", LOGERROR)
                 return []
+
+        def _run_single():
+            res = _run_single_with_data(data) or []
+            # For text-query scrapers, if anime Romaji title & absolute episode are present, also query Romaji + absolute_episode
+            text_scrapers = {'prowlarr', 'piratebay', 'limetorrents', 'kickass', 'torrentdownload', 'uindex', 'tbtorznab'}
+            if provider in text_scrapers and data.get('is_anime') and data.get('romaji_title'):
+                try:
+                    anime_data = dict(data)
+                    romaji = data['romaji_title']
+                    abs_ep = data.get('absolute_episode')
+                    if 'tvshowtitle' in anime_data:
+                        anime_data['tvshowtitle'] = romaji
+                        if abs_ep is not None:
+                            anime_data['anime_hdlr'] = f"{int(abs_ep):02d}"
+                    else:
+                        anime_data['title'] = romaji
+                    extra_res = _run_single_with_data(anime_data) or []
+                    if extra_res:
+                        res = list(res) + list(extra_res)
+                except Exception as e_anime:
+                    log(f"ScraperManager: Anime Romaji pass error on '{provider}': {e_anime}", LOGDEBUG)
+            return res
 
         def _run_packs(search_series):
             total_seasons = kwargs.get('total_seasons') or data.get('total_seasons')

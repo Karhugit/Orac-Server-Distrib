@@ -28,7 +28,12 @@ from resources.lib.trakt_maintenance_worker import TraktMaintenanceWorker
 from resources.lib.stale_episode_refresh import StaleEpisodeRefreshWorker
 from resources.lib.db_sync_manager import sync_lists_and_items, sync_single_list_items, remove_single_list_items
 from resources.lib.episodes_handler import get_next_episodes
-from resources.lib.watched import update_next_episode, mark_movie_watched, mark_tvshow_watched, drop_tvshow
+from resources.lib.watched import update_next_episode, mark_movie_watched, mark_tvshow_watched, drop_tvshow, scrobble_anime_playback
+from resources.lib.anime_service import AnimeCoordinateService, upsert_custom_override, get_custom_overrides, delete_custom_override
+from resources.lib.anilist_client import (
+    fetch_anime_list, fetch_anime_details, fetch_viewer_info,
+    scrobble_anilist_episode, get_anilist_credentials
+)
 from resources.lib.migrate_database import migrate_database
 from resources.lib.indexing import get_genres
 from resources.scrapers.scraper_manager import ScraperManager
@@ -145,7 +150,7 @@ def flat_qs(request: Request):
 def app_factory(
     trakt_handler=None, tmdb_handler=None, port=5555, movies_static_db_path=None, movies_dynamic_db_path=None, lists_db_path=None, tvshows_static_db_path=None,
     tvshows_dynamic_db_path=None, trakt_update_queue_path=None, config_db_path=None, ext_indexes_db_path=None, tags_db_path=None, scrapers_dir=None,
-    config_db_conn=None, db_manager=None, trakt_history_sync_db_path=None
+    config_db_conn=None, db_manager=None, trakt_history_sync_db_path=None, anime_mappings_db_path=None
 ):
 
     @asynccontextmanager
@@ -227,6 +232,16 @@ def app_factory(
             name="PosterCleanup"
         ).start()
 
+        # Startup Anime Dual-Indexing Bridge dataset sync (Manami + AniBridge + local overrides)
+        if getattr(application.state, "anime_service", None):
+            _threading.Thread(
+                target=application.state.anime_service.ensure_synced,
+                kwargs={"max_age_hours": 168},
+                daemon=True,
+                name="AnimeMappingsSync",
+            ).start()
+            log("[Orac] Anime Dual-Indexing Bridge background check started.", level=LOGINFO)
+
         # Background sync loop — runs every hour; also re-syncs providers and
         # checks for updates daily
         _provider_sync_counter = 0
@@ -264,6 +279,13 @@ def app_factory(
                             application.state.tmdb_handler,
                             application.state.config_db_path,
                         )
+                        if getattr(application.state, "anime_service", None):
+                            _threading.Thread(
+                                target=application.state.anime_service.ensure_synced,
+                                kwargs={"max_age_hours": 168},
+                                daemon=True,
+                                name="AnimeMappingsPeriodicSync",
+                            ).start()
                     except Exception as e:
                         log(f"[Orac] Provider re-sync error: {e}", level=LOGERROR)
 
@@ -326,6 +348,12 @@ def app_factory(
     app.state.tags_db_path = tags_db_path
     app.state.db_manager = db_manager
     app.state.trakt_history_sync_db_path = trakt_history_sync_db_path
+    app.state.anime_mappings_db_path = anime_mappings_db_path
+    try:
+        app.state.anime_service = AnimeCoordinateService(anime_mappings_db_path)
+    except Exception as e_as:
+        log(f"[Orac] Warning: failed to initialize AnimeCoordinateService: {e_as}", level=LOGWARNING)
+        app.state.anime_service = None
     if scrapers_dir:
         app.state.scraper_manager = ScraperManager(scrapers_dir)
     else:
@@ -503,6 +531,8 @@ def app_factory(
                         'trakt_user', 'trakt_token', 'trakt_refresh', 'trakt_expires',
                         'simkl.user', 'simkl_user', 'simkl.token',
                         'punchplay.user', 'punchplay.token',
+                        'anilist.user', 'anilist_user', 'anilist.token', 'anilist_token',
+                        'mal.token', 'mal_token',
                         'tmdb_user', 'tmdb.user', 'tmdb_session_id',
                         'mdblist_api',
                         'rd.token', 'rd.enabled', 'rd.refresh', 'rd.account_id',
@@ -527,6 +557,10 @@ def app_factory(
                 
                 punchplay_user = data.get('punchplay.user') or 'empty_setting'
                 punchplay_token = data.get('punchplay.token') or 'empty_setting'
+
+                anilist_user = data.get('anilist.user') or data.get('anilist_user') or 'empty_setting'
+                anilist_token = data.get('anilist.token') or data.get('anilist_token') or 'empty_setting'
+                mal_token = data.get('mal.token') or data.get('mal_token') or 'empty_setting'
                 
                 tmdb_user = data.get('tmdb_user') or data.get('tmdb.user') or 'empty_setting'
                 tmdb_session_id = data.get('tmdb_session_id') or 'empty_setting'
@@ -570,6 +604,11 @@ def app_factory(
                     "punchplay": {
                         "user": punchplay_user,
                         "token": punchplay_token
+                    },
+                    "anilist": {
+                        "user": anilist_user,
+                        "token": anilist_token,
+                        "mal_token": mal_token
                     },
                     "tmdb": {
                         "user": tmdb_user,
@@ -687,7 +726,8 @@ def app_factory(
             tmdb_handler=app.state.tmdb_handler,
             results_limit=results_limit,
             global_loop=asyncio.get_running_loop(),
-            config_db_path=app.state.config_db_path
+            config_db_path=app.state.config_db_path,
+            anime_service=getattr(app.state, 'anime_service', None)
         )
         return send_safe(status, body, content_type)
 
@@ -698,7 +738,8 @@ def app_factory(
         status, body, content_type = await handle_scrape_request(
             query, app.state.scraper_manager, app.state.movies_static_db_path, app.state.tvshows_static_db_path,
             tmdb_handler=app.state.tmdb_handler, results_limit=4, global_loop=asyncio.get_running_loop(),
-            config_db_path=app.state.config_db_path
+            config_db_path=app.state.config_db_path,
+            anime_service=getattr(app.state, 'anime_service', None)
         )
         return send_safe(status, body, content_type)
 
@@ -1058,6 +1099,17 @@ def app_factory(
                     "id": "punchplay",
                     "username": (punchplay_user if is_punchplay_auth else ""),
                     "authenticated": is_punchplay_auth,
+                    "can_auth": True
+                })
+
+                anilist_user = data.get('anilist.user') or data.get('anilist_user')
+                anilist_token = data.get('anilist.token') or data.get('anilist_token')
+                is_anilist_auth = bool(anilist_token and anilist_token not in ('empty_setting', ''))
+                platforms.append({
+                    "name": "AniList",
+                    "id": "anilist",
+                    "username": (anilist_user if (anilist_user and anilist_user not in ('empty_setting', '')) else ("Authorised" if is_anilist_auth else "")),
+                    "authenticated": is_anilist_auth,
                     "can_auth": True
                 })
 
@@ -3162,7 +3214,8 @@ def app_factory(
                 getattr(app.state, 'lists_db_path', None),
                 getattr(app.state, 'ext_indexes_db_path', None),
                 getattr(app.state, 'tags_db_path', None),
-                getattr(app.state, 'config_db_path', None)
+                getattr(app.state, 'config_db_path', None),
+                getattr(app.state, 'anime_mappings_db_path', None)
             ]
             if os.path.exists('scrapers.db'):
                 db_paths.append('scrapers.db')
@@ -3231,7 +3284,32 @@ def app_factory(
     async def put_watched(request: Request):
         query = parse_qs_fastapi(request)
         watched_type = query.get("type", [None])[0]
+        anilist_id_val = query.get("anilist_id", [None])[0]
         username = await get_t_user(app)
+
+        if anilist_id_val or watched_type == "anime":
+            if not anilist_id_val:
+                return PlainTextResponse("Missing anilist_id", status_code=400)
+            ep_val = query.get("absolute_episode", query.get("episode", [1]))[0]
+            pw = query.get("percent_watched", [None])[0]
+            percent = int(float(pw)) if pw else 100
+            await asyncio.to_thread(
+                scrobble_anime_playback,
+                anilist_id=int(anilist_id_val),
+                absolute_episode=int(ep_val or 1),
+                percent_watched=percent,
+                username=username,
+                tvshows_static_db_path=app.state.tvshows_static_db_path,
+                tvshows_dynamic_db_path=app.state.tvshows_dynamic_db_path,
+                movies_static_db_path=app.state.movies_static_db_path,
+                movies_dynamic_db_path=app.state.movies_dynamic_db_path,
+                trakt_queue_path=app.state.trakt_update_queue_path,
+                trakt_handler=app.state.trakt_handler,
+                tmdb_handler=app.state.tmdb_handler,
+                config_db_path=app.state.config_db_path,
+                anime_service=getattr(app.state, 'anime_service', None),
+            )
+            return Response(status_code=204)
         
         if watched_type == "episode":
             season = query.get("season", [None])[0]
@@ -3316,6 +3394,344 @@ def app_factory(
     async def update_s_tokens(request: Request):
         result = update_config_values(flat_qs(request), app.state.config_db_path)
         return JSONResponse(status_code=200, content={"status": "success", "message": "Simkl tokens updated"})
+
+    @app.put("/update_anilist_tokens")
+    async def update_al_tokens(request: Request):
+        params = flat_qs(request)
+        token = (params.get("anilist.token") or params.get("anilist_token") or "").strip()
+        if token and token not in ("empty_setting", ""):
+            viewer = await asyncio.to_thread(fetch_viewer_info, token)
+            if viewer and viewer.get("name"):
+                params["anilist.user"] = viewer["name"]
+                params["anilist_user"] = viewer["name"]
+                params["anilist.user_id"] = str(viewer.get("id", ""))
+                params["anilist.token"] = token
+                params["anilist_token"] = token
+        update_config_values(params, app.state.config_db_path)
+        return JSONResponse(status_code=200, content={"status": "success", "message": "AniList tokens updated"})
+
+    @app.post("/api/web/platforms/anilist/save")
+    async def web_anilist_save_api(request: Request):
+        try:
+            body = await request.json()
+            token = (body.get("token") or body.get("anilist_token") or "").strip()
+            mal_token = (body.get("mal_token") or "").strip()
+            if not token:
+                return JSONResponse(status_code=400, content={"success": False, "error": "Missing AniList token"})
+            viewer = await asyncio.to_thread(fetch_viewer_info, token)
+            if not viewer:
+                return JSONResponse(status_code=400, content={"success": False, "error": "Invalid AniList access token"})
+            username = viewer.get("name") or "anilist_user"
+            user_id = str(viewer.get("id") or "")
+            updates = {
+                "anilist.token": token,
+                "anilist_token": token,
+                "anilist.user": username,
+                "anilist_user": username,
+                "anilist.user_id": user_id,
+            }
+            if mal_token:
+                updates["mal.token"] = mal_token
+                updates["mal_token"] = mal_token
+            update_config_values(updates, app.state.config_db_path)
+            return JSONResponse(status_code=200, content={"success": True, "username": username, "user_id": user_id})
+        except Exception as e:
+            log(f"[AniList] Error saving AniList token: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/platforms/anilist/revoke")
+    async def web_anilist_revoke_api():
+        try:
+            update_config_values({
+                "anilist.token": "empty_setting",
+                "anilist_token": "empty_setting",
+                "anilist.user": "empty_setting",
+                "anilist_user": "empty_setting",
+                "anilist.user_id": "empty_setting",
+                "mal.token": "empty_setting",
+                "mal_token": "empty_setting",
+            }, app.state.config_db_path)
+            return JSONResponse(status_code=200, content={"success": True})
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    # =========================================================================
+    # ANIME DUAL-INDEXING BRIDGE ENDPOINTS (Kodi Client & Web Hooks)
+    # =========================================================================
+
+    def _get_anime_service():
+        svc = getattr(app.state, "anime_service", None)
+        if svc is None:
+            svc = AnimeCoordinateService(
+                getattr(app.state, "anime_mappings_db_path", None),
+                tmdb_handler=getattr(app.state, "tmdb_handler", None),
+                tvshows_static_db_path=getattr(app.state, "tvshows_static_db_path", None),
+            )
+            app.state.anime_service = svc
+        return svc
+
+    @app.get("/anime/status")
+    async def anime_status_route():
+        try:
+            svc = _get_anime_service()
+            status_data = await asyncio.to_thread(svc.get_sync_status)
+            creds = get_anilist_credentials(app.state.config_db_path)
+            status_data["anilist_authenticated"] = bool(creds.get("token"))
+            status_data["anilist_user"] = creds.get("user") or ""
+            status_data["mal_authenticated"] = bool(creds.get("mal_token"))
+            return JSONResponse(status_code=200, content={"success": True, **status_data})
+        except Exception as e:
+            log(f"[AnimeBridge] /anime/status error: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/anime/sync_mappings")
+    async def anime_sync_mappings_route(request: Request):
+        query = parse_qs_fastapi(request)
+        wait_sync = query.get("wait", ["false"])[0].lower() == "true"
+        svc = _get_anime_service()
+        if wait_sync:
+            res = await asyncio.to_thread(svc.sync_datasets)
+            return JSONResponse(status_code=200, content=res)
+        import threading
+        threading.Thread(target=svc.sync_datasets, daemon=True, name="ManualAnimeMappingsSync").start()
+        return JSONResponse(status_code=200, content={"success": True, "status": "started", "message": "Anime dataset ingestion started in background"})
+
+    @app.get("/anime/resolve")
+    async def anime_resolve_route(request: Request):
+        """
+        Bidirectional coordinate resolution endpoint:
+        - Anime -> Western: ?anilist_id=154587&episode=1 (or &absolute_episode=1)
+        - Western -> Anime: ?tmdb_id=209867&season=1&episode=1 (and optional &media_type=show|movie)
+        """
+        query = parse_qs_fastapi(request)
+        svc = _get_anime_service()
+        anilist_id_str = query.get("anilist_id", [None])[0]
+        tmdb_id_str = query.get("tmdb_id", [None])[0]
+
+        if anilist_id_str:
+            ep_str = query.get("episode", query.get("absolute_episode", [1]))[0]
+            try:
+                res = await asyncio.to_thread(svc.resolve_anime_to_western, int(anilist_id_str), int(ep_str or 1))
+                return JSONResponse(status_code=200, content=res)
+            except Exception as e:
+                return JSONResponse(status_code=400, content={"success": False, "error": str(e)})
+
+        if tmdb_id_str:
+            season_str = query.get("season", [None])[0]
+            ep_str = query.get("episode", [1])[0]
+            media_type = query.get("media_type", ["show" if season_str is not None else "movie"])[0]
+            try:
+                s_val = int(season_str) if season_str is not None else None
+                e_val = int(ep_str) if ep_str is not None else 1
+                res = await asyncio.to_thread(svc.resolve_western_to_anime, int(tmdb_id_str), s_val, e_val, media_type)
+                return JSONResponse(status_code=200, content=res)
+            except Exception as e:
+                return JSONResponse(status_code=400, content={"success": False, "error": str(e)})
+
+        return JSONResponse(status_code=400, content={"success": False, "error": "Provide anilist_id or tmdb_id"})
+
+    @app.get("/anime/aliases")
+    async def anime_aliases_route(request: Request):
+        """
+        Returns normalized Romaji, English, Native, and synonym titles plus scraper queries.
+        Accepts: anilist_id, mal_id, anidb_id, kitsu_id, tmdb_id, tvdb_id, or q (title/id), and optional episode.
+        """
+        query = parse_qs_fastapi(request)
+        svc = _get_anime_service()
+        ep_str = query.get("episode", query.get("absolute_episode", [None]))[0]
+        ep_num = int(ep_str) if ep_str and str(ep_str).isdigit() else None
+
+        identifier = {}
+        for k in ("anilist_id", "mal_id", "anidb_id", "kitsu_id", "simkl_id", "tmdb_id", "tvdb_id"):
+            val = query.get(k, [None])[0]
+            if val is not None:
+                identifier[k] = val
+
+        if not identifier:
+            q_val = query.get("q", query.get("id", [None]))[0]
+            if q_val is None:
+                return JSONResponse(status_code=400, content={"success": False, "error": "Missing media identifier"})
+            identifier = q_val
+
+        res = await asyncio.to_thread(svc.get_search_aliases, identifier, ep_num)
+        return JSONResponse(status_code=200, content=res)
+
+    @app.get("/anime/list")
+    async def anime_list_route(request: Request):
+        """
+        Kodi endpoint to browse native AniList anime menus/lists.
+        Query params:
+          - list_type: trending | popular | top_rated | seasonal | airing | upcoming | movies | search |
+                       user_watching | user_planning | user_completed | user_dropped | user_paused
+          - page: int (default 1)
+          - per_page: int (default 50)
+          - season: WINTER | SPRING | SUMMER | FALL (optional for seasonal)
+          - year / season_year: int (optional for seasonal)
+          - search / q: search query string
+          - genre: optional genre filter
+          - username: optional AniList username for user_* lists
+        """
+        query = parse_qs_fastapi(request)
+        svc = _get_anime_service()
+        creds = get_anilist_credentials(app.state.config_db_path)
+
+        list_type = query.get("list_type", query.get("name", ["trending"]))[0]
+        page = int(query.get("page", [1])[0] or 1)
+        per_page = int(query.get("per_page", [50])[0] or 50)
+        season = query.get("season", [None])[0]
+        season_year_raw = query.get("season_year", query.get("year", [None]))[0]
+        season_year = int(season_year_raw) if season_year_raw and str(season_year_raw).isdigit() else None
+        search_q = query.get("search", query.get("q", [None]))[0]
+        genre = query.get("genre", [None])[0]
+        username = query.get("username", query.get("user", [None]))[0] or creds.get("user") or None
+
+        res = await asyncio.to_thread(
+            fetch_anime_list,
+            list_type=list_type,
+            page=page,
+            per_page=per_page,
+            season=season,
+            season_year=season_year,
+            search=search_q,
+            genre=genre,
+            username=username,
+            token=creds.get("token") or None,
+            anime_service=svc,
+        )
+        return JSONResponse(status_code=200 if res.get("success") else 502, content=res)
+
+    @app.get("/anime/info/{anilist_id}")
+    async def anime_info_path_route(anilist_id: int):
+        svc = _get_anime_service()
+        creds = get_anilist_credentials(app.state.config_db_path)
+        details = await asyncio.to_thread(
+            fetch_anime_details,
+            int(anilist_id),
+            token=creds.get("token") or None,
+            anime_service=svc,
+        )
+        if not details:
+            return JSONResponse(status_code=404, content={"success": False, "error": f"AniList ID {anilist_id} not found"})
+        return JSONResponse(status_code=200, content={"success": True, **details})
+
+    @app.get("/anime/info")
+    async def anime_info_query_route(request: Request):
+        query = parse_qs_fastapi(request)
+        anilist_id = query.get("anilist_id", query.get("id", [None]))[0]
+        if not anilist_id:
+            return JSONResponse(status_code=400, content={"success": False, "error": "Missing anilist_id"})
+        return await anime_info_path_route(int(anilist_id))
+
+    @app.get("/anime/scrape")
+    async def anime_scrape_route(request: Request):
+        """
+        Scrapes streams for an anime by anilist_id + episode (or absolute_episode),
+        automatically translating coordinates to TMDB SxxExx AND injecting Romaji +
+        absolute episode queries for indexers.
+        """
+        query = parse_qs_fastapi(request)
+        if "item_type" not in query:
+            query["item_type"] = ["episode"]
+        results_limit = 0
+        if "results_limit" in query:
+            try:
+                results_limit = int(query["results_limit"][0])
+            except ValueError:
+                results_limit = 0
+        status, body, content_type = await handle_scrape_request(
+            query,
+            app.state.scraper_manager,
+            app.state.movies_static_db_path,
+            app.state.tvshows_static_db_path,
+            tmdb_handler=app.state.tmdb_handler,
+            results_limit=results_limit,
+            global_loop=asyncio.get_running_loop(),
+            config_db_path=app.state.config_db_path,
+            anime_service=_get_anime_service(),
+        )
+        return send_safe(status, body, content_type)
+
+    @app.put("/anime/watched")
+    @app.post("/anime/watched")
+    async def anime_watched_route(request: Request):
+        """
+        Bidirectional Scrobble Router endpoint for Anime playback on Kodi:
+        Accepts query params or JSON body with:
+          - anilist_id (int, required)
+          - episode or absolute_episode (int, default 1)
+          - percent_watched (int/float, default 100)
+        Updates AniList/MAL directly, translates to Western SxxExx coordinates,
+        and scrobbles to Trakt, Simkl, MDBList, and PunchPlay.
+        """
+        query = parse_qs_fastapi(request)
+        body_data = {}
+        try:
+            body_data = await request.json()
+        except Exception:
+            pass
+
+        anilist_id_val = body_data.get("anilist_id") or query.get("anilist_id", [None])[0]
+        if not anilist_id_val:
+            return JSONResponse(status_code=400, content={"success": False, "error": "anilist_id is required"})
+
+        ep_val = (
+            body_data.get("absolute_episode")
+            or body_data.get("episode")
+            or query.get("absolute_episode", query.get("episode", [1]))[0]
+            or 1
+        )
+        pw_val = body_data.get("percent_watched") or query.get("percent_watched", [100])[0] or 100
+        username = body_data.get("user") or query.get("user", [None])[0] or await get_t_user(app)
+
+        res = await asyncio.to_thread(
+            scrobble_anime_playback,
+            anilist_id=int(anilist_id_val),
+            absolute_episode=int(ep_val),
+            percent_watched=int(float(pw_val)),
+            username=username,
+            tvshows_static_db_path=app.state.tvshows_static_db_path,
+            tvshows_dynamic_db_path=app.state.tvshows_dynamic_db_path,
+            movies_static_db_path=app.state.movies_static_db_path,
+            movies_dynamic_db_path=app.state.movies_dynamic_db_path,
+            trakt_queue_path=app.state.trakt_update_queue_path,
+            trakt_handler=app.state.trakt_handler,
+            tmdb_handler=app.state.tmdb_handler,
+            config_db_path=app.state.config_db_path,
+            anime_service=_get_anime_service(),
+        )
+        return JSONResponse(status_code=200, content=res)
+
+    @app.get("/anime/overrides")
+    async def get_anime_overrides_route():
+        svc = _get_anime_service()
+        overrides = await asyncio.to_thread(get_custom_overrides, svc.db_path)
+        return JSONResponse(status_code=200, content={"success": True, "overrides": overrides})
+
+    @app.post("/anime/overrides")
+    async def post_anime_override_route(request: Request):
+        try:
+            body = await request.json()
+            svc = _get_anime_service()
+            res = await asyncio.to_thread(upsert_custom_override, body, svc.db_path)
+            return JSONResponse(status_code=200 if res.get("success") else 400, content=res)
+        except Exception as e:
+            return JSONResponse(status_code=400, content={"success": False, "error": str(e)})
+
+    @app.delete("/anime/overrides")
+    async def delete_anime_override_route(request: Request):
+        query = parse_qs_fastapi(request)
+        ov_id = query.get("id", [None])[0]
+        if not ov_id:
+            try:
+                body = await request.json()
+                ov_id = body.get("id")
+            except Exception:
+                pass
+        if not ov_id:
+            return JSONResponse(status_code=400, content={"success": False, "error": "Override id is required"})
+        svc = _get_anime_service()
+        deleted = await asyncio.to_thread(delete_custom_override, int(ov_id), svc.db_path)
+        return JSONResponse(status_code=200 if deleted else 404, content={"success": deleted})
 
     @app.post("/sync_trakt_to_mdblist")
     async def trigger_trakt_to_mdblist_sync(request: Request):

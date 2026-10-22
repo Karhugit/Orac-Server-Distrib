@@ -9,20 +9,56 @@ from resources.lib.log_utils import log, LOGERROR, LOGINFO, LOGWARNING, LOGDEBUG
 from resources.lib.config_handler import get_all_config
 from resources.lib.debrid_resolver import check_all_debrids_parallel, rank_and_filter_cached_results
 
-async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, tmdb_handler=None, results_limit=0, global_loop=None, config_db_path=None):
+async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, tmdb_handler=None, results_limit=0, global_loop=None, config_db_path=None, anime_service=None):
     """
     Handles a scrape request, enriching metadata if needed and optionally using racing mode.
+    Supports both standard TMDB scrape requests and native AniList anime scrape requests.
     """
     tmdb_id = query.get("tmdb_id", [None])[0]
-    item_type = query.get("item_type", ["movie"])[0]
+    anilist_id_param = query.get("anilist_id", [None])[0]
+    item_type = query.get("item_type", ["episode" if anilist_id_param else "movie"])[0]
     provider = query.get("provider", [None])[0] or query.get("scraper", [None])[0]
     search_type = query.get("search_type", ["sources"])[0]
     strict_dedupe = query.get("strict_dedupe", ["false"])[0].lower() == 'true'
     orac_scraping_pref = query.get("orac_scraping", ["true"])[0].lower() == 'true'
     check_debrid_pref = query.get("check_debrid", ["true"])[0].lower() == 'true'
 
-    if not tmdb_id:
-        return 400, json.dumps({"success": False, "error": "tmdb_id is required"}), "application/json"
+    if anime_service is None:
+        try:
+            from resources.lib.anime_service import AnimeCoordinateService
+            anime_service = AnimeCoordinateService()
+        except Exception as e_as:
+            log(f"[ScrapeHandler] Could not initialize AnimeCoordinateService: {e_as}", level=LOGDEBUG)
+
+    anime_context = None
+    anime_aliases_info = None
+    resolved_abs_episode = None
+
+    # 0. Native Anime Coordinate Resolution (when anilist_id is provided)
+    if anilist_id_param:
+        try:
+            al_id = int(anilist_id_param)
+            raw_ep = query.get("absolute_episode", query.get("episode", [None]))[0]
+            resolved_abs_episode = int(raw_ep) if raw_ep is not None else 1
+            if anime_service:
+                anime_context = anime_service.resolve_anime_to_western(al_id, resolved_abs_episode)
+                anime_aliases_info = anime_service.get_search_aliases({"anilist_id": al_id})
+                if anime_context and anime_context.get("tmdb_id") and not tmdb_id:
+                    tmdb_id = str(anime_context["tmdb_id"])
+                    query["tmdb_id"] = [tmdb_id]
+                if anime_context and anime_context.get("media_type") == "movie":
+                    item_type = "movie"
+                    query["item_type"] = ["movie"]
+                elif anime_context and anime_context.get("season") is not None and anime_context.get("episode") is not None:
+                    item_type = "episode"
+                    query["item_type"] = ["episode"]
+                    query["season"] = [str(anime_context["season"])]
+                    query["episode"] = [str(anime_context["episode"])]
+        except Exception as e_al:
+            log(f"[ScrapeHandler] Error resolving anilist_id {anilist_id_param}: {e_al}", level=LOGWARNING)
+
+    if not tmdb_id and not anilist_id_param:
+        return 400, json.dumps({"success": False, "error": "tmdb_id or anilist_id is required"}), "application/json"
 
     # 1. Metadata Enrichment
     scrape_data = _flatten_query_params(query)
@@ -33,7 +69,7 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
     if is_episode and (not scrape_data.get("tvshowtitle") or not scrape_data.get("show_imdb")):
         needs_enrichment = True
 
-    if needs_enrichment:
+    if needs_enrichment and tmdb_id:
          # Try local DB first
          db_data = _get_metadata_from_db(tmdb_id, item_type, movies_db, tvshows_db)
          if db_data:
@@ -61,6 +97,95 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
                              scrape_data[k] = v
                      if is_episode and tmdb_data.get('imdb_id'):
                          scrape_data['show_imdb'] = tmdb_data['imdb_id']
+
+    # Check if a Western tmdb_id maps to an Anime entry so we can enrich with Romaji & absolute episode aliases
+    if anime_service and not anime_aliases_info and tmdb_id:
+        try:
+            if is_episode and scrape_data.get("season") and scrape_data.get("episode"):
+                w_to_a = anime_service.resolve_western_to_anime(
+                    int(tmdb_id), int(scrape_data["season"]), int(scrape_data["episode"]), media_type="show"
+                )
+                if w_to_a and w_to_a.get("success") and w_to_a.get("anilist_id"):
+                    anime_context = w_to_a
+                    resolved_abs_episode = w_to_a.get("absolute_episode")
+                    anime_aliases_info = anime_service.get_search_aliases(
+                        {"anilist_id": w_to_a["anilist_id"], "tmdb_id": int(tmdb_id)},
+                        episode_num=resolved_abs_episode,
+                    )
+            else:
+                cand_aliases = anime_service.get_search_aliases({"tmdb_id": int(tmdb_id)})
+                if cand_aliases and (cand_aliases.get("ids") or {}).get("anilist_id"):
+                    anime_aliases_info = cand_aliases
+        except Exception as e_wa:
+            log(f"[ScrapeHandler] Western->Anime alias check error: {e_wa}", level=LOGDEBUG)
+
+    # Apply Anime Romaji titles, synonyms, and absolute episode metadata to scrape_data
+    if anime_aliases_info:
+        ids_map = anime_aliases_info.get("ids") or {}
+        romaji_list = anime_aliases_info.get("romaji") or []
+        english_list = anime_aliases_info.get("english") or []
+        all_titles = anime_aliases_info.get("all_titles") or []
+        romaji_primary = romaji_list[0] if romaji_list else (all_titles[0] if all_titles else "")
+        english_primary = english_list[0] if english_list else romaji_primary
+
+        scrape_data["is_anime"] = True
+        if ids_map.get("anilist_id"):
+            scrape_data["anilist_id"] = ids_map["anilist_id"]
+        if ids_map.get("mal_id"):
+            scrape_data["mal_id"] = ids_map["mal_id"]
+        if ids_map.get("imdb_id") and not scrape_data.get("imdb_id"):
+            scrape_data["imdb_id"] = ids_map["imdb_id"]
+            if is_episode and not scrape_data.get("show_imdb"):
+                scrape_data["show_imdb"] = ids_map["imdb_id"]
+        if romaji_primary:
+            scrape_data["romaji_title"] = romaji_primary
+        if resolved_abs_episode is not None:
+            scrape_data["absolute_episode"] = int(resolved_abs_episode)
+
+        # Fallback title/year/season/episode if TMDB enrichment was unavailable
+        if is_episode:
+            if not scrape_data.get("tvshowtitle") and (english_primary or romaji_primary):
+                scrape_data["tvshowtitle"] = english_primary or romaji_primary
+            if not scrape_data.get("season"):
+                scrape_data["season"] = str((anime_context or {}).get("season") or 1)
+            if not scrape_data.get("episode"):
+                scrape_data["episode"] = str((anime_context or {}).get("episode") or resolved_abs_episode or 1)
+        else:
+            if not scrape_data.get("title") and (english_primary or romaji_primary):
+                scrape_data["title"] = english_primary or romaji_primary
+
+        if not scrape_data.get("year") and anime_aliases_info.get("season_year"):
+            scrape_data["year"] = str(anime_aliases_info["season_year"])
+
+        # Enrich scrape_data['aliases'] with all Romaji, English, and synonym variants + abs_ep marker
+        existing_aliases = list(scrape_data.get("aliases") or [])
+        seen_alias_titles = {
+            (a.get("title") if isinstance(a, dict) else str(a)).lower()
+            for a in existing_aliases
+            if a
+        }
+        for t_var in all_titles:
+            if not t_var:
+                continue
+            # Skip non-ASCII Kanji/Kana in ASCII-only torrent title matching unless needed
+            if not any(ord(c) < 128 and c.isalnum() for c in t_var):
+                continue
+            if t_var.lower() not in seen_alias_titles:
+                seen_alias_titles.add(t_var.lower())
+                existing_aliases.append({
+                    "title": t_var,
+                    "country": "jp",
+                    "is_anime": True,
+                    "abs_ep": resolved_abs_episode,
+                })
+        scrape_data["aliases"] = existing_aliases
+        scrape_data["anime_search_queries"] = anime_aliases_info.get("search_queries") or []
+        log(
+            f"[ScrapeHandler] Enriched anime scrape_data: anilist={scrape_data.get('anilist_id')}, "
+            f"romaji='{romaji_primary}', abs_ep={resolved_abs_episode}, "
+            f"S{scrape_data.get('season')}E{scrape_data.get('episode')}, aliases={len(existing_aliases)}",
+            level=LOGINFO,
+        )
 
     # Ensure 'imdb' and 'tmdb_id' keys exist for scrapers as strings.
     for key in ["imdb", "imdb_id", "tmdb_id", "episode_imdb", "show_imdb"]:
@@ -216,9 +341,11 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
         "success": True, 
         "results": final_results, 
         "count": len(final_results),
-        "enriched": bool(tmdb_id and not query.get("name")),
+        "enriched": bool((tmdb_id or anilist_id_param) and not query.get("name")),
         "debrid_checked": debrid_checked
     }
+    if anime_context:
+        response_payload["anime_context"] = anime_context
     return 200, json.dumps(response_payload), "application/json"
 
 async def _run_scrapers_standard_shared(scraper_manager, providers, data, search_type, query, shared_results, shared_stats):

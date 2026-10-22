@@ -391,6 +391,7 @@ def reconcile_movies(db_path, trakt_data, simkl_data, mdblist_data, config_db_pa
                 
                 conn.commit()
                 log(f"[Sync Engine] Successfully reconciled {len(to_update)} movies.", level=LOGINFO)
+                _sync_reconciled_to_anilist(episode_tuples=None, movie_tuples=to_update, config_db_path=config_db_path)
         except Exception as e:
             log(f"[Sync Engine] Error reconciling movies: {e}", level=LOGERROR)
 
@@ -593,9 +594,58 @@ def reconcile_shows(db_path, trakt_data, simkl_data, mdblist_data, config_db_pat
                 
                 conn.commit()
                 log(f"[Sync Engine] Successfully reconciled {len(to_update)} tv show episodes.", level=LOGINFO)
+                _sync_reconciled_to_anilist(episode_tuples=to_update, movie_tuples=None, config_db_path=config_db_path)
         except Exception as e:
             log(f"[Sync Engine] Error reconciling shows: {e}", level=LOGERROR)
             raise
+
+
+def _sync_reconciled_to_anilist(episode_tuples=None, movie_tuples=None, config_db_path=None):
+    """
+    Checks newly reconciled Western TV episodes or movies against AnimeCoordinateService.
+    If any map to an AniList entry and AniList/MAL credentials are configured, updates
+    the highest watched absolute episode per AniList ID on AniList/MAL.
+    """
+    try:
+        from resources.lib.anilist_client import get_anilist_credentials, scrobble_anilist_episode
+        creds = get_anilist_credentials(config_db_path)
+        if not creds.get("token") and not creds.get("mal_token"):
+            return
+
+        from resources.lib.anime_service import AnimeCoordinateService
+        service = AnimeCoordinateService()
+        highest_by_anilist = {}
+
+        if episode_tuples:
+            for item in episode_tuples:
+                show_tmdb_id, season_num, ep_num = item[0], item[1], item[2]
+                res = service.resolve_western_to_anime(int(show_tmdb_id), int(season_num), int(ep_num), media_type="show")
+                if res and res.get("success") and res.get("anilist_id"):
+                    al_id = int(res["anilist_id"])
+                    abs_ep = int(res.get("absolute_episode") or 1)
+                    prev = highest_by_anilist.get(al_id)
+                    if not prev or abs_ep > prev["abs_ep"]:
+                        highest_by_anilist[al_id] = {"abs_ep": abs_ep, "mal_id": res.get("mal_id")}
+
+        if movie_tuples:
+            for item in movie_tuples:
+                movie_tmdb_id = item[0]
+                res = service.resolve_western_to_anime(int(movie_tmdb_id), None, 1, media_type="movie")
+                if res and res.get("success") and res.get("anilist_id"):
+                    al_id = int(res["anilist_id"])
+                    highest_by_anilist[al_id] = {"abs_ep": 1, "mal_id": res.get("mal_id")}
+
+        if highest_by_anilist:
+            log(f"[Sync Engine] Syncing {len(highest_by_anilist)} mapped anime entries to AniList...", level=LOGINFO)
+            for al_id, info in highest_by_anilist.items():
+                scrobble_anilist_episode(
+                    anilist_id=al_id,
+                    episode_num=info["abs_ep"],
+                    config_db_path=config_db_path,
+                    mal_id=info.get("mal_id"),
+                )
+    except Exception as e:
+        log(f"[Sync Engine] Error syncing reconciled Western items to AniList: {e}", level=LOGWARNING)
 
 
 def sync_providers_sync(movies_dynamic_db, tvshows_dynamic_db, trakt_handler, config_db_path, tvshows_static_db=None, force=False, tmdb_handler=None):

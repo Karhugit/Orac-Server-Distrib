@@ -82,6 +82,54 @@ def _format_tmdb_show_details(show_details, tmdb_handler):
 
     return show_result
 
+def _recover_anime_tmdb_id(dead_tmdb_id, tmdb_handler):
+    """
+    If a show TMDb ID was deleted or merged on TMDb (returning 404), checks anime_mappings.db
+    for a cross-referenced TVDB ID and resolves the canonical TMDb ID via find_by_external_id.
+    """
+    if not dead_tmdb_id or not tmdb_handler or not hasattr(tmdb_handler, "find_by_external_id"):
+        return None
+    try:
+        from resources.lib.config_loader import ConfigLoader
+        cfg = ConfigLoader()
+        anime_db = cfg.db_paths.get("anime_mappings", "anime_mappings.db")
+        with db_connect(anime_db) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT tvdb_id, anilist_id FROM anime_identities WHERE tmdb_id = ? AND tvdb_id IS NOT NULL LIMIT 1",
+                (int(dead_tmdb_id),),
+            )
+            r = cur.fetchone()
+            if not r:
+                cur.execute(
+                    """
+                    SELECT target_id FROM anime_episode_mappings
+                    WHERE source_descriptor = ? AND target_provider = 'tvdb_show' AND target_id IS NOT NULL LIMIT 1
+                    """,
+                    (f"tmdb_show:{dead_tmdb_id}:s1",),
+                )
+                r2 = cur.fetchone()
+                tvdb_id = r2[0] if r2 else None
+            else:
+                tvdb_id = r[0]
+
+            if tvdb_id and str(tvdb_id).isdigit():
+                res = tmdb_handler.find_by_external_id(str(tvdb_id), source="tvdb_id")
+                if res and res.get("id"):
+                    canonical_id = int(res["id"])
+                    # Auto-heal the identity row so future lookups hit the canonical ID directly
+                    cur.execute(
+                        "UPDATE anime_identities SET tmdb_id = ? WHERE tmdb_id = ? OR tvdb_id = ?",
+                        (canonical_id, int(dead_tmdb_id), int(tvdb_id)),
+                    )
+                    conn.commit()
+                    log(f"[ShowHandler] Auto-healed dead TMDb ID {dead_tmdb_id} -> canonical ID {canonical_id} (via TVDB {tvdb_id})", LOGINFO)
+                    return canonical_id
+    except Exception as exc:
+        log(f"[ShowHandler] Error in _recover_anime_tmdb_id: {exc}", LOGDEBUG)
+    return None
+
+
 def handle_show_request(show_tmdb_id, user, tvshows_static_db_path, tvshows_dynamic_db_path, tmdb_handler):
     """
     Returns enriched show data (including seasons and episodes)
@@ -106,6 +154,10 @@ def handle_show_request(show_tmdb_id, user, tvshows_static_db_path, tvshows_dyna
                 log(f"Show with TMDb ID {show_tmdb_id} not found in DB. Fetching from TMDb.", LOGINFO)
                 show_details = tmdb_handler.get_full_show_details(show_tmdb_id)
                 if not show_details:
+                    canonical_id = _recover_anime_tmdb_id(show_tmdb_id, tmdb_handler)
+                    if canonical_id and canonical_id != show_tmdb_id:
+                        log(f"[ShowHandler] Retrying handle_show_request with recovered TMDb ID {canonical_id}", LOGINFO)
+                        return handle_show_request(canonical_id, user, tvshows_static_db_path, tvshows_dynamic_db_path, tmdb_handler)
                     return 404, "Show not found in local database or TMDb", "text/plain"
                 
                 formatted_show = _format_tmdb_show_details(show_details, tmdb_handler)

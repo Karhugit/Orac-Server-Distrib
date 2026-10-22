@@ -303,7 +303,8 @@ def update_next_episode(
     season,
     episode,
     percent_watched,
-    username):
+    username,
+    _skip_anime_bridge=False):
 
     #Given a watched episode's tmdb_id of the show, season and episode this updates the watched_episodes table for the user.
 
@@ -434,6 +435,10 @@ def update_next_episode(
                 return
 
             if percent_watched is None:
+                percent_watched = 100
+
+            if not _skip_anime_bridge and percent_watched >= 90:
+                _bridge_western_to_anime_async(int(show_tmdb_id), int(season), int(episode), "show", DatabaseManager().get_path('config'))
                 percent_watched = 100
 
             # Queue update for each authorized watched tracking service
@@ -581,7 +586,7 @@ async def update_dynamic_movie_data(trakt_handler, tmdb_handler, username, movie
         if dynamic_conn:
             dynamic_conn.close()
 
-def mark_movie_watched(static_db_path, dynamic_db_path, trakt_queue_path, trakt_handler, tmdb_handler, movie_tmdb_id, percent_watched, username):
+def mark_movie_watched(static_db_path, dynamic_db_path, trakt_queue_path, trakt_handler, tmdb_handler, movie_tmdb_id, percent_watched, username, _skip_anime_bridge=False):
     #Given a watched movie's tmdb_id, this marks it as watched in the dynamic db for the user.
     #Opens and closes the database connections internally.
     if not username:
@@ -709,6 +714,8 @@ def mark_movie_watched(static_db_path, dynamic_db_path, trakt_queue_path, trakt_
             dynamic_conn.commit()
             trakt_queue_conn.commit()
             log(f"[Orac] Movie {movie_tmdb_id} marked as watched for user {username}", level=LOGINFO)
+            if not _skip_anime_bridge and percent_watched >= 90:
+                _bridge_western_to_anime_async(int(movie_tmdb_id), None, 1, "movie", DatabaseManager().get_path('config'))
             
             # Clear recommendations cache to remove this movie from suggestions
             recommendations.clear_user_cache(username)
@@ -906,4 +913,164 @@ def drop_tvshow(static_db_path, dynamic_db_path, trakt_queue_path, trakt_handler
 
     except Exception as e:
         log(f"[Orac] Error in drop_tvshow: {e}", level=LOGERROR)
-        return False
+        return False
+
+
+# ============================================================================
+# Bidirectional Anime <-> Western Scrobble Router
+# ============================================================================
+
+def _bridge_western_to_anime_async(tmdb_id, season, episode, media_type="show", config_db_path=None):
+    """
+    When a Western episode or movie is marked watched locally or via Trakt/Simkl sync,
+    checks if it maps to an AniList entry via AnimeCoordinateService; if so, updates
+    the corresponding absolute episode progress on AniList/MAL in a background thread.
+    """
+    import threading
+
+    def _worker():
+        try:
+            from resources.lib.anime_service import AnimeCoordinateService
+            from resources.lib.anilist_client import scrobble_anilist_episode, get_anilist_credentials
+
+            cfg_path = config_db_path or DatabaseManager().get_path('config')
+            creds = get_anilist_credentials(cfg_path)
+            if not creds.get("token") and not creds.get("mal_token"):
+                return
+
+            service = AnimeCoordinateService()
+            res = service.resolve_western_to_anime(
+                tmdb_id=int(tmdb_id),
+                season=int(season) if season is not None else None,
+                episode=int(episode or 1),
+                media_type=media_type,
+            )
+            if res and res.get("success") and res.get("anilist_id"):
+                al_id = int(res["anilist_id"])
+                abs_ep = int(res.get("absolute_episode") or 1)
+                log(
+                    f"[AnimeBridge] Western watched ({media_type} tmdb:{tmdb_id} S{season}E{episode}) "
+                    f"mapped to anilist:{al_id} ep {abs_ep} -> syncing to AniList",
+                    level=LOGINFO,
+                )
+                scrobble_anilist_episode(
+                    anilist_id=al_id,
+                    episode_num=abs_ep,
+                    config_db_path=cfg_path,
+                    mal_id=res.get("mal_id"),
+                )
+        except Exception as e:
+            log(f"[AnimeBridge] Error in Western->Anime scrobble bridge: {e}", level=LOGWARNING)
+
+    t = threading.Thread(target=_worker, daemon=True, name="AnimeScrobbleBridge")
+    t.start()
+
+
+def scrobble_anime_playback(
+    anilist_id: int,
+    absolute_episode: int = 1,
+    percent_watched: int = 100,
+    username: str = "local_user",
+    tvshows_static_db_path: str = None,
+    tvshows_dynamic_db_path: str = None,
+    movies_static_db_path: str = None,
+    movies_dynamic_db_path: str = None,
+    trakt_queue_path: str = None,
+    trakt_handler=None,
+    tmdb_handler=None,
+    config_db_path: str = None,
+    anime_service=None,
+):
+    """
+    Bidirectional Scrobble Router for Anime Played on Kodi:
+    1. Receives (anilist_id, absolute_episode) from Kodi client.
+    2. Updates AniList (and MAL if configured) directly with absolute_episode progress.
+    3. Translates (anilist_id, absolute_episode) -> (tmdb_id, season, episode) via AnimeCoordinateService.
+    4. Marks the Western coordinate watched in Orac's dynamic DB and queues sync to Trakt, Simkl, MDBList, and PunchPlay.
+    """
+    al_id = int(anilist_id)
+    abs_ep = max(1, int(absolute_episode or 1))
+    pw = int(float(percent_watched if percent_watched is not None else 100))
+    cfg_path = config_db_path or DatabaseManager().get_path('config')
+
+    if anime_service is None:
+        from resources.lib.anime_service import AnimeCoordinateService
+        anime_service = AnimeCoordinateService()
+
+    # 1. Translate Anime coordinate -> Western coordinate
+    western = anime_service.resolve_anime_to_western(al_id, abs_ep)
+    log(
+        f"[AnimeBridge] Playback scrobble for anilist:{al_id} ep {abs_ep} ({pw}%): "
+        f"resolved -> tmdb:{western.get('tmdb_id')} S{western.get('season')}E{western.get('episode')} "
+        f"(source={western.get('mapping_source')})",
+        level=LOGINFO,
+    )
+
+    # 2. Update AniList / MAL directly when playback >= 90%
+    anilist_result = {"success": False, "skipped": True}
+    if pw >= 90:
+        try:
+            from resources.lib.anilist_client import scrobble_anilist_episode
+            anilist_result = scrobble_anilist_episode(
+                anilist_id=al_id,
+                episode_num=abs_ep,
+                config_db_path=cfg_path,
+                mal_id=western.get("mal_id"),
+            )
+        except Exception as e_al:
+            log(f"[AnimeBridge] Direct AniList scrobble error: {e_al}", level=LOGWARNING)
+            anilist_result = {"success": False, "error": str(e_al)}
+
+    # 3. Scrobble translated Western coordinate to local DB + Trakt / Simkl / MDBList / PunchPlay
+    western_scrobbled = False
+    tmdb_id = western.get("tmdb_id")
+    media_type = western.get("media_type") or "show"
+    season_num = western.get("season")
+    episode_num = western.get("episode")
+
+    if tmdb_id:
+        try:
+            if media_type == "movie" or season_num is None:
+                if movies_static_db_path and movies_dynamic_db_path and trakt_queue_path:
+                    mark_movie_watched(
+                        movies_static_db_path,
+                        movies_dynamic_db_path,
+                        trakt_queue_path,
+                        trakt_handler,
+                        tmdb_handler,
+                        int(tmdb_id),
+                        percent_watched=pw,
+                        username=username,
+                        _skip_anime_bridge=True,
+                    )
+                    western_scrobbled = True
+            else:
+                if tvshows_static_db_path and tvshows_dynamic_db_path and trakt_queue_path:
+                    update_next_episode(
+                        tvshows_static_db_path,
+                        tvshows_dynamic_db_path,
+                        trakt_queue_path,
+                        trakt_handler,
+                        tmdb_handler,
+                        "episode",
+                        int(tmdb_id),
+                        0,
+                        int(season_num),
+                        int(episode_num),
+                        percent_watched=pw,
+                        username=username,
+                        _skip_anime_bridge=True,
+                    )
+                    western_scrobbled = True
+        except Exception as e_west:
+            log(f"[AnimeBridge] Error routing Western scrobble for tmdb:{tmdb_id}: {e_west}", level=LOGERROR)
+
+    return {
+        "success": True,
+        "anilist_id": al_id,
+        "absolute_episode": abs_ep,
+        "percent_watched": pw,
+        "anilist_scrobble": anilist_result,
+        "western_resolution": western,
+        "western_scrobbled": western_scrobbled,
+    }

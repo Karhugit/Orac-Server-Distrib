@@ -150,19 +150,66 @@ def get_pack_urls(base_link, search_queries, scraper_name, link_regex_pattern):
 
 def aliases_to_array(aliases, filter=None):
 	try:
+		if not aliases: return []
 		if all(isinstance(x, str) for x in aliases): return aliases
 		if not filter: filter = []
 		if isinstance(filter, str): filter = [filter]
-		return [x.get('title') for x in aliases if not filter or x.get('country') in filter]
+		out = []
+		for x in aliases:
+			if isinstance(x, str) and x:
+				out.append(x)
+			elif isinstance(x, dict) and x.get('title'):
+				if not filter or x.get('country') in filter:
+					out.append(x.get('title'))
+		return out
 	except:
 		log('Error occurred while processing aliases', LOGWARNING)
 		return []
 
+def _match_episode_hdlr(release_title, hdlr, aliases=None):
+	"""Returns the regex pattern that matched the episode marker in release_title, or None."""
+	if re.search(r'%s' % hdlr, release_title, re.I):
+		return r'%s' % hdlr
+	# Check anime absolute/episode patterns if aliases carry anime metadata or hdlr is numeric
+	candidate_eps = []
+	is_anime = False
+	if isinstance(aliases, list):
+		for item in aliases:
+			if isinstance(item, dict):
+				if item.get('is_anime'):
+					is_anime = True
+				if item.get('abs_ep') is not None:
+					try:
+						candidate_eps.append(int(item['abs_ep']))
+						is_anime = True
+					except (ValueError, TypeError):
+						pass
+	m_se = re.match(r'^S(\d+)E(\d+)$', str(hdlr), re.I)
+	if m_se and is_anime:
+		try:
+			ep_int = int(m_se.group(2))
+			if ep_int not in candidate_eps:
+				candidate_eps.append(ep_int)
+		except (ValueError, TypeError):
+			pass
+	elif str(hdlr).isdigit():
+		try:
+			candidate_eps.append(int(hdlr))
+		except (ValueError, TypeError):
+			pass
+	for ep_val in candidate_eps:
+		pat = r'(?:[.\s_-]-[.\s_-]|(?<![a-z0-9])e(?:p|pisode)?[.\s_-]?)0*%d(?:v\d+)?(?=[.\s_\-\[\(]|$)(?![0-9p])' % ep_val
+		if re.search(pat, release_title, re.I):
+			return pat
+	return None
+
 def check_title(title, aliases, release_title, hdlr, year, years=None): # non pack file title check, single eps and movies
+	matched_hdlr_pat = r'%s' % hdlr
 	if years: # for movies only, scraper to pass None for episodes
 		if not any(value in release_title for value in years): return False
 	else: 
-		if not re.search(r'%s' % hdlr, release_title, re.I): return False
+		matched_hdlr_pat = _match_episode_hdlr(release_title, hdlr, aliases)
+		if not matched_hdlr_pat: return False
 	aliases = aliases_to_array(aliases)
 	title_list = []
 	title_list_append = title_list.append
@@ -189,7 +236,7 @@ def check_title(title, aliases, release_title, hdlr, year, years=None): # non pa
 		match_found = False
 		for t in title_list:
 			ct = cleantitle.get(t)
-			if ct in cleaned_release_title:
+			if ct and ct in cleaned_release_title:
 				# If the title is short or a single word, substring matching is prone to false positives.
 				# Verify with a stricter word boundary check on the title portion of the release.
 				if len(ct) <= 5 or ' ' not in t:
@@ -201,7 +248,7 @@ def check_title(title, aliases, release_title, hdlr, year, years=None): # non pa
 								title_part = title_part[:match.start()]
 								break
 					else: # For shows, split by handler
-						match = re.search(r'%s' % hdlr, title_part, re.I)
+						match = re.search(matched_hdlr_pat, title_part, re.I)
 						if match:
 							title_part = title_part[:match.start()]
 					

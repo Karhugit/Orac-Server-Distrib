@@ -773,3 +773,129 @@ def init_trakt_history_sync_db(db_path=None, conn=None):
     finally:
         if close_conn and conn:
             conn.close()
+
+
+def init_anime_db(db_path=None, conn=None):
+    """
+    Initialize the two-layer Anime Identity & Episode Coordinate Mapping database.
+    - Layer 1 (Manami Project): anime_identities & anime_aliases
+    - Layer 2 (AniBridge Mappings): anime_episode_mappings & anime_custom_overrides
+    """
+    close_conn = False
+    if conn is None:
+        conn = DatabaseManager().get_connection(db_path)
+        close_conn = True
+    try:
+        cursor = conn.cursor()
+
+        # Layer 1: Global Anime Identity Cross-Reference Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS anime_identities (
+                anilist_id      INTEGER PRIMARY KEY,
+                mal_id          INTEGER,
+                anidb_id        INTEGER,
+                kitsu_id        INTEGER,
+                simkl_id        INTEGER,
+                tmdb_id         INTEGER,
+                tmdb_media_type TEXT DEFAULT 'tv',
+                tvdb_id         INTEGER,
+                imdb_id         TEXT,
+                title           TEXT,
+                title_romaji    TEXT,
+                title_english   TEXT,
+                title_native    TEXT,
+                anime_type      TEXT,
+                episodes        INTEGER,
+                status          TEXT,
+                season_name     TEXT,
+                release_year    INTEGER,
+                picture         TEXT,
+                thumbnail       TEXT,
+                synonyms_json   TEXT,
+                tags_json       TEXT,
+                updated_at      INTEGER DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_anime_id_mal ON anime_identities(mal_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_anime_id_anidb ON anime_identities(anidb_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_anime_id_kitsu ON anime_identities(kitsu_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_anime_id_simkl ON anime_identities(simkl_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_anime_id_tmdb ON anime_identities(tmdb_id, tmdb_media_type)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_anime_id_tvdb ON anime_identities(tvdb_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_anime_id_imdb ON anime_identities(imdb_id)")
+
+        # Layer 1: Normalized Search Aliases (Romaji, English, Kanji, Synonyms)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS anime_aliases (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                anilist_id       INTEGER NOT NULL,
+                alias            TEXT NOT NULL,
+                normalized_alias TEXT NOT NULL,
+                alias_type       TEXT DEFAULT 'synonym',
+                UNIQUE(anilist_id, alias),
+                FOREIGN KEY (anilist_id) REFERENCES anime_identities(anilist_id) ON DELETE CASCADE
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_anime_aliases_anilist ON anime_aliases(anilist_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_anime_aliases_norm ON anime_aliases(normalized_alias)")
+
+        # Layer 2: Episode Coordinate Mappings (AniBridge v3 / v2 descriptors & ranges)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS anime_episode_mappings (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_descriptor TEXT NOT NULL,
+                source_provider   TEXT NOT NULL,
+                source_id         TEXT NOT NULL,
+                source_scope      TEXT DEFAULT '',
+                target_descriptor TEXT NOT NULL,
+                target_provider   TEXT NOT NULL,
+                target_id         TEXT NOT NULL,
+                target_scope      TEXT DEFAULT '',
+                range_map_json    TEXT NOT NULL,
+                UNIQUE(source_descriptor, target_descriptor)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_aem_source ON anime_episode_mappings(source_provider, source_id, source_scope)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_aem_target ON anime_episode_mappings(target_provider, target_id, target_scope)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_aem_source_desc ON anime_episode_mappings(source_descriptor)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_aem_target_desc ON anime_episode_mappings(target_descriptor)")
+
+        # Layer 2: Custom Overrides Engine Table (takes priority over downloaded AniBridge rules)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS anime_custom_overrides (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                anilist_id        INTEGER,
+                tmdb_id           INTEGER,
+                tvdb_id           INTEGER,
+                media_type        TEXT DEFAULT 'tv',
+                season            INTEGER,
+                source_descriptor TEXT NOT NULL,
+                target_descriptor TEXT NOT NULL,
+                range_map_json    TEXT NOT NULL,
+                notes             TEXT,
+                updated_at        INTEGER DEFAULT (strftime('%s', 'now')),
+                UNIQUE(source_descriptor, target_descriptor)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_aco_anilist ON anime_custom_overrides(anilist_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_aco_tmdb ON anime_custom_overrides(tmdb_id, season)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_aco_source_desc ON anime_custom_overrides(source_descriptor)")
+
+        # Sync Metadata & Watermarks
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS anime_sync_meta (
+                key        TEXT PRIMARY KEY,
+                value      TEXT,
+                updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+
+        conn.commit()
+        return True
+    except Exception as e:
+        log(f"[Orac] Failed to initialize anime mappings database: {e}", level=LOGERROR)
+        return False
+    finally:
+        if close_conn and conn:
+            conn.close()

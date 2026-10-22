@@ -30,7 +30,7 @@ from resources.lib.db_init import (
     init_static_movie_db, init_dynamic_movie_db, init_lists_db,
     init_static_tvshows_db, init_dynamic_tvshows_db, init_update_queue,
     init_config_db, init_ext_indexes_db, init_tags_db, init_undesirables_db,
-    init_trakt_history_sync_db
+    init_trakt_history_sync_db, init_anime_db
 )
 from resources.lib.config_handler import get_config_value
 from resources.lib.log_utils import log, LOGERROR, LOGINFO
@@ -48,6 +48,7 @@ ext_indexes_db_path = db_paths["ext_indexes"]
 tags_db_path = db_paths["tags"]
 undesirables_db_path = db_paths["undesirables"]
 trakt_history_sync_db_path = db_paths.get("trakt_history_sync", "trakt_history_sync.db")
+anime_mappings_db_path = db_paths.get("anime_mappings", "anime_mappings.db")
 
 # Initialize Database Manager
 from resources.lib.database_manager import DatabaseManager
@@ -107,6 +108,9 @@ if not init_tags_db(tags_db_path):
 if not init_undesirables_db(undesirables_db_path):
     log("[Orac] Failed to initialize undesirables database", level=LOGERROR)
     init_success = False
+if not init_anime_db(anime_mappings_db_path):
+    log("[Orac] Failed to initialize anime_mappings database", level=LOGERROR)
+    init_success = False
 if not init_trakt_history_sync_db(trakt_history_sync_db_path):
     log("[Orac] Failed to initialize trakt_history_sync database", level=LOGERROR)
     init_success = False
@@ -151,7 +155,8 @@ start_http_server(
     tags_db_path=tags_db_path,
     scrapers_dir='resources/scrapers',
     db_manager=db_manager,
-    trakt_history_sync_db_path=trakt_history_sync_db_path
+    trakt_history_sync_db_path=trakt_history_sync_db_path,
+    anime_mappings_db_path=anime_mappings_db_path
 )
 
 while True:

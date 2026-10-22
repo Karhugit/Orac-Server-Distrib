@@ -4,6 +4,20 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.5.0] - 2026-10-23
+
+### Added
+- **Anime Dual-Indexing Bridge** - Extended Orac with a two-layer mapping architecture:
+  - **Layer 1 (Global Identity Mapping)**: Ingests weekly dumps from Manami Project (anime-offline-database.jsonl) into anime_identities and anime_aliases cross-referencing AniList, MAL, AniDB, Kitsu, Simkl, TMDb, TVDB, and IMDb.
+  - **Layer 2 (Episode Coordinate Routing)**: Ingests AniBridge mapping rules (mappings.min.json v3 and legacy v2 schemas) into anime_episode_mappings to translate between absolute episode numbers and Western season/episode coordinates.
+- **AnimeCoordinateService** - High-performance evaluation engine providing bidirectional coordinate resolution (resolve_anime_to_western, resolve_western_to_anime) and multi-language search alias extraction (Romaji, English, Japanese, and synonyms).
+- **Custom Overrides Engine** - Support for user-defined local overrides via anime_overrides.json or /anime/override API, with guaranteed priority over upstream datasets.
+- **Bidirectional Scrobble Router** - Integrated scrobbler routing:
+  - Marking anime watched updates AniList/MAL directly with absolute progress, resolves coordinates to TMDb/TVDB SxxExx, and scrobbles to Trakt, Simkl, MDBList, and PunchPlay.
+  - Reconciling Western watched items marks corresponding absolute episodes complete on AniList.
+- **AniList & MAL Endpoints** - Added /anime/list, /anime/info, /anime/resolve, /anime/aliases, /anime/status, and /anime/sync endpoints.
+- **Auto-Recovery for Deprecated/Merged TMDb IDs** - Automatically detects TMDb 404 errors for anime show IDs, resolves canonical TMDb IDs via TVDB cross-reference, and self-heals the mapping database.
+
 ## [1.4.5] — 2026-10-19
 
 ### Added

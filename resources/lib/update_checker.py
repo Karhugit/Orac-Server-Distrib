@@ -59,6 +59,9 @@ _PROTECTED_EXACT_NAMES = {
     "tzen_tokens.json",
     "orac.log",
     "orac.log.old",
+    "anime_overrides.json",
+    "anime_overrides.yaml",
+    "anime_overrides.yml",
 }
 _PROTECTED_DIR_NAMES = {
     "venv",

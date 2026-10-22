@@ -39,8 +39,8 @@ def get_quality_rank(q):
         return 2
     return 1
 
-def seas_ep_filter(season, episode, release_title):
-    """Filters release_title to check if it matches the specified season and episode."""
+def seas_ep_filter(season, episode, release_title, absolute_episode=None):
+    """Filters release_title to check if it matches the specified season and episode (or anime absolute_episode)."""
     if season is None or episode is None:
         return True
     try:
@@ -68,8 +68,20 @@ def seas_ep_filter(season, episode, release_title):
         rf'([.-]{str_season}[.-]?{episode_fill}[.-])',
         rf'(episode[.-]?{str_episode}[.-])',
         rf'([.-]e[p]?{episode_fill}[.-])',
+        rf'([.-]-?[.-]0*{str_episode}(?:v\d+)?[.-])',
         rf'(^(?=.*\.e?0*{episode_fill}\.)(?:(?!((?:s|season)[.-]?\d+[.-x]?(?:ep?|episode)[.-]?\d+)|\d+x\d+).)*$)'
     ]
+    if absolute_episode is not None:
+        try:
+            abs_int = int(absolute_episode)
+            abs_fill = str(abs_int).zfill(2)
+            patterns.extend([
+                rf'([.-]-?[.-]0*{abs_int}(?:v\d+)?[.-])',
+                rf'([.-]e[p]?0*{abs_fill}[.-])',
+                rf'(episode[.-]?0*{abs_int}[.-])',
+            ])
+        except (ValueError, TypeError):
+            pass
     regex = re.compile('|'.join(patterns), re.IGNORECASE)
     return bool(regex.search(title_clean))
 

@@ -26,6 +26,7 @@ class ConfigLoader:
                 "tags": str(self.project_root / "tags_cache.db"),
                 "undesirables": str(self.project_root / "undesirables.db"),
                 "trakt_history_sync": str(self.project_root / "trakt_history_sync.db"),
+                "anime_mappings": str(self.project_root / "anime_mappings.db"),
             },
             "TRAKT": {
                 "client_id": os.environ.get("TRAKT_CLIENT_ID", ""),

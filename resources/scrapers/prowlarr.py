@@ -49,9 +49,10 @@ class source(ConcurrentScraperBase):
 			if 'tvshowtitle' in data:
 				self.season = data['season']
 				self.episode = data['episode']
-				self.hdlr = 'S%02dE%02d' % (int(self.season), int(self.episode))
+				self.hdlr = data.get('anime_hdlr') or ('S%02dE%02d' % (int(self.season), int(self.episode)))
 				url = '%s%s' % (self.base_link, self.tvSearch_link)
-				params = {'type': 'search', 'limit': 100, 'categories': 5000, 'query': '%s %s' % (self.title.lower(), self.hdlr)}
+				cats = [5000, 5070] if data.get('is_anime') else 5000
+				params = {'type': 'search', 'limit': 100, 'categories': cats, 'query': '%s %s' % (self.title.lower(), self.hdlr)}
 			else:
 				self.hdlr = self.year
 				url = '%s%s' % (self.base_link, self.movieSearch_link)
