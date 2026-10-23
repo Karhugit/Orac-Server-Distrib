@@ -31,7 +31,7 @@ from resources.lib.episodes_handler import get_next_episodes
 from resources.lib.watched import update_next_episode, mark_movie_watched, mark_tvshow_watched, drop_tvshow, scrobble_anime_playback
 from resources.lib.anime_service import AnimeCoordinateService, upsert_custom_override, get_custom_overrides, delete_custom_override
 from resources.lib.anilist_client import (
-    fetch_anime_list, fetch_anime_details, fetch_viewer_info,
+    fetch_anime_list, fetch_anime_details, fetch_viewer_info, fetch_user_profile,
     scrobble_anilist_episode, get_anilist_credentials
 )
 from resources.lib.migrate_database import migrate_database
@@ -1104,7 +1104,10 @@ def app_factory(
 
                 anilist_user = data.get('anilist.user') or data.get('anilist_user')
                 anilist_token = data.get('anilist.token') or data.get('anilist_token')
-                is_anilist_auth = bool(anilist_token and anilist_token not in ('empty_setting', ''))
+                is_anilist_auth = bool(
+                    (anilist_user and anilist_user not in ('empty_setting', '')) or
+                    (anilist_token and anilist_token not in ('empty_setting', ''))
+                )
                 platforms.append({
                     "name": "AniList",
                     "id": "anilist",
@@ -3414,29 +3417,43 @@ def app_factory(
     async def web_anilist_save_api(request: Request):
         try:
             body = await request.json()
+            username = (body.get("username") or body.get("user") or body.get("anilist_user") or "").strip()
             token = (body.get("token") or body.get("anilist_token") or "").strip()
             mal_token = (body.get("mal_token") or "").strip()
-            if not token:
-                return JSONResponse(status_code=400, content={"success": False, "error": "Missing AniList token"})
-            viewer = await asyncio.to_thread(fetch_viewer_info, token)
-            if not viewer:
-                return JSONResponse(status_code=400, content={"success": False, "error": "Invalid AniList access token"})
-            username = viewer.get("name") or "anilist_user"
-            user_id = str(viewer.get("id") or "")
+
+            if not username and not token:
+                return JSONResponse(status_code=400, content={"success": False, "error": "Please provide an AniList username or token"})
+
+            user_id = ""
+            if token and token != "empty_setting":
+                viewer = await asyncio.to_thread(fetch_viewer_info, token)
+                if not viewer:
+                    return JSONResponse(status_code=400, content={"success": False, "error": "Invalid AniList access token"})
+                username = viewer.get("name") or username
+                user_id = str(viewer.get("id") or "")
+            elif username and username != "empty_setting":
+                profile = await asyncio.to_thread(fetch_user_profile, username)
+                if not profile:
+                    return JSONResponse(status_code=404, content={"success": False, "error": f"AniList user '{username}' not found"})
+                username = profile.get("name") or username
+                user_id = str(profile.get("id") or "")
+
             updates = {
-                "anilist.token": token,
-                "anilist_token": token,
                 "anilist.user": username,
                 "anilist_user": username,
                 "anilist.user_id": user_id,
             }
+            if token:
+                updates["anilist.token"] = token
+                updates["anilist_token"] = token
             if mal_token:
                 updates["mal.token"] = mal_token
                 updates["mal_token"] = mal_token
+
             update_config_values(updates, app.state.config_db_path)
             return JSONResponse(status_code=200, content={"success": True, "username": username, "user_id": user_id})
         except Exception as e:
-            log(f"[AniList] Error saving AniList token: {e}", level=LOGERROR)
+            log(f"[AniList] Error saving AniList auth: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
     @app.post("/api/web/platforms/anilist/revoke")

@@ -145,7 +145,7 @@ class source:
 			if 'tvshowtitle' in data:
 				season = data['season']
 				episode = data['episode']
-				hdlr = 'S%02dE%02d' % (int(season), int(episode))
+				hdlr = (data.get('date_hdlr') if data.get('is_daily') else None) or data.get('anime_hdlr') or ('S%02dE%02d' % (int(season), int(episode)))
 				url = '%s%s' % (self.base_link, self.tvSearch_link)
 				params = {'type': 'series', 'id': '%s:%s:%s' % (imdb, season, episode)}
 			else:

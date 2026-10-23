@@ -45,7 +45,7 @@ class source(ConcurrentScraperBase):
 			if 'tvshowtitle' in data:
 				self.season = data['season']
 				self.episode = data['episode']
-				self.hdlr = 'S%02dE%02d' % (int(self.season), int(self.episode))
+				self.hdlr = (data.get('date_hdlr') if data.get('is_daily') else None) or data.get('anime_hdlr') or ('S%02dE%02d' % (int(self.season), int(self.episode)))
 				url = '%s%s' % (self.base_link, self.tvSearch_link % (self.imdb, self.season, self.episode))
 			else:
 				self.hdlr = self.year

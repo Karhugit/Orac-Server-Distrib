@@ -1,13 +1,11 @@
 # Orac Server
 
-Orac Server is a Python-based media server application that integrates with Trakt, Simkl, TMDb and punchplay to manage your media library, track watched status, and scrape streams from various sources. It was originally designed as a Kodi addon service but has been adapted to run as a standalone server.
+Orac Server is a Python-based media server application that integrates with Trakt.tv and TMDb to manage your media library, track watched status, and scrape streams from various sources. It was originally designed as a Kodi addon service but has been adapted to run as a standalone server.
 
 ## Features
 
 - **Trakt Integration**: Syncs your lists, collection, and watched history with Trakt.tv.
 - **TMDb Integration**: Fetches metadata for movies and TV shows.
-- **SIMKL Integration**: Full V2 support
-- **Punchplay Integration**: Adheres to rate constraints
 - **Scraping**: multi-threaded scraping framework to find media streams (Torrents, etc.).
 - **Caching**: Uses local SQLite databases to cache metadata and reduce API calls.
 - **API**: Provides a JSON HTTP API for client applications to interact with.
@@ -15,18 +13,52 @@ Orac Server is a Python-based media server application that integrates with Trak
 ## Prerequisites
 
 - Python 3.8+
+- [Trakt.tv](https://trakt.tv/) API Application (Client ID & Secret)
+- [TMDb](https://www.themoviedb.org/) API Key
 
 ## Installation
 
-Download the zip file and extract locally
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/yourusername/orac_server.git
+    cd orac_server
+    ```
+
+2.  Install dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3.  Configure the application:
+    - Copy `config.example.json` to `config.json`.
+    - Edit `config.json` and fill in your API keys and paths.
+
+    ```json
+    {
+      "trakt": {
+        "client_id": "YOUR_TRAKT_CLIENT_ID",
+        "client_secret": "YOUR_TRAKT_CLIENT_SECRET"
+      },
+      "tmdb": {
+        "api_key": "YOUR_TMDB_API_KEY"
+      },
+      "server": {
+        "port": 5555
+      },
+      "env": {
+        "orac_env": "LOCAL",
+        "log_path": "."
+      }
+    }
+    ```
 
 ## Usage
 
 Start the server:
 
-Windows - double click start_server.bat
-Linux - start_server.sh
-Docker - Install docker image
+```bash
+python run_server.py
+```
 
 The server will start on the configured port (default: 5555).
 
@@ -41,7 +73,11 @@ The server will start on the configured port (default: 5555).
 
 ## Architecture
 
-- Local DB is source of truth, watched history/dropped shows are synced across all authorised services
+-   **`run_server.py`**: Entry point. initializes databases and starts the HTTP server.
+-   **`resources/lib/http_server.py`**: Handles HTTP requests and routes them to appropriate handlers.
+-   **`resources/scrapers/`**: Contains scraper modules.
+-   **`resources/lib/trakt_handler.py`**: Handles Trakt API authentication and requests.
+-   **`resources/lib/queue_worker.py`**: Background worker for processing Trakt updates.
 
 ## Data Storage
 

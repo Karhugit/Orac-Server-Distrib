@@ -39,10 +39,30 @@ def get_quality_rank(q):
         return 2
     return 1
 
-def seas_ep_filter(season, episode, release_title, absolute_episode=None):
-    """Filters release_title to check if it matches the specified season and episode (or anime absolute_episode)."""
+def seas_ep_filter(season, episode, release_title, absolute_episode=None, air_date=None, show_number=None):
+    """Filters release_title to check if it matches the specified season and episode (or anime absolute_episode, air_date, or show_number)."""
     if season is None or episode is None:
         return True
+
+    title_clean = re.sub(r'[^A-Za-z0-9-]+', '.', unquote(release_title).replace("'", "")).lower()
+
+    # 1. Date-based check (e.g. 2026.10.20, 2026-10-20, or 20261020)
+    if air_date:
+        m_date = re.search(r'(\d{4})[-./\s](\d{1,2})[-./\s](\d{1,2})', str(air_date))
+        if m_date:
+            y, m, d = m_date.group(1), m_date.group(2).zfill(2), m_date.group(3).zfill(2)
+            if re.search(rf'(?:^|[.-]){y}[.-]{m}[.-]{d}(?:[.-]|$)', title_clean, re.I):
+                return True
+            if re.search(rf'(?:^|[.-]){y}{m}{d}(?:[.-]|$)', title_clean, re.I):
+                return True
+
+    # 2. Show/episode sequence number check (e.g. #9642 or show.9642)
+    if show_number:
+        num_str = re.sub(r'[^\d]', '', str(show_number))
+        if num_str and len(num_str) >= 2:
+            if re.search(rf'(?:^|[.-]|show|ep|episode)[.-]?#?0*{num_str}(?:[.-]|$)', title_clean, re.I):
+                return True
+
     try:
         s_int, e_int = int(season), int(episode)
     except (ValueError, TypeError):
@@ -51,7 +71,6 @@ def seas_ep_filter(season, episode, release_title, absolute_episode=None):
     str_season, str_episode = str(s_int), str(e_int)
     season_fill, episode_fill = str_season.zfill(2), str_episode.zfill(2)
     str_ep_plus_1, str_ep_minus_1 = str(e_int + 1), str(e_int - 1)
-    title_clean = re.sub(r'[^A-Za-z0-9-]+', '.', unquote(release_title).replace("'", "")).lower()
 
     patterns = [
         rf'(s{season_fill}[.-]?e[p]?{episode_fill}[.-])',
@@ -264,7 +283,7 @@ def check_all_debrids_parallel(hashes, cfg, timeout=4):
 # STREAM RESOLVERS
 # =====================================================================
 
-def resolve_torbox(magnet_url, info_hash, token, title="", season=None, episode=None, timeout=15):
+def resolve_torbox(magnet_url, info_hash, token, title="", season=None, episode=None, timeout=15, air_date=None, show_number=None):
     """Unrestricts a magnet on TorBox and returns direct streaming URL."""
     try:
         headers = {'Authorization': f'Bearer {token}'}
@@ -285,7 +304,7 @@ def resolve_torbox(magnet_url, info_hash, token, title="", season=None, episode=
             return None
 
         if season is not None and episode is not None:
-            candidates = [f for f in candidates if seas_ep_filter(season, episode, f.get('short_name', ''))]
+            candidates = [f for f in candidates if seas_ep_filter(season, episode, f.get('short_name', ''), air_date=air_date, show_number=show_number)]
         else:
             candidates.sort(key=lambda x: x.get('size', 0), reverse=True)
 
@@ -302,7 +321,7 @@ def resolve_torbox(magnet_url, info_hash, token, title="", season=None, episode=
         log(f"[DebridResolver] TorBox resolve error: {e}", level=LOGERROR)
         return None
 
-def resolve_premiumize(magnet_url, info_hash, token, title="", season=None, episode=None, timeout=15):
+def resolve_premiumize(magnet_url, info_hash, token, title="", season=None, episode=None, timeout=15, air_date=None, show_number=None):
     """Unrestricts a magnet on Premiumize and returns direct streaming URL."""
     try:
         headers = {'Authorization': f'Bearer {token}'}
@@ -317,7 +336,7 @@ def resolve_premiumize(magnet_url, info_hash, token, title="", season=None, epis
             return None
 
         if season is not None and episode is not None:
-            valid_files = [f for f in valid_files if seas_ep_filter(season, episode, f.get('path', ''))]
+            valid_files = [f for f in valid_files if seas_ep_filter(season, episode, f.get('path', ''), air_date=air_date, show_number=show_number)]
         else:
             valid_files.sort(key=lambda x: int(x.get('size', 0)), reverse=True)
 
@@ -329,7 +348,7 @@ def resolve_premiumize(magnet_url, info_hash, token, title="", season=None, epis
         log(f"[DebridResolver] Premiumize resolve error: {e}", level=LOGERROR)
         return None
 
-def resolve_realdebrid(magnet_url, info_hash, token, title="", season=None, episode=None, timeout=15):
+def resolve_realdebrid(magnet_url, info_hash, token, title="", season=None, episode=None, timeout=15, air_date=None, show_number=None):
     """Unrestricts a magnet on Real-Debrid and returns direct streaming URL."""
     try:
         headers = {'Authorization': f'Bearer {token}'}
@@ -353,7 +372,7 @@ def resolve_realdebrid(magnet_url, info_hash, token, title="", season=None, epis
         log(f"[DebridResolver] Real-Debrid resolve error: {e}", level=LOGERROR)
         return None
 
-def resolve_stream(provider, magnet_url, info_hash, title="", season=None, episode=None, cfg=None):
+def resolve_stream(provider, magnet_url, info_hash, title="", season=None, episode=None, cfg=None, air_date=None, show_number=None):
     """
     Main dispatcher to resolve a magnet URL to a direct CDN stream link.
     """
@@ -362,9 +381,9 @@ def resolve_stream(provider, magnet_url, info_hash, title="", season=None, episo
 
     p_lower = (provider or '').lower()
     if 'torbox' in p_lower:
-        return resolve_torbox(magnet_url, info_hash, cfg.get('tb.token'), title, season, episode)
+        return resolve_torbox(magnet_url, info_hash, cfg.get('tb.token'), title, season, episode, air_date=air_date, show_number=show_number)
     elif 'premiumize' in p_lower or 'pm' in p_lower:
-        return resolve_premiumize(magnet_url, info_hash, cfg.get('pm.token'), title, season, episode)
+        return resolve_premiumize(magnet_url, info_hash, cfg.get('pm.token'), title, season, episode, air_date=air_date, show_number=show_number)
     elif 'easynews' in p_lower or 'en' == p_lower:
         from resources.lib.easynews_client import resolve_easynews
         return resolve_easynews(magnet_url, cfg=cfg)
@@ -482,6 +501,8 @@ def rank_and_filter_cached_results(results, cache_map, cfg, search_info=None, ex
             title = search_info.get('title', '') if search_info else ''
             season = search_info.get('season') if search_info else None
             episode = search_info.get('episode') if search_info else None
+            air_date = (search_info.get('air_date') or search_info.get('premiered')) if search_info else None
+            show_number = search_info.get('show_number') if search_info else None
             stream_url = resolve_stream(
                 top_item.get('debrid'),
                 top_item.get('url'),
@@ -489,7 +510,9 @@ def rank_and_filter_cached_results(results, cache_map, cfg, search_info=None, ex
                 title=title,
                 season=season,
                 episode=episode,
-                cfg=cfg
+                cfg=cfg,
+                air_date=air_date,
+                show_number=show_number
             )
             if stream_url:
                 top_item['stream_url'] = stream_url

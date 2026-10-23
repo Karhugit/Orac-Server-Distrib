@@ -2406,6 +2406,41 @@ Orac Server Port: 8000 (default)</div>
         </div>
     </div>
 
+    <!-- AniList Authorisation Modal -->
+    <div id="anilist-auth-modal" class="modal-overlay" onclick="closeAnilistAuthModal(event)" style="z-index: 1200;">
+        <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h2>Authorise AniList</h2>
+                <button class="modal-close-btn" onclick="toggleAnilistAuthModal(false)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            
+            <form id="anilist-auth-form" onsubmit="handleAnilistAuthSubmit(event)" style="display: flex; flex-direction: column; gap: 1.25rem;">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
+                    Enter your AniList username below to link your AniList watchlists (Watching, Plan to Watch, Completed) with Orac Server.
+                </p>
+                
+                <div class="filter-group">
+                    <label class="filter-label">AniList Username</label>
+                    <input type="text" id="modal-anilist-username" class="form-input" required placeholder="e.g. your_username" style="width: 100%; font-size: 0.85rem;">
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Personal Access Token <span style="color: var(--text-muted); font-weight: 400;">(Optional - for scrobbling progress)</span></label>
+                    <input type="password" id="modal-anilist-token" class="form-input" placeholder="Optional AniList token..." style="width: 100%; font-family: 'Fira Code', monospace; font-size: 0.85rem;">
+                </div>
+
+                <div id="modal-anilist-msg" style="display: none; font-size: 0.82rem; padding: 0.5rem 0.75rem; border-radius: 0.4rem;"></div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+                    <button type="button" class="btn-secondary" onclick="toggleAnilistAuthModal(false)">Cancel</button>
+                    <button type="submit" id="modal-anilist-submit-btn" class="btn-primary">Save & Authorise</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Fanart Authorisation Modal -->
     <div id="fanart-auth-modal" class="modal-overlay" onclick="closeFanartAuthModal(event)" style="z-index: 1200;">
         <div class="modal-container" style="max-width: 480px; height: auto; padding: 1.75rem;" onclick="event.stopPropagation()">
@@ -3468,6 +3503,12 @@ Orac Server Port: 8000 (default)</div>
                     } else {
                         actionBtnHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openAiostreamsAuthModal()">Authorise</button>`;
                     }
+                } else if (platform.id === 'anilist' || platform.name.toLowerCase() === 'anilist') {
+                    if (isAuth) {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokeAnilistAuth()">Revoke</button>`;
+                    } else {
+                        actionBtnHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openAnilistAuthModal()">Authorise</button>`;
+                    }
                 }
 
                 row.innerHTML = `
@@ -3526,6 +3567,108 @@ Orac Server Port: 8000 (default)</div>
                 console.error('Error updating Trakt -> MDBlist sync option', err);
                 if (syncCheckbox) syncCheckbox.checked = !enabled;
                 alert('Error connecting to server to update setting.');
+            }
+        }
+
+        // --- AniList Modal Handlers ---
+        function toggleAnilistAuthModal(show) {
+            const modal = document.getElementById('anilist-auth-modal');
+            if (show) {
+                modal.classList.add('visible');
+                document.getElementById('modal-anilist-username').value = '';
+                document.getElementById('modal-anilist-token').value = '';
+                const msg = document.getElementById('modal-anilist-msg');
+                msg.style.display = 'none';
+                msg.textContent = '';
+                setTimeout(() => document.getElementById('modal-anilist-username').focus(), 50);
+            } else {
+                modal.classList.remove('visible');
+            }
+        }
+
+        function openAnilistAuthModal() {
+            toggleAnilistAuthModal(true);
+        }
+
+        function closeAnilistAuthModal(e) {
+            if (e.target.id === 'anilist-auth-modal') {
+                toggleAnilistAuthModal(false);
+            }
+        }
+
+        async function handleAnilistAuthSubmit(e) {
+            e.preventDefault();
+            const username = (document.getElementById('modal-anilist-username').value || '').trim();
+            const token = (document.getElementById('modal-anilist-token').value || '').trim();
+            const msgEl = document.getElementById('modal-anilist-msg');
+            const submitBtn = document.getElementById('modal-anilist-submit-btn');
+
+            if (!username && !token) {
+                msgEl.style.display = 'block';
+                msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                msgEl.style.color = '#fb7185';
+                msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                msgEl.textContent = 'Please enter an AniList username.';
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Validating...';
+            msgEl.style.display = 'block';
+            msgEl.style.background = 'rgba(99, 102, 241, 0.15)';
+            msgEl.style.color = '#818cf8';
+            msgEl.style.border = '1px solid rgba(99, 102, 241, 0.3)';
+            msgEl.textContent = 'Validating with AniList...';
+
+            try {
+                const resp = await fetch('/api/web/platforms/anilist/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: username, token: token })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    msgEl.style.background = 'rgba(16, 185, 129, 0.15)';
+                    msgEl.style.color = '#34d399';
+                    msgEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                    msgEl.textContent = `Successfully authorised as ${data.username || username}!`;
+                    setTimeout(() => {
+                        toggleAnilistAuthModal(false);
+                        fetchPlatforms();
+                    }, 900);
+                } else {
+                    msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                    msgEl.style.color = '#fb7185';
+                    msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                    msgEl.textContent = data.error || 'Failed to authorise AniList';
+                }
+            } catch (err) {
+                msgEl.style.background = 'rgba(244, 63, 94, 0.15)';
+                msgEl.style.color = '#fb7185';
+                msgEl.style.border = '1px solid rgba(244, 63, 94, 0.3)';
+                msgEl.textContent = `Network error: ${err.message}`;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Save & Authorise';
+            }
+        }
+
+        async function revokeAnilistAuth() {
+            if (!confirm('Are you sure you want to revoke AniList authorisation?')) {
+                return;
+            }
+            try {
+                const resp = await fetch('/api/web/platforms/anilist/revoke', {
+                    method: 'POST'
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    fetchPlatforms();
+                } else {
+                    alert('Error revoking AniList: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Network error revoking AniList: ' + err.message);
             }
         }
 

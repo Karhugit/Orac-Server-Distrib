@@ -142,6 +142,27 @@ def fetch_viewer_info(token: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def fetch_user_profile(username: str) -> Optional[Dict[str, Any]]:
+    """Validates an AniList username and returns the public user profile."""
+    if not username or username == "empty_setting":
+        return None
+    query = """
+    query ($name: String) {
+      User(name: $name) {
+        id
+        name
+        avatar {
+          large
+        }
+      }
+    }
+    """
+    data = _graphql_request(query, variables={"name": username.strip()})
+    if data and data.get("User"):
+        return data["User"]
+    return None
+
+
 _MEDIA_FRAGMENT = """
 fragment MediaFields on Media {
   id

@@ -71,7 +71,11 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
 
     if needs_enrichment and tmdb_id:
          # Try local DB first
-         db_data = _get_metadata_from_db(tmdb_id, item_type, movies_db, tvshows_db)
+         db_data = _get_metadata_from_db(
+             tmdb_id, item_type, movies_db, tvshows_db,
+             season=scrape_data.get("season"),
+             episode=scrape_data.get("episode")
+         )
          if db_data:
              log(f"[ScrapeHandler] Enriched metadata from DB for TMDB ID {tmdb_id}: {db_data.get('title') or db_data.get('tvshowtitle')}", level=LOGINFO)
              # Update scrape_data with db_data, prioritizing query params if they exist
@@ -85,11 +89,16 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
          # Fallback to TMDb API if still missing critical data and we have a handler
          if tmdb_handler:
              still_needs = not scrape_data.get("title") and not scrape_data.get("tvshowtitle")
+             if is_episode and not scrape_data.get("air_date"): still_needs = True
              if is_episode and not scrape_data.get("show_imdb"): still_needs = True
              
              if still_needs:
                  log(f"[ScrapeHandler] Metadata still missing for {tmdb_id}, trying TMDb API fallback...", level=LOGINFO)
-                 tmdb_data = _get_metadata_from_tmdb(tmdb_id, item_type, tmdb_handler)
+                 tmdb_data = _get_metadata_from_tmdb(
+                     tmdb_id, item_type, tmdb_handler,
+                     season=scrape_data.get("season"),
+                     episode=scrape_data.get("episode")
+                 )
                  if tmdb_data:
                      log(f"[ScrapeHandler] Enriched metadata from TMDb API for {tmdb_id}.", level=LOGINFO)
                      for k, v in tmdb_data.items():
@@ -97,6 +106,78 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
                              scrape_data[k] = v
                      if is_episode and tmdb_data.get('imdb_id'):
                          scrape_data['show_imdb'] = tmdb_data['imdb_id']
+
+    # 1b. Date-Based & Daily Show Detection (e.g. Jeopardy, Wheel of Fortune, Late Night, News)
+    air_date = scrape_data.get('air_date') or scrape_data.get('premiered')
+    ep_title = scrape_data.get('title') or scrape_data.get('ep_name') or ''
+    show_number = None
+
+    if ep_title:
+        m_num = re.search(r'(?:show|ep|episode)?[.-]?#?(\d{2,6})', ep_title, re.I)
+        if m_num:
+            show_number = m_num.group(1)
+
+    if air_date:
+        m_date = re.search(r'(\d{4})[-./\s](\d{1,2})[-./\s](\d{1,2})', str(air_date))
+        if m_date:
+            y, m, d = m_date.group(1), m_date.group(2).zfill(2), m_date.group(3).zfill(2)
+            scrape_data['air_date'] = f"{y}-{m}-{d}"
+            scrape_data['premiered'] = f"{y}-{m}-{d}"
+            scrape_data['date_dot'] = f"{y}.{m}.{d}"
+            scrape_data['date_hyphen'] = f"{y}-{m}-{d}"
+            scrape_data['date_space'] = f"{y} {m} {d}"
+            if show_number:
+                scrape_data['show_number'] = show_number
+
+            show_title_lower = (scrape_data.get('tvshowtitle') or '').lower()
+            genres = scrape_data.get('genre') or scrape_data.get('genres') or []
+            genre_names = [g.get('name', '').lower() if isinstance(g, dict) else str(g).lower() for g in genres]
+
+            is_daily = False
+            daily_keywords = [
+                'jeopardy', 'wheel of fortune', 'the daily show', 'tonight show',
+                'late night', 'jimmy kimmel', 'stephen colbert', 'seth meyers',
+                'good morning', 'today show', 'wwe monday night raw',
+                'wwe friday night smackdown', 'aew collision', 'aew dynamite'
+            ]
+            if any(dk in show_title_lower for dk in daily_keywords):
+                is_daily = True
+            elif any(gn in ['news', 'talk'] for gn in genre_names):
+                is_daily = True
+            elif int(scrape_data.get('season') or 0) >= 30:
+                is_daily = True
+            elif query.get('is_daily', ['false'])[0].lower() in ('true', '1'):
+                is_daily = True
+
+            scrape_data['is_daily'] = is_daily
+            if is_daily:
+                scrape_data['date_hdlr'] = scrape_data['date_dot']
+                log(f"[ScrapeHandler] Daily show detected: '{scrape_data.get('tvshowtitle')}', air_date={scrape_data['air_date']}, date_hdlr={scrape_data['date_dot']}, show_number={show_number}", level=LOGINFO)
+
+            existing_aliases = list(scrape_data.get('aliases') or [])
+            clean_show = re.sub(r"[!?:,.-]+", " ", scrape_data.get("tvshowtitle") or "").replace("'", "").replace('"', "").strip()
+            clean_show = re.sub(r'\s+', ' ', clean_show)
+
+            date_aliases = [
+                f"{scrape_data.get('tvshowtitle')} {scrape_data['date_dot']}",
+                f"{clean_show} {scrape_data['date_dot']}",
+                f"{clean_show} {y}-{m}-{d}",
+                f"{clean_show} {y} {m} {d}"
+            ]
+            if show_number:
+                date_aliases.append(f"{clean_show} #{show_number}")
+                date_aliases.append(f"{clean_show} {show_number}")
+
+            for da in date_aliases:
+                existing_aliases.append({
+                    'title': da,
+                    'is_date': True,
+                    'air_date': f"{y}-{m}-{d}",
+                    'premiered': f"{y}-{m}-{d}",
+                    'date_dot': f"{y}.{m}.{d}",
+                    'show_number': show_number
+                })
+            scrape_data['aliases'] = existing_aliases
 
     # Check if a Western tmdb_id maps to an Anime entry so we can enrich with Romaji & absolute episode aliases
     if anime_service and not anime_aliases_info and tmdb_id:
@@ -240,15 +321,23 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
                 continue
             candidate_scrapers.append(s)
 
-        # Strictly select top 2 scrapers for primary execution
-        primary_providers = candidate_scrapers[:2]
+        # For daily/syndicated shows, prioritize text-based scrapers over Stremio/IMDb-manifest proxies
+        if scrape_data.get('is_daily'):
+            stremio_only = {'comet', 'torz', 'torrentio', 'mediafusion', 'aiostreams'}
+            text_scrapers = [s for s in candidate_scrapers if s.get('name') not in stremio_only]
+            stremio_scrapers = [s for s in candidate_scrapers if s.get('name') in stremio_only]
+            candidate_scrapers = text_scrapers + stremio_scrapers
+
+        # For daily shows, select top 4 candidate scrapers so multiple text trackers run in primary
+        num_primary = 4 if scrape_data.get('is_daily') else 2
+        primary_providers = candidate_scrapers[:num_primary]
         background_providers = candidate_scrapers[2:] + [s for s in all_scrapers if s.get('active', 1) == 0]
     
     # Launch concurrent Easynews search task if enabled
     easynews_task = None
     if run_easynews and (not provider or provider.lower() == 'easynews'):
         from resources.lib.easynews_client import search_easynews
-        easynews_task = asyncio.create_task(asyncio.to_thread(search_easynews, scrape_data, cfg, 5.0))
+        easynews_task = asyncio.create_task(asyncio.to_thread(search_easynews, scrape_data, cfg, 8.0))
 
     # Extract names for the stats keys
     primary_names = [p['name'] for p in primary_providers]
@@ -519,8 +608,8 @@ def _process_results(results, strict_dedupe=False):
     )
     return sorted_sources
 
-def _get_metadata_from_db(tmdb_id, item_type, movies_db, tvshows_db):
-    """Fetches title/year/imdb from local DB."""
+def _get_metadata_from_db(tmdb_id, item_type, movies_db, tvshows_db, season=None, episode=None):
+    """Fetches title/year/imdb and episode details from local DB."""
     try:
         if item_type == 'movie':
             with db_connect(movies_db) as conn:
@@ -543,16 +632,43 @@ def _get_metadata_from_db(tmdb_id, item_type, movies_db, tvshows_db):
                 """, (tmdb_id,))
                 row = cursor.fetchone()
                 
+                if row:
+                    data = dict(row)
+                    data['aliases'] = []
+                    if 'show_imdb' not in data and 'imdb_id' in data: data['show_imdb'] = data['imdb_id']
+                    if season is not None and episode is not None and row['show_trakt_id']:
+                        try:
+                            cursor.execute("""
+                                SELECT e.air_date, e.first_aired, e.episode_title, e.imdb_id as episode_imdb
+                                FROM episodes e
+                                WHERE e.show_id = ? AND e.season = ? AND e.episode_number = ?
+                            """, (row['show_trakt_id'], int(season), int(episode)))
+                            ep_row = cursor.fetchone()
+                            if ep_row:
+                                if ep_row['air_date']:
+                                    data['air_date'] = ep_row['air_date']
+                                    data['premiered'] = ep_row['air_date']
+                                elif ep_row['first_aired']:
+                                    data['air_date'] = str(ep_row['first_aired'])[:10]
+                                    data['premiered'] = data['air_date']
+                                if ep_row['episode_title'] and not data.get('title'):
+                                    data['title'] = ep_row['episode_title']
+                                if ep_row['episode_imdb'] and not data.get('episode_imdb'):
+                                    data['episode_imdb'] = ep_row['episode_imdb']
+                        except Exception:
+                            pass
+                    return data
+
                 # 2. If not found, check if it's an Episode ID and get the parent show details
-                if not row:
-                    cursor.execute("""
-                        SELECT s.title as tvshowtitle, s.year, s.imdb_id as show_imdb, s.show_trakt_id, 
-                               e.season, e.episode_number, e.episode_title as title, e.imdb_id as episode_imdb
-                        FROM episodes e
-                        JOIN shows s ON e.show_id = s.show_trakt_id
-                        WHERE e.tmdb_id = ?
-                    """, (tmdb_id,))
-                    row = cursor.fetchone()
+                cursor.execute("""
+                    SELECT s.title as tvshowtitle, s.year, s.imdb_id as show_imdb, s.show_trakt_id, 
+                           e.season, e.episode_number, e.episode_title as title, e.imdb_id as episode_imdb,
+                           e.air_date, e.first_aired
+                    FROM episodes e
+                    JOIN shows s ON e.show_id = s.show_trakt_id
+                    WHERE e.tmdb_id = ?
+                """, (tmdb_id,))
+                row = cursor.fetchone()
                 
                 if row:
                     data = dict(row)
@@ -560,6 +676,12 @@ def _get_metadata_from_db(tmdb_id, item_type, movies_db, tvshows_db):
                     if 'title' not in data: data['title'] = ""
                     if 'show_imdb' not in data and 'imdb_id' in data: data['show_imdb'] = data['imdb_id']
                     if 'episode_imdb' not in data: data['episode_imdb'] = ""
+                    if row['air_date']:
+                        data['air_date'] = row['air_date']
+                        data['premiered'] = row['air_date']
+                    elif row['first_aired']:
+                        data['air_date'] = str(row['first_aired'])[:10]
+                        data['premiered'] = data['air_date']
                     # Convert season/episode to strings if they were found via episode lookup
                     if 'season' in data: data['season'] = str(data['season'])
                     if 'episode_number' in data: 
@@ -570,8 +692,8 @@ def _get_metadata_from_db(tmdb_id, item_type, movies_db, tvshows_db):
         log(f"[ScrapeHandler] DB metadata fetch failed: {e}", level=LOGERROR)
     return None
 
-def _get_metadata_from_tmdb(tmdb_id, item_type, tmdb_handler):
-    """Fetches title/year/imdb from TMDb API."""
+def _get_metadata_from_tmdb(tmdb_id, item_type, tmdb_handler, season=None, episode=None):
+    """Fetches title/year/imdb and episode air_date from TMDb API."""
     try:
         if item_type == 'movie':
             success, details = tmdb_handler.get_movie_details_from_tmdb(tmdb_id)
@@ -588,15 +710,33 @@ def _get_metadata_from_tmdb(tmdb_id, item_type, tmdb_handler):
             # Try fetching as show first with external_ids appended
             show_data = tmdb_handler._get(f"/tv/{tmdb_id}", params={"append_to_response": "external_ids"})
             if show_data and "name" in show_data:
-                 show_imdb_id = show_data.get("external_ids", {}).get("imdb_id", "")
-                 return {
-                     "tvshowtitle": show_data.get("name"),
-                     "title": "", # Unknown episode title at this stage
-                     "year": show_data.get("first_air_date", "")[:4],
-                     "imdb_id": show_imdb_id,
-                     "show_imdb": show_imdb_id,
-                     "aliases": []
-                 }
+                show_imdb_id = show_data.get("external_ids", {}).get("imdb_id", "")
+                ep_title = ""
+                ep_air_date = ""
+                ep_imdb = ""
+                if season is not None and episode is not None:
+                    try:
+                        ep_data = tmdb_handler._get(f"/tv/{tmdb_id}/season/{season}/episode/{episode}")
+                        if ep_data:
+                            ep_title = ep_data.get("name", "")
+                            ep_air_date = ep_data.get("air_date", "")
+                            if ep_data.get("external_ids", {}).get("imdb_id"):
+                                ep_imdb = ep_data["external_ids"]["imdb_id"]
+                    except Exception:
+                        pass
+                return {
+                    "tvshowtitle": show_data.get("name"),
+                    "title": ep_title,
+                    "air_date": ep_air_date,
+                    "premiered": ep_air_date,
+                    "year": show_data.get("first_air_date", "")[:4],
+                    "imdb_id": show_imdb_id,
+                    "show_imdb": show_imdb_id,
+                    "episode_imdb": ep_imdb,
+                    "genres": show_data.get("genres", []),
+                    "type": show_data.get("type", ""),
+                    "aliases": []
+                }
             else:
                 # Might be an episode ID, try fetching episode details
                 # But TMDb needs show_id/season/episode to get episode details via /tv/{show_id}/season/{s}/episode/{e}

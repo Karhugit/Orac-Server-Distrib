@@ -57,7 +57,7 @@ class source(ConcurrentScraperBase):
 			self.episode = data.get('episode')
 			
 			if self.season and self.episode:
-				self.hdlr = 'S%02dE%02d' % (int(self.season), int(self.episode))
+				self.hdlr = (data.get('date_hdlr') if data.get('is_daily') else None) or data.get('anime_hdlr') or ('S%02dE%02d' % (int(self.season), int(self.episode)))
 			else:
 				self.hdlr = self.year
 			

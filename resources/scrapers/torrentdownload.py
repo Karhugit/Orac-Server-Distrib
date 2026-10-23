@@ -40,7 +40,7 @@ class source(ConcurrentScraperBase):
 			if 'tvshowtitle' in data:
 				self.title = data['tvshowtitle'].replace('&', 'and').replace('Special Victims Unit', 'SVU').replace('/', ' ').replace('$', 's')
 				self.episode_title = data['title']
-				self.hdlr = 'S%02dE%02d' % (int(data['season']), int(data['episode']))
+				self.hdlr = (data.get('date_hdlr') if data.get('is_daily') else None) or data.get('anime_hdlr') or ('S%02dE%02d' % (int(data['season']), int(data['episode'])))
 			else:
 				self.title = data['title'].replace('&', 'and').replace('/', ' ').replace('$', 's')
 				self.episode_title = None

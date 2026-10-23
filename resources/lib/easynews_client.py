@@ -92,58 +92,84 @@ def search_easynews(scrape_data, cfg, timeout=7):
     episode = scrape_data.get('episode')
 
     search_title = clean_file_name(title)
-    if is_episode and season is not None and episode is not None:
+    air_date = scrape_data.get('air_date') or scrape_data.get('premiered')
+    show_number = scrape_data.get('show_number')
+    is_daily = scrape_data.get('is_daily', False)
+    date_space = scrape_data.get('date_space')
+    date_dot = scrape_data.get('date_dot')
+
+    queries_to_try = []
+    if is_episode and is_daily and air_date and (date_space or date_dot):
+        queries_to_try.append(f"{search_title} {date_space or date_dot}")
+        if show_number:
+            queries_to_try.append(f"{search_title} {show_number}")
+        if season is not None and episode is not None:
+            try:
+                queries_to_try.append(f"{search_title} S{int(season):02d}E{int(episode):02d}")
+            except (ValueError, TypeError):
+                pass
+    elif is_episode and season is not None and episode is not None:
         try:
             s_int, e_int = int(season), int(episode)
-            query = f"{search_title} S{s_int:02d}E{e_int:02d}"
+            queries_to_try.append(f"{search_title} S{s_int:02d}E{e_int:02d}")
         except (ValueError, TypeError):
-            query = f"{search_title}"
+            queries_to_try.append(f"{search_title}")
+        if air_date and (date_space or date_dot):
+            queries_to_try.append(f"{search_title} {date_space or date_dot}")
     else:
-        query = f"{search_title} {year}".strip()
-
-    log(f"[EasyNews] Querying Solr search for: '{query}'", level=LOGINFO)
+        queries_to_try.append(f"{search_title} {year}".strip())
 
     user_info = f"{username}:{password}".encode('utf-8')
     auth_header = 'Basic ' + base64.b64encode(user_info).decode('utf-8')
-
-    params = {
-        'st': 'adv',
-        'sb': 1,
-        'fex': VIDEO_EXT_STR,
-        'fty[]': 'VIDEO',
-        'spamf': 1,
-        'u': 1,
-        'gx': 1,
-        'pno': 1,
-        'sS': 3,
-        's1': 'relevance',
-        's1d': '-',
-        'pby': 1000,
-        'safeO': 0,
-        'gps': query
-    }
-
     url = 'https://members.easynews.com/2.0/search/solr-search/advanced'
     headers = {
         'Authorization': auth_header,
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
     }
 
-    try:
-        resp = requests.get(url, params=params, headers=headers, timeout=timeout)
-        if resp.status_code != 200:
-            log(f"[EasyNews] HTTP {resp.status_code} from search API", level=LOGWARNING)
-            return []
-        data = resp.json()
-    except Exception as e:
-        log(f"[EasyNews] Search exception: {e}", level=LOGERROR)
-        return []
+    dl_farm = None
+    dl_port = None
+    files = []
+    query = queries_to_try[0] if queries_to_try else search_title
 
-    dl_farm = data.get('dlFarm')
-    dl_port = data.get('dlPort')
-    files = data.get('data', [])
+    for candidate_query in queries_to_try:
+        query = candidate_query
+        log(f"[EasyNews] Querying Solr search for: '{query}'", level=LOGINFO)
+        params = {
+            'st': 'adv',
+            'sb': 1,
+            'fex': VIDEO_EXT_STR,
+            'fty[]': 'VIDEO',
+            'spamf': 1,
+            'u': 1,
+            'gx': 1,
+            'pno': 1,
+            'sS': 3,
+            's1': 'relevance',
+            's1d': '-',
+            'pby': 1000,
+            'safeO': 0,
+            'gps': query
+        }
+
+        try:
+            resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+            if resp.status_code != 200:
+                log(f"[EasyNews] HTTP {resp.status_code} for '{query}'", level=LOGWARNING)
+                continue
+            data = resp.json()
+            dl_farm = data.get('dlFarm')
+            dl_port = data.get('dlPort')
+            files = data.get('data', [])
+            if files and dl_farm and dl_port:
+                log(f"[EasyNews] Found {len(files)} raw files for query '{query}'", level=LOGINFO)
+                break
+        except Exception as e:
+            log(f"[EasyNews] Search exception for '{query}': {e}", level=LOGERROR)
+            continue
+
     if not files or not dl_farm or not dl_port:
-        log(f"[EasyNews] No results returned for '{query}'", level=LOGINFO)
+        log(f"[EasyNews] No results returned for queries: {queries_to_try}", level=LOGINFO)
         return []
 
     streaming_base = f"https://{quote(username)}:{quote(password)}@members.easynews.com/dl"
@@ -176,9 +202,9 @@ def search_easynews(scrape_data, cfg, timeout=7):
             if any(ex in post_title_lower for ex in EXTRAS):
                 continue
 
-            # Check episode filter if episode search
+            # Check episode filter if episode search (supports SxxExx, air_date, and show_number)
             if is_episode and season is not None and episode is not None:
-                if not seas_ep_filter(season, episode, post_title):
+                if not seas_ep_filter(season, episode, post_title, air_date=air_date, show_number=show_number):
                     continue
 
             # Estimate quality & size

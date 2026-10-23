@@ -166,10 +166,47 @@ def aliases_to_array(aliases, filter=None):
 		log('Error occurred while processing aliases', LOGWARNING)
 		return []
 
-def _match_episode_hdlr(release_title, hdlr, aliases=None):
+def _match_episode_hdlr(release_title, hdlr, aliases=None, air_date=None, show_number=None):
 	"""Returns the regex pattern that matched the episode marker in release_title, or None."""
-	if re.search(r'%s' % hdlr, release_title, re.I):
+	if hdlr and re.search(r'%s' % hdlr, release_title, re.I):
 		return r'%s' % hdlr
+
+	# Check date patterns (e.g. 2026.10.20, 2026-10-20, 2026 10 20)
+	candidate_dates = []
+	candidate_numbers = []
+	if air_date:
+		candidate_dates.append(str(air_date))
+	if show_number:
+		candidate_numbers.append(str(show_number))
+
+	if isinstance(aliases, list):
+		for item in aliases:
+			if isinstance(item, dict):
+				if item.get('air_date'):
+					candidate_dates.append(str(item['air_date']))
+				if item.get('premiered'):
+					candidate_dates.append(str(item['premiered']))
+				if item.get('show_number'):
+					candidate_numbers.append(str(item['show_number']))
+
+	for ad in candidate_dates:
+		m_date = re.search(r'(\d{4})[-./\s](\d{1,2})[-./\s](\d{1,2})', str(ad))
+		if m_date:
+			y, m, d = m_date.group(1), m_date.group(2).zfill(2), m_date.group(3).zfill(2)
+			date_pat = r'(?<!\d)%s[.\s_-]%s[.\s_-]%s(?!\d)' % (y, m, d)
+			if re.search(date_pat, release_title, re.I):
+				return date_pat
+			nodate_pat = r'(?<!\d)%s%s%s(?!\d)' % (y, m, d)
+			if re.search(nodate_pat, release_title, re.I):
+				return nodate_pat
+
+	for num in candidate_numbers:
+		clean_num = re.sub(r'[^\d]', '', str(num))
+		if clean_num and len(clean_num) >= 2:
+			num_pat = r'(?:[.\s_-]|^)(?:show[.\s_-]?)?#?0*%s(?=[.\s_\-\[\(]|$)' % clean_num
+			if re.search(num_pat, release_title, re.I):
+				return num_pat
+
 	# Check anime absolute/episode patterns if aliases carry anime metadata or hdlr is numeric
 	candidate_eps = []
 	is_anime = False
@@ -203,12 +240,12 @@ def _match_episode_hdlr(release_title, hdlr, aliases=None):
 			return pat
 	return None
 
-def check_title(title, aliases, release_title, hdlr, year, years=None): # non pack file title check, single eps and movies
+def check_title(title, aliases, release_title, hdlr, year, years=None, air_date=None, show_number=None): # non pack file title check, single eps and movies
 	matched_hdlr_pat = r'%s' % hdlr
 	if years: # for movies only, scraper to pass None for episodes
 		if not any(value in release_title for value in years): return False
 	else: 
-		matched_hdlr_pat = _match_episode_hdlr(release_title, hdlr, aliases)
+		matched_hdlr_pat = _match_episode_hdlr(release_title, hdlr, aliases, air_date=air_date, show_number=show_number)
 		if not matched_hdlr_pat: return False
 	aliases = aliases_to_array(aliases)
 	title_list = []
@@ -646,9 +683,10 @@ def info_from_name(release_title, title, year, hdlr=None, episode_title=None, se
 
 def release_title_format(release_title):
 	try:
-		release_title = release_title.lower().replace("'", "").lstrip('.').rstrip('.')
-		fmt = '.%s.' % re.sub(r'[^a-z0-9-~]+', '.', release_title).replace('.-.', '-').replace('-.', '-').replace('.-', '-').replace('--', '-')
-		return fmt
+		release_title = release_title.lower().replace("'", "")
+		fmt = re.sub(r'[^a-z0-9-~]+', '.', release_title).replace('.-.', '-').replace('-.', '-').replace('.-', '-').replace('--', '-')
+		fmt = re.sub(r'\.+', '.', fmt).strip('.')
+		return f".{fmt}." 
 	except:
 		log('Error occurred while formatting release title', LOGWARNING)
 		return release_title

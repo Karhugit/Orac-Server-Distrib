@@ -4,6 +4,13 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.5.1] - 2026-10-23
+
+### Added
+- **Date-Based Episode Scraping & Query Generation** — Added support for daily and syndicated TV shows (e.g. Jeopardy, daily talk shows) identified by air date (`YYYY-MM-DD`, `YYYY.MM.DD`, `YY.MM.DD`) rather than standard Season/Episode numbers. Scrapers now generate date-targeted query variants and filter titles against broadcast dates and episode numbers (#9642).
+- **AniList Service Management in Dashboard** — Added AniList authorisation and account status cards to the Orac Web Dashboard Services tab, with username validation via AniList GraphQL and one-click token revocation.
+- **Scraper Priority Optimization** — Prioritised full-text and cloud torrent scrapers for daily and date-based syndicated series.
+
 ## [1.5.0] - 2026-10-23
 
 ### Added

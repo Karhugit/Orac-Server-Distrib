@@ -57,7 +57,7 @@ class source(ConcurrentScraperBase):
 			if 'tvshowtitle' in data:
 				season = data['season']
 				episode = data['episode']
-				hdlr = 'S%02dE%02d' % (int(season), int(episode))
+				hdlr = (data.get('date_hdlr') if data.get('is_daily') else None) or data.get('anime_hdlr') or ('S%02dE%02d' % (int(season), int(episode)))
 				path = self.tvSearch_link % (imdb, season, episode)
 			else:
 				path = self.movieSearch_link % imdb
