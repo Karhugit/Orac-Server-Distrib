@@ -201,14 +201,15 @@ def ensure_valid_simkl_token(config_db_path: str) -> str | None:
 def get_simkl_user_info(config_db_path: str) -> dict:
     """
     Returns a dict with 'username' and 'user_id' for the authorized Simkl user.
-    If 'simkl.user_id' is not yet stored, queries https://api.simkl.com/users/settings
-    and caches it into config.db.
+    If 'simkl.user_id' is not yet stored (or was stored as non-numeric username),
+    queries https://api.simkl.com/users/settings and caches it into config.db.
     """
     from resources.lib.config_handler import get_config_value, update_config_values
     username = get_config_value("simkl.user", config_db_path) or get_config_value("simkl_user", config_db_path) or "simkl_user"
     user_id = get_config_value("simkl.user_id", config_db_path) or get_config_value("simkl_user_id", config_db_path)
 
-    if not user_id or user_id in ("empty_setting", ""):
+    # Note: Simkl returns user id in 'account.id' (numeric). If missing or non-numeric, fetch from API.
+    if not user_id or user_id in ("empty_setting", "") or not str(user_id).isdigit():
         token = ensure_valid_simkl_token(config_db_path)
         client_id = get_effective_simkl_client_id(config_db_path)
         if token and client_id:
@@ -218,9 +219,10 @@ def get_simkl_user_info(config_db_path: str) -> dict:
                 resp = simkl_get(settings_url, params=get_simkl_params(client_id), headers=headers, timeout=10)
                 if resp.status_code == 200:
                     data = resp.json()
-                    user_obj = data.get("user", {})
+                    user_obj = data.get("user", {}) if isinstance(data, dict) else {}
+                    account_obj = data.get("account", {}) if isinstance(data, dict) else {}
                     fetched_name = str(user_obj.get("name") or username)
-                    fetched_id = str(user_obj.get("id") or "")
+                    fetched_id = str(account_obj.get("id") or user_obj.get("id") or "")
                     if fetched_id:
                         user_id = fetched_id
                         username = fetched_name
@@ -249,9 +251,9 @@ def fetch_simkl_user_custom_lists(config_db_path: str) -> dict:
         return {"lists": []}
 
     user_info = get_simkl_user_info(config_db_path)
-    user_id = user_info.get("user_id") or user_info.get("username")
-    if not user_id:
-        log("[Simkl API] No user ID or username available for custom lists fetch.", level=LOGWARNING)
+    user_id = user_info.get("user_id")
+    if not user_id or not str(user_id).isdigit():
+        log(f"[Simkl API] Non-numeric Simkl user ID ({user_id}); unable to fetch custom lists.", level=LOGWARNING)
         return {"lists": []}
 
     headers = get_simkl_headers(token=token, client_id=client_id)
@@ -317,12 +319,17 @@ def fetch_simkl_custom_list_items(config_db_path: str, list_id: int | str, limit
                     return {"error": "premium_only", "items": [], "counts": {"movies": 0, "shows": 0}, "meta": {}}
 
                 if not list_meta and isinstance(data, dict):
+                    raw_desc = data.get("description")
+                    if isinstance(raw_desc, dict):
+                        desc_str = raw_desc.get("full") or raw_desc.get("short") or ""
+                    else:
+                        desc_str = str(raw_desc or "")
                     list_meta = {
                         "id": data.get("id"),
                         "name": data.get("name"),
                         "slug": data.get("slug"),
                         "media_type": data.get("media_type"),
-                        "description": data.get("description", ""),
+                        "description": desc_str,
                         "privacy": data.get("privacy", "public"),
                         "sort": data.get("sort", ["position", "asc"]),
                         "counts": data.get("counts", {})

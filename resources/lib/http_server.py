@@ -1456,10 +1456,10 @@ def app_factory(
                 username = "simkl_user"
                 user_id = ""
                 if user_resp.status_code == 200:
-                    user_data = user_resp.json()
+                    user_data = user_resp.json() if isinstance(user_resp.json(), dict) else {}
                     if "user" in user_data:
                         username = str(user_data["user"].get("name") or "simkl_user")
-                        user_id = str(user_data["user"].get("id") or "")
+                    user_id = str(user_data.get("account", {}).get("id") or user_data.get("user", {}).get("id") or "")
 
                 # Save in config.db
                 cfg_updates = {

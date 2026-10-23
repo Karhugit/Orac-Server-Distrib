@@ -124,6 +124,12 @@ def update_list_in_db(db_path, list_meta, items, tmdb_handler=None):
         # Step 1b: Update the metadata for the list. This approach ensures that
         # any columns not specified here (like 'add_to_library') retain their
         # existing values for lists that are already in the database.
+        meta_desc = list_meta.get('description', '')
+        if isinstance(meta_desc, dict):
+            meta_desc_str = meta_desc.get('full') or meta_desc.get('short') or ''
+        else:
+            meta_desc_str = str(meta_desc or '')
+
         list_cur.execute("""
             UPDATE lists SET
                 source = ?,
@@ -138,7 +144,7 @@ def update_list_in_db(db_path, list_meta, items, tmdb_handler=None):
             WHERE list_id = ?
         """, (
             list_meta.get('source', 'trakt'), list_meta['user']['ids']['slug'], list_meta['ids']['slug'],
-            list_meta['name'], list_meta.get('description', ''), datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            list_meta['name'], meta_desc_str, datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z"),
             1 if list_meta.get('owned_by_user', False) else 0,
             list_meta.get('item_count', {}).get('movies', 0), 
             list_meta.get('item_count', {}).get('shows', 0),

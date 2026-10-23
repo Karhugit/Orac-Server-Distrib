@@ -338,7 +338,11 @@ async def simkl_list_sync_task(config_db_path, lists_db_path, trakt_handler, tmd
 
                         slug = clist.get("slug") or str(simkl_list_id)
                         name = clist.get("name") or f"Simkl List {simkl_list_id}"
-                        description = clist.get("description") or ""
+                        raw_desc = clist.get("description")
+                        if isinstance(raw_desc, dict):
+                            description = raw_desc.get("full") or raw_desc.get("short") or ""
+                        else:
+                            description = str(raw_desc or "")
                         counts = clist.get("counts", {})
                         total_items = counts.get("items", 0)
                         updated_at = clist.get("updated_at") or datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")

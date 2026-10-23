@@ -4,6 +4,12 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.5.2] - 2026-10-24
+
+### Fixed
+- **Simkl Custom Lists Sync & User ID Resolution** — Fixed an issue where personal Simkl custom lists failed to sync due to a missing numeric account ID. The user settings parser now correctly extracts `account.id` rather than looking only at `user.id`, ensuring requests to `GET /lists/user/{userId}` succeed with HTTP 200.
+- **SQLite Dict Parameter Sanitization** — Resolved a `ProgrammingError: Error binding parameter: type 'dict' is not supported` during list synchronization by unwrapping nested dictionary descriptions (`{"short": ..., "full": ...}`) from Simkl's V2 API into clean strings before database insertion.
+
 ## [1.5.1] - 2026-10-23
 
 ### Added
