@@ -17,133 +17,147 @@ async def cleanup_static_databases(movies_static_db_path, movies_dynamic_db_path
     log("[Orac] **GC** Starting garbage collection for static databases...", level=LOGINFO)
     gc_start_time = time()
 
-    active_movie_ids = set()
-    active_show_ids = set()
+    active_movie_trakt_ids = set()
+    active_movie_tmdb_ids = set()
+    active_show_trakt_ids = set()
+    active_show_tmdb_ids = set()
 
     try:
-        # --- Step 1: Aggregate all active media IDs ---
+        # --- Step 1: Aggregate all active media IDs (both TMDb and Trakt) ---
 
-        # 1. Collect all referenced Trakt IDs from Lists DB
+        # 1. Collect all referenced IDs from Lists DB
         with db_connect(lists_db_path) as conn:
             cursor = conn.cursor()
             
-            # Movies - Handle None/Null/Empty strings
+            # Movies
             cursor.execute("""
-                SELECT li.trakt_id
+                SELECT li.trakt_id, li.tmdb_id
                 FROM list_items li
                 JOIN lists l ON li.list_id = l.list_id
                 WHERE li.media_type = 'movie' AND l.add_to_library = 1
             """)
-            
             for row in cursor.fetchall():
-                 try:
-                     if row[0]:
-                         active_movie_ids.add(str(row[0])) # Store as string for comparing with set
-                 except Exception:
-                     pass
+                if row[0]:
+                    active_movie_trakt_ids.add(str(row[0]))
+                if row[1]:
+                    active_movie_tmdb_ids.add(str(row[1]))
 
+            # Shows
             cursor.execute("""
-                SELECT li.trakt_id
+                SELECT li.trakt_id, li.tmdb_id
                 FROM list_items li
                 JOIN lists l ON li.list_id = l.list_id
                 WHERE li.media_type = 'show' AND l.add_to_library = 1
             """)
             for row in cursor.fetchall():
-                 try:
-                     if row[0]:
-                         active_show_ids.add(str(row[0]))
-                 except Exception:
-                     pass
+                if row[0]:
+                    active_show_trakt_ids.add(str(row[0]))
+                if row[1]:
+                    active_show_tmdb_ids.add(str(row[1]))
 
         # From movie watch history
         with db_connect(movies_dynamic_db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT trakt_id FROM movie_status WHERE watched > 0")
+            cursor.execute("SELECT trakt_id, tmdb_id FROM movie_status WHERE watched > 0")
             for row in cursor.fetchall():
                 if row[0]:
-                    active_movie_ids.add(str(row[0]))
+                    active_movie_trakt_ids.add(str(row[0]))
+                if row[1]:
+                    active_movie_tmdb_ids.add(str(row[1]))
 
         # From TV show watch history
         with db_connect(tvshows_dynamic_db_path) as conn:
             cursor = conn.cursor()
-            # We need to join with the static DB to get the show_trakt_id
             conn.execute(f"ATTACH DATABASE '{tvshows_static_db_path}' AS static_db")
-            # Update: episodes.show_id references shows.show_tmdb_id now
-            cursor.execute("SELECT DISTINCT s.show_trakt_id FROM static_db.episodes e JOIN watched_episodes we ON e.tmdb_id = we.tmdb_id JOIN static_db.shows s ON e.show_id = s.show_tmdb_id")
+            cursor.execute("SELECT DISTINCT s.show_trakt_id, s.show_tmdb_id FROM static_db.episodes e JOIN watched_episodes we ON e.tmdb_id = we.tmdb_id JOIN static_db.shows s ON e.show_id = s.show_tmdb_id")
             for row in cursor.fetchall():
                 if row[0]:
-                    active_show_ids.add(str(row[0]))
+                    active_show_trakt_ids.add(str(row[0]))
+                if row[1]:
+                    active_show_tmdb_ids.add(str(row[1]))
             conn.execute("DETACH DATABASE static_db")
 
         # From tags database - tagged items should not be garbage collected
         try:
             with db_connect(tags_db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT trakt_id FROM tag_items WHERE media_type = 'movie' AND trakt_id IS NOT NULL")
+                cursor.execute("SELECT trakt_id, tmdb_id FROM tag_items WHERE media_type = 'movie'")
                 for row in cursor.fetchall():
                     if row[0]:
-                        active_movie_ids.add(str(row[0]))
+                        active_movie_trakt_ids.add(str(row[0]))
+                    if row[1]:
+                        active_movie_tmdb_ids.add(str(row[1]))
                 
-                cursor.execute("SELECT trakt_id FROM tag_items WHERE media_type = 'show' AND trakt_id IS NOT NULL")
+                cursor.execute("SELECT trakt_id, tmdb_id FROM tag_items WHERE media_type = 'show'")
                 for row in cursor.fetchall():
                     if row[0]:
-                        active_show_ids.add(str(row[0]))
+                        active_show_trakt_ids.add(str(row[0]))
+                    if row[1]:
+                        active_show_tmdb_ids.add(str(row[1]))
         except Exception as e:
             log(f"[Orac] **GC** Warning: Could not load tagged items from tags DB: {e}", level=LOGWARNING)
 
-        # --- Step 2: Get all IDs from static databases ---
+        # --- Step 2: Identify orphans from static databases ---
+        # An item is active if EITHER its TMDb ID or Trakt ID is referenced in an active list or watch history
+        orphaned_movie_tmdb_ids = []
+        orphaned_movie_trakt_ids = []
         with db_connect(movies_static_db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT trakt_id FROM movies")
-            static_movie_ids = {str(row[0]) for row in cursor.fetchall() if row[0]}
+            cursor.execute("SELECT tmdb_id, trakt_id FROM movies")
+            for tmdb_id, trakt_id in cursor.fetchall():
+                is_active = (
+                    (tmdb_id and str(tmdb_id) in active_movie_tmdb_ids) or
+                    (trakt_id and str(trakt_id) in active_movie_trakt_ids)
+                )
+                if not is_active:
+                    if tmdb_id:
+                        orphaned_movie_tmdb_ids.append((int(tmdb_id),))
+                    elif trakt_id:
+                        orphaned_movie_trakt_ids.append((int(trakt_id),))
 
+        orphaned_show_tmdb_ids = []
+        orphaned_show_trakt_ids = []
         with db_connect(tvshows_static_db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT show_trakt_id FROM shows")
-            static_show_ids = {str(row[0]) for row in cursor.fetchall() if row[0]}
+            cursor.execute("SELECT show_tmdb_id, show_trakt_id FROM shows")
+            for tmdb_id, trakt_id in cursor.fetchall():
+                is_active = (
+                    (tmdb_id and str(tmdb_id) in active_show_tmdb_ids) or
+                    (trakt_id and str(trakt_id) in active_show_trakt_ids)
+                )
+                if not is_active:
+                    if tmdb_id:
+                        orphaned_show_tmdb_ids.append((int(tmdb_id),))
+                    elif trakt_id:
+                        orphaned_show_trakt_ids.append((int(trakt_id),))
 
-        # --- Step 3: Identify orphans ---
-        orphaned_movie_ids = static_movie_ids - active_movie_ids
-        orphaned_show_ids = static_show_ids - active_show_ids
-
-        # --- Step 4: Execute deletions and VACUUM ---
-        if orphaned_movie_ids:
-            log(f"[Orac] **GC** Removing {len(orphaned_movie_ids)} orphaned movies.", level=LOGINFO)
+        # --- Step 3: Execute deletions and VACUUM ---
+        total_orphaned_movies = len(orphaned_movie_tmdb_ids) + len(orphaned_movie_trakt_ids)
+        if total_orphaned_movies:
+            log(f"[Orac] **GC** Removing {total_orphaned_movies} orphaned movies.", level=LOGINFO)
             with db_connect(movies_static_db_path) as conn:
-                # Filter out any non-integer strings if present, though IDs should be ints
-                safe_ids = []
-                for mid in orphaned_movie_ids:
-                    try:
-                        safe_ids.append((int(mid),))
-                    except (ValueError, TypeError):
-                        pass
-                
-                if safe_ids:
-                    conn.executemany("DELETE FROM movies WHERE trakt_id = ?", safe_ids)
-            
-            # Clean up dynamic DB (movie_status)
-            log(f"[Orac] **GC** Removing {len(safe_ids)} orphaned entries from movie_status (dynamic DB).", level=LOGINFO)
+                if orphaned_movie_tmdb_ids:
+                    conn.executemany("DELETE FROM movies WHERE tmdb_id = ?", orphaned_movie_tmdb_ids)
+                if orphaned_movie_trakt_ids:
+                    conn.executemany("DELETE FROM movies WHERE trakt_id = ?", orphaned_movie_trakt_ids)
             with db_connect(movies_dynamic_db_path) as conn:
-                conn.executemany("DELETE FROM movie_status WHERE trakt_id = ?", safe_ids)
+                if orphaned_movie_tmdb_ids:
+                    conn.executemany("DELETE FROM movie_status WHERE tmdb_id = ?", orphaned_movie_tmdb_ids)
+                if orphaned_movie_trakt_ids:
+                    conn.executemany("DELETE FROM movie_status WHERE trakt_id = ?", orphaned_movie_trakt_ids)
                 conn.commit()
                 conn.execute("VACUUM")
-            
-            # VACUUM must be run outside of a transaction
             with db_connect(movies_static_db_path) as conn:
                 conn.execute("VACUUM")
 
-        if orphaned_show_ids:
-            log(f"[Orac] **GC** Removing {len(orphaned_show_ids)} orphaned shows.", level=LOGINFO)
+        total_orphaned_shows = len(orphaned_show_tmdb_ids) + len(orphaned_show_trakt_ids)
+        if total_orphaned_shows:
+            log(f"[Orac] **GC** Removing {total_orphaned_shows} orphaned shows.", level=LOGINFO)
             with db_connect(tvshows_static_db_path) as conn:
-                safe_ids = []
-                for sid in orphaned_show_ids:
-                     try:
-                         safe_ids.append((int(sid),))
-                     except (ValueError, TypeError):
-                         pass
-                if safe_ids:
-                    conn.executemany("DELETE FROM shows WHERE show_trakt_id = ?", safe_ids)
-            # VACUUM must be run outside of a transaction
+                if orphaned_show_tmdb_ids:
+                    conn.executemany("DELETE FROM shows WHERE show_tmdb_id = ?", orphaned_show_tmdb_ids)
+                if orphaned_show_trakt_ids:
+                    conn.executemany("DELETE FROM shows WHERE show_trakt_id = ?", orphaned_show_trakt_ids)
             with db_connect(tvshows_static_db_path) as conn:
                 conn.execute("VACUUM")
 

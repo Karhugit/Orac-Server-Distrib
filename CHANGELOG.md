@@ -4,6 +4,13 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.5.3] - 2026-10-25
+
+### Fixed
+- **Static Cache Garbage Collection Dual-Identifier Tracking** — Upgraded static database garbage collection (`cleanup_static_databases`) in `db_sync_manager.py` to index active movies and TV shows across `list_items`, watch history, and tags using both `tmdb_id` and `trakt_id`. Previously, shows with resolved Trakt IDs differing from list placeholder IDs (e.g. negative TMDb IDs) were incorrectly classified as orphaned and purged from `tvshows_static_cache.db`.
+- **List Items Trakt ID Backfill & Preservation** — Enhanced `trakt_list_sync.py` to evaluate both `tmdb_id` and `trakt_id` when checking for existing media in static caches, and to backfill resolved `trakt_id`s directly into `list_items` upon insertion.
+- **Web UI Fallback Metadata Lookup** — Added on-the-fly TMDb metadata fetching to `/api/web/list_items` in `http_server.py` as a fallback safeguard, ensuring items in lists never display as `"Unknown"` even if static database records are pending or temporarily unavailable.
+
 ## [1.5.2] - 2026-10-24
 
 ### Fixed

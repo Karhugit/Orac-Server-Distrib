@@ -309,30 +309,38 @@ async def run_list_sync(
 
     removed = remove_stale_list_items(lists_db_path, sync_result["current_pairs"])
 
-    # Step 3: Identify missing metadata for items in the list
+    # Step 3: Identify missing metadata for items in the list (checking both TMDb and Trakt IDs)
     all_incoming_items = list_data
     movies_to_check = [i["movie"] for i in all_incoming_items if i["type"] == "movie"]
     shows_to_check = [i["show"] for i in all_incoming_items if i["type"] == "show"]
 
     movies_to_add = []
     if movies_to_check:
-        movie_ids = [m["ids"]["trakt"] for m in movies_to_check]
-        placeholders = ",".join(["?"] * len(movie_ids))
+        movie_trakt_ids = [str(m["ids"]["trakt"]) for m in movies_to_check if m.get("ids", {}).get("trakt")]
+        movie_tmdb_ids = [str(m["ids"]["tmdb"]) for m in movies_to_check if m.get("ids", {}).get("tmdb")]
         with db_connect(movies_static_db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(f"SELECT trakt_id FROM movies WHERE trakt_id IN ({placeholders})", movie_ids)
-            existing_movie_ids = {str(row[0]) for row in cursor.fetchall()}
-            movies_to_add = [m for m in movies_to_check if str(m["ids"]["trakt"]) not in existing_movie_ids]
+            existing_trakt = {str(r[0]) for r in cursor.execute(f"SELECT trakt_id FROM movies WHERE trakt_id IN ({','.join(['?']*len(movie_trakt_ids))})", movie_trakt_ids).fetchall()} if movie_trakt_ids else set()
+            existing_tmdb = {str(r[0]) for r in cursor.execute(f"SELECT tmdb_id FROM movies WHERE tmdb_id IN ({','.join(['?']*len(movie_tmdb_ids))})", movie_tmdb_ids).fetchall()} if movie_tmdb_ids else set()
+            movies_to_add = [
+                m for m in movies_to_check
+                if str(m.get("ids", {}).get("trakt")) not in existing_trakt
+                and str(m.get("ids", {}).get("tmdb")) not in existing_tmdb
+            ]
 
     shows_to_add = []
     if shows_to_check:
-        show_ids = [s["ids"]["trakt"] for s in shows_to_check]
-        placeholders = ",".join(["?"] * len(show_ids))
+        show_trakt_ids = [str(s["ids"]["trakt"]) for s in shows_to_check if s.get("ids", {}).get("trakt")]
+        show_tmdb_ids = [str(s["ids"]["tmdb"]) for s in shows_to_check if s.get("ids", {}).get("tmdb")]
         with db_connect(tvshows_static_db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(f"SELECT show_trakt_id FROM shows WHERE show_trakt_id IN ({placeholders})", show_ids)
-            existing_show_ids = {str(row[0]) for row in cursor.fetchall()}
-            shows_to_add = [s for s in shows_to_check if str(s["ids"]["trakt"]) not in existing_show_ids]
+            existing_trakt = {str(r[0]) for r in cursor.execute(f"SELECT show_trakt_id FROM shows WHERE show_trakt_id IN ({','.join(['?']*len(show_trakt_ids))})", show_trakt_ids).fetchall()} if show_trakt_ids else set()
+            existing_tmdb = {str(r[0]) for r in cursor.execute(f"SELECT show_tmdb_id FROM shows WHERE show_tmdb_id IN ({','.join(['?']*len(show_tmdb_ids))})", show_tmdb_ids).fetchall()} if show_tmdb_ids else set()
+            shows_to_add = [
+                s for s in shows_to_check
+                if str(s.get("ids", {}).get("trakt")) not in existing_trakt
+                and str(s.get("ids", {}).get("tmdb")) not in existing_tmdb
+            ]
 
     if movies_to_add or shows_to_add:
         log(f"[Orac] Missing metadata for {len(movies_to_add)} movies and {len(shows_to_add)} shows in list '{slug}'. Adding to worker queue...", level=LOGINFO)
@@ -368,6 +376,23 @@ async def run_list_sync(
             except Exception as e:
                 log(f"A media update task failed during list sync: {e}", level=LOGERROR)
 
+
+    # Step 3b: Backfill resolved Trakt IDs into list_items
+    try:
+        with db_connect(lists_db_path) as l_conn:
+            l_cur = l_conn.cursor()
+            l_cur.execute(f"ATTACH DATABASE '{tvshows_static_db_path}' AS static_tv")
+            l_cur.execute("""
+                UPDATE list_items
+                SET trakt_id = (SELECT s.show_trakt_id FROM static_tv.shows s WHERE s.show_tmdb_id = list_items.tmdb_id)
+                WHERE media_type = 'show'
+                  AND list_items.tmdb_id IS NOT NULL
+                  AND list_items.tmdb_id IN (SELECT s.show_tmdb_id FROM static_tv.shows s WHERE s.show_trakt_id > 0)
+            """)
+            l_conn.commit()
+            l_conn.execute("DETACH DATABASE static_tv")
+    except Exception as e:
+        log(f"[Orac] Notice: Could not backfill list_items trakt_id: {e}", level=LOGDEBUG)
 
     # Step 4: Build result summary
     result = {

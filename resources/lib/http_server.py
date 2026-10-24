@@ -2564,6 +2564,20 @@ def app_factory(
                                 "rating": m_row["rating"] or 0.0,
                                 "overview": m_row["overview"] or ""
                             })
+                        elif tmdb_id and app.state.tmdb_handler:
+                            try:
+                                tmdb_data = app.state.tmdb_handler.get_movie_details(int(tmdb_id))
+                                if tmdb_data:
+                                    from resources.lib.formatting_utils import format_image_url
+                                    item_details.update({
+                                        "title": tmdb_data.get("title") or "Unknown",
+                                        "year": int((tmdb_data.get("release_date") or "0")[:4]) if tmdb_data.get("release_date") else 0,
+                                        "poster_path": format_image_url(tmdb_data.get("poster_path"), "w780", app.state.tmdb_handler),
+                                        "rating": tmdb_data.get("vote_average") or 0.0,
+                                        "overview": tmdb_data.get("overview") or ""
+                                    })
+                            except Exception:
+                                pass
                     elif media_type == "show":
                         if tmdb_id:
                             tvshows_cur.execute("""
@@ -2590,6 +2604,20 @@ def app_factory(
                                 "rating": s_row["rating"] or 0.0,
                                 "overview": s_row["overview"] or ""
                             })
+                        elif tmdb_id and app.state.tmdb_handler:
+                            try:
+                                tmdb_data = app.state.tmdb_handler.get_show_details(int(tmdb_id))
+                                if tmdb_data:
+                                    from resources.lib.formatting_utils import format_image_url
+                                    item_details.update({
+                                        "title": tmdb_data.get("name") or "Unknown",
+                                        "year": int((tmdb_data.get("first_air_date") or "0")[:4]) if tmdb_data.get("first_air_date") else 0,
+                                        "poster_path": format_image_url(tmdb_data.get("poster_path"), "w780", app.state.tmdb_handler),
+                                        "rating": tmdb_data.get("vote_average") or 0.0,
+                                        "overview": tmdb_data.get("overview") or ""
+                                    })
+                            except Exception:
+                                pass
                     items.append(item_details)
             finally:
                 movies_conn.close()
