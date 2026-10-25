@@ -129,9 +129,10 @@ class TraktAuth:
         trakt_payload = {
             "refresh_token": refresh_token,
             "client_id": self.client_id,
-            "client_secret": self.client_secret,
             "grant_type": "refresh_token"
         }
+        if self.client_secret and self.client_secret not in ('empty_setting', ''):
+            trakt_payload["client_secret"] = self.client_secret
 
         trakt_token_url = "https://api.trakt.tv/oauth/token"
 

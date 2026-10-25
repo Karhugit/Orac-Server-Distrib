@@ -14,7 +14,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 import xbmc
 from fastapi import FastAPI, Request, Response, HTTPException, Path, Query
-from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, FileResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, FileResponse, HTMLResponse
+import secrets
+import hashlib
+import base64
+from urllib.parse import quote
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -43,7 +47,7 @@ from .movies_handler import handle_movie_request
 from .discover_handler import handle_discover_request
 from .shows_handler import handle_show_request
 from .search_handler import search_tmdb
-from .config_handler import update_config_values, get_trakt_user, get_config_value, clear_trakt_config, get_all_config
+from .config_handler import update_config_values, get_trakt_user, get_config_value, clear_trakt_config, get_all_config, get_trakt_client_id, get_trakt_client_secret, migrate_trakt_credentials, DEFAULT_TRAKT_CLIENT_ID
 from .indexing import add_external_index, del_external_index
 from .internal_indexing import add_internal_index, del_internal_index, get_internal_indexes, get_internal_index_contents, get_available_languages
 from .scrape_handler import handle_scrape_request
@@ -163,6 +167,10 @@ def app_factory(
         # Run database migrations
         migrate_database(application.state.tvshows_static_db_path, application.state.tvshows_dynamic_db_path)
         migrate_database(application.state.movies_static_db_path, application.state.movies_dynamic_db_path)
+        try:
+            migrate_trakt_credentials(application.state.config_db_path, os.path.join(os.getcwd(), "config.json"))
+        except Exception as _e:
+            log(f"[Orac] Error in migrate_trakt_credentials: {_e}", level=LOGWARNING)
 
         trakt_queue_worker = UpdateQueueWorker(
             application.state.trakt_update_queue_path, application.state.tvshows_static_db_path,
@@ -1070,12 +1078,14 @@ def app_factory(
                 trakt_token = data.get('trakt_token') or data.get('trakt.token')
                 is_trakt_auth = bool(trakt_user and trakt_token and trakt_user not in ('empty_setting', '') and trakt_token not in ('empty_setting', ''))
                 # Trakt is static - always present in the platforms list
+                trakt_reauth = (data.get('trakt_reauth_required') == 'true')
                 platforms.append({
                     "name": "Trakt",
                     "id": "trakt",
                     "username": (trakt_user if is_trakt_auth else ""),
                     "authenticated": is_trakt_auth,
-                    "can_auth": True
+                    "can_auth": True,
+                    "reauth_required": trakt_reauth
                 })
                 
                 simkl_user = data.get('simkl.user') or data.get('simkl_user')
@@ -1202,32 +1212,79 @@ def app_factory(
             log(f"Error updating Trakt -> MDBList sync setting: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
+    # In-memory store for PKCE sessions
+    _pkce_sessions = {}
+    _pkce_lock = threading.Lock()
+
+    def _cleanup_pkce_sessions():
+        now = time.time()
+        with _pkce_lock:
+            expired = [k for k, v in _pkce_sessions.items() if now - v.get("created_at", 0) > 900]
+            for k in expired:
+                _pkce_sessions.pop(k, None)
+
     @app.post("/api/web/platforms/trakt/start_auth")
-    async def web_trakt_start_auth_api():
+    async def web_trakt_start_auth_api(request: Request):
         try:
-            client_id = get_config_value("client_id", app.state.config_db_path) or get_config_value("trakt_client", app.state.config_db_path) or get_config_value("trakt.client", app.state.config_db_path)
-            if not client_id or client_id in ('empty_setting', ''):
-                client_id = "f986871799a140dc20a166adfa637c98c8fa474dc80757aabad8668b99e184de"
+            _cleanup_pkce_sessions()
+            client_id = get_trakt_client_id(app.state.config_db_path)
+            redirect_uri = get_config_value("trakt_redirect_uri", app.state.config_db_path) or "http://localhost:5555/api/web/platforms/trakt/callback"
 
-            url = "https://api.trakt.tv/oauth/device/code"
-            headers = {
-                "Content-Type": "application/json",
-                "trakt-api-version": "2",
-                "trakt-api-key": client_id
-            }
-            resp = requests.post(url, json={"client_id": client_id}, headers=headers, timeout=10)
-            if resp.status_code != 200:
-                return JSONResponse(status_code=400, content={"success": False, "error": f"Trakt error ({resp.status_code}): Failed to get device code"})
+            # 1. Generate PKCE pair
+            code_verifier = secrets.token_urlsafe(64)
+            digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
+            code_challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+            state = secrets.token_urlsafe(16)
 
-            data = resp.json()
-            device_code = data.get("device_code")
-            user_code = data.get("user_code")
-            verification_url = data.get("verification_url") or "https://trakt.tv/activate"
-            expires_in = data.get("expires_in", 600)
-            interval = data.get("interval", 5)
+            with _pkce_lock:
+                _pkce_sessions[state] = {
+                    "code_verifier": code_verifier,
+                    "redirect_uri": redirect_uri,
+                    "created_at": time.time(),
+                    "completed": False,
+                    "username": None
+                }
+
+            auth_url = (
+                f"https://trakt.tv/oauth/authorize"
+                f"?response_type=code"
+                f"&client_id={client_id}"
+                f"&redirect_uri={quote(redirect_uri, safe='')}"
+                f"&code_challenge={code_challenge}"
+                f"&code_challenge_method=S256"
+                f"&state={state}"
+            )
+
+            # 2. Also fetch device code as secondary option
+            device_code = None
+            user_code = None
+            verification_url = "https://auth.trakt.tv/activate"
+            expires_in = 600
+            interval = 5
+
+            try:
+                dev_url = "https://api.trakt.tv/oauth/device/code"
+                dev_headers = {
+                    "Content-Type": "application/json",
+                    "trakt-api-version": "2",
+                    "trakt-api-key": client_id
+                }
+                dev_resp = requests.post(dev_url, json={"client_id": client_id}, headers=dev_headers, timeout=5)
+                if dev_resp.status_code == 200:
+                    dev_data = dev_resp.json()
+                    device_code = dev_data.get("device_code")
+                    user_code = dev_data.get("user_code")
+                    verification_url = dev_data.get("verification_url") or "https://auth.trakt.tv/activate"
+                    expires_in = dev_data.get("expires_in", 600)
+                    interval = dev_data.get("interval", 5)
+            except Exception as dev_err:
+                log(f"[Trakt] Device code fetch error (non-fatal): {dev_err}", level=LOGWARNING)
 
             return JSONResponse(status_code=200, content={
                 "success": True,
+                "auth_url": auth_url,
+                "state": state,
+                "redirect_uri": redirect_uri,
                 "device_code": device_code,
                 "user_code": user_code,
                 "verification_url": verification_url,
@@ -1238,21 +1295,169 @@ def app_factory(
             log(f"Error starting Trakt authentication: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
+    @app.get("/api/web/platforms/trakt/callback", response_class=HTMLResponse)
+    async def web_trakt_callback_api(
+        code: str = None,
+        state: str = None,
+        error: str = None,
+        error_description: str = None
+    ):
+        if error:
+            log(f"[Trakt] OAuth error callback: {error} - {error_description}", level=LOGWARNING)
+            return HTMLResponse(
+                f"""<!DOCTYPE html><html><head><title>Trakt Error</title>
+                <style>body{{background:#0f172a;color:#f87171;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}}
+                .card{{background:#1e293b;padding:2.5rem;border-radius:1rem;text-align:center;max-width:440px;border:1px solid #334155;}}
+                h2{{margin:0 0 1rem;color:#f87171;}}p{{color:#94a3b8;font-size:0.95rem;}}
+                a{{display:inline-block;margin-top:1.5rem;background:#475569;color:#fff;padding:0.6rem 1.25rem;border-radius:0.5rem;text-decoration:none;font-weight:500;}}
+                </style></head><body><div class="card"><h2>Authorization Failed</h2><p>{error_description or error}</p><a href="/#services">Return to Dashboard</a></div></body></html>""",
+                status_code=400
+            )
+
+        if not code or not state:
+            return HTMLResponse("<h3>Missing code or state parameter</h3>", status_code=400)
+
+        with _pkce_lock:
+            session = _pkce_sessions.get(state)
+
+        if not session:
+            return HTMLResponse(
+                """<!DOCTYPE html><html><head><title>Session Expired</title>
+                <style>body{background:#0f172a;color:#fff;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}
+                .card{background:#1e293b;padding:2.5rem;border-radius:1rem;text-align:center;max-width:440px;border:1px solid #334155;}
+                a{display:inline-block;margin-top:1.5rem;background:#6366f1;color:#fff;padding:0.6rem 1.25rem;border-radius:0.5rem;text-decoration:none;font-weight:500;}
+                </style></head><body><div class="card"><h2 style="color:#fbbf24;">Session Expired</h2><p style="color:#94a3b8;">This authorization session has expired. Please try connecting Trakt again from the Orac Services tab.</p><a href="/#services">Return to Dashboard</a></div></body></html>""",
+                status_code=400
+            )
+
+        client_id = get_trakt_client_id(app.state.config_db_path)
+        redirect_uri = session.get("redirect_uri") or "http://localhost:5555/api/web/platforms/trakt/callback"
+        code_verifier = session.get("code_verifier")
+
+        # Exchange authorization code + code_verifier for tokens
+        token_url = "https://api.trakt.tv/oauth/token"
+        headers = {
+            "Content-Type": "application/json",
+            "trakt-api-version": "2",
+            "trakt-api-key": client_id
+        }
+        payload = {
+            "code": code,
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+            "code_verifier": code_verifier
+        }
+
+        try:
+            resp = requests.post(token_url, json=payload, headers=headers, timeout=12)
+            if resp.status_code != 200:
+                log(f"[Trakt] Token exchange failed ({resp.status_code}): {resp.text}", level=LOGERROR)
+                return HTMLResponse(
+                    f"""<!DOCTYPE html><html><head><title>Token Error</title>
+                    <style>body{{background:#0f172a;color:#f87171;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}}
+                    .card{{background:#1e293b;padding:2.5rem;border-radius:1rem;text-align:center;max-width:440px;border:1px solid #334155;}}
+                    a{{display:inline-block;margin-top:1.5rem;background:#475569;color:#fff;padding:0.6rem 1.25rem;border-radius:0.5rem;text-decoration:none;font-weight:500;}}
+                    </style></head><body><div class="card"><h2>Token Exchange Failed</h2><p style="color:#94a3b8;">Trakt returned HTTP {resp.status_code}.</p><a href="/#services">Try Again</a></div></body></html>""",
+                    status_code=400
+                )
+
+            data = resp.json()
+            access_token = data.get("access_token")
+            refresh_token = data.get("refresh_token")
+            expires_in = data.get("expires_in", 7776000)
+
+            user_headers = {
+                "Content-Type": "application/json",
+                "trakt-api-version": "2",
+                "trakt-api-key": client_id,
+                "Authorization": f"Bearer {access_token}"
+            }
+            user_resp = requests.get("https://api.trakt.tv/users/me", headers=user_headers, timeout=10)
+            username = "trakt_user"
+            if user_resp.status_code == 200:
+                user_data = user_resp.json()
+                username = user_data.get("username") or user_data.get("ids", {}).get("slug") or "trakt_user"
+
+            expires_at = str(time.time() + expires_in)
+            update_config_values({
+                "trakt_user": username,
+                "trakt.user": username,
+                "trakt_token": access_token,
+                "trakt.token": access_token,
+                "trakt_refresh": refresh_token,
+                "trakt.refresh": refresh_token,
+                "trakt_expires": expires_at,
+                "client_id": client_id,
+                "client_secret": "",
+                "trakt_token_refreshed": str(int(time.time())),
+                "trakt_reauth_required": "false"
+            }, app.state.config_db_path)
+
+            with _pkce_lock:
+                session["completed"] = True
+                session["username"] = username
+
+            if hasattr(app.state, 'trakt_auth') and app.state.trakt_auth:
+                app.state.trakt_auth.reload_credentials()
+
+            log(f"[Trakt] PKCE authorization successful for user: {username}", level=LOGINFO)
+
+            return HTMLResponse(
+                f"""<!DOCTYPE html><html><head><title>Trakt Connected</title>
+                <style>
+                  body{{background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}}
+                  .card{{background:#1e293b;padding:2.5rem;border-radius:1rem;text-align:center;max-width:440px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.4);border:1px solid rgba(51,65,85,0.7);}}
+                  .icon{{width:64px;height:64px;margin:0 auto 1.25rem;border-radius:50%;background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center;color:#34d399;font-size:2rem;font-weight:bold;}}
+                  h2{{margin:0 0 0.5rem;font-size:1.5rem;}}
+                  p{{color:#94a3b8;font-size:0.95rem;margin:0 0 1.5rem;line-height:1.5;}}
+                  .badge{{display:inline-block;padding:0.35rem 0.85rem;background:rgba(99,102,241,0.2);color:#818cf8;border-radius:9999px;font-weight:600;font-size:0.9rem;margin-bottom:1.5rem;}}
+                  a{{display:inline-block;background:#6366f1;color:#fff;padding:0.75rem 1.5rem;border-radius:0.5rem;text-decoration:none;font-weight:600;transition:background 0.2s;}}
+                  a:hover{{background:#4f46e5;}}
+                </style>
+                <script>
+                  if (window.opener) {{
+                    try {{ window.opener.postMessage({{ type: 'trakt_auth_complete', username: '{username}' }}, '*'); }} catch(e) {{}}
+                    setTimeout(function() {{ window.close(); }}, 1800);
+                  }} else {{
+                    setTimeout(function() {{ window.location.href = '/#services'; }}, 2000);
+                  }}
+                </script>
+                </head><body>
+                <div class="card">
+                  <div class="icon">✓</div>
+                  <h2>Trakt Connected!</h2>
+                  <div class="badge">@{username}</div>
+                  <p>Your Trakt account has been successfully linked to Orac. This window will close automatically.</p>
+                  <a href="/#services">Return to Orac</a>
+                </div>
+                </body></html>"""
+            )
+        except Exception as e:
+            log(f"[Trakt] Error during token exchange: {e}", level=LOGERROR)
+            return HTMLResponse(f"<h3>Internal error during token exchange: {e}</h3>", status_code=500)
+
     @app.post("/api/web/platforms/trakt/check_auth")
     async def web_trakt_check_auth_api(request: Request):
         try:
             body = await request.json()
+            state = (body.get("state") or "").strip()
             device_code = (body.get("device_code") or "").strip()
+
+            # 1. Check if PKCE session completed
+            if state:
+                with _pkce_lock:
+                    session = _pkce_sessions.get(state)
+                    if session and session.get("completed"):
+                        username = session.get("username") or "trakt_user"
+                        return JSONResponse(status_code=200, content={"success": True, "username": username})
+
+            # 2. Check Device Code flow
             if not device_code:
-                return JSONResponse(status_code=400, content={"success": False, "error": "Missing device code"})
+                return JSONResponse(status_code=200, content={"success": False, "status": "pending", "error": "Approval pending"})
 
-            client_id = get_config_value("client_id", app.state.config_db_path) or get_config_value("trakt_client", app.state.config_db_path) or get_config_value("trakt.client", app.state.config_db_path)
-            if not client_id or client_id in ('empty_setting', ''):
-                client_id = "f986871799a140dc20a166adfa637c98c8fa474dc80757aabad8668b99e184de"
-
-            client_secret = get_config_value("client_secret", app.state.config_db_path) or get_config_value("trakt_secret", app.state.config_db_path) or get_config_value("trakt.secret", app.state.config_db_path)
-            if not client_secret or client_secret in ('empty_setting', ''):
-                client_secret = "579a93101ccf4cb251884dc1d632d74c3b3f34d275cee59d56e82cac31161f71"
+            client_id = get_trakt_client_id(app.state.config_db_path)
+            client_secret = get_trakt_client_secret(app.state.config_db_path)
 
             url = "https://api.trakt.tv/oauth/device/token"
             headers = {
@@ -1262,9 +1467,11 @@ def app_factory(
             }
             payload = {
                 "code": device_code,
-                "client_id": client_id,
-                "client_secret": client_secret
+                "client_id": client_id
             }
+            if client_secret and client_secret not in ('empty_setting', ''):
+                payload["client_secret"] = client_secret
+
             resp = requests.post(url, json=payload, headers=headers, timeout=10)
             if resp.status_code == 400:
                 return JSONResponse(status_code=200, content={"success": False, "status": "pending", "error": "Approval pending"})
@@ -1302,11 +1509,11 @@ def app_factory(
                 "trakt.refresh": refresh_token,
                 "trakt_expires": expires_at,
                 "client_id": client_id,
-                "client_secret": client_secret,
-                "trakt_token_refreshed": str(int(time.time()))
+                "client_secret": (client_secret or ""),
+                "trakt_token_refreshed": str(int(time.time())),
+                "trakt_reauth_required": "false"
             }, app.state.config_db_path)
 
-            # Reload Trakt auth in running server state if present
             if hasattr(app.state, 'trakt_auth') and app.state.trakt_auth:
                 app.state.trakt_auth.reload_credentials()
 
@@ -1323,12 +1530,15 @@ def app_factory(
     async def web_trakt_revoke_api():
         try:
             token = get_config_value("trakt_token", app.state.config_db_path) or get_config_value("trakt.token", app.state.config_db_path)
-            client_id = get_config_value("client_id", app.state.config_db_path) or "f986871799a140dc20a166adfa637c98c8fa474dc80757aabad8668b99e184de"
-            client_secret = get_config_value("client_secret", app.state.config_db_path) or "579a93101ccf4cb251884dc1d632d74c3b3f34d275cee59d56e82cac31161f71"
+            client_id = get_trakt_client_id(app.state.config_db_path)
+            client_secret = get_trakt_client_secret(app.state.config_db_path)
             if token and token not in ('empty_setting', ''):
                 try:
                     headers = {"Content-Type": "application/json", "trakt-api-version": "2", "trakt-api-key": client_id}
-                    requests.post("https://api.trakt.tv/oauth/revoke", json={"token": token, "client_id": client_id, "client_secret": client_secret}, headers=headers, timeout=5)
+                    revoke_data = {"token": token, "client_id": client_id}
+                    if client_secret and client_secret not in ('empty_setting', ''):
+                        revoke_data["client_secret"] = client_secret
+                    requests.post("https://api.trakt.tv/oauth/revoke", json=revoke_data, headers=headers, timeout=5)
                 except Exception:
                     pass
 

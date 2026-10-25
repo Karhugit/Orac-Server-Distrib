@@ -121,6 +121,10 @@ if not init_success:
 
 addon = "service.orac"
 
+# Migrate Trakt credentials to new PKCE client ID if needed
+from resources.lib.config_handler import migrate_trakt_credentials
+migrate_trakt_credentials(config_db_path, os.path.join(script_dir, "config.json"))
+
 # Initialize Handlers
 trakt_handler = TraktAuth(
     client_id=config_loader.trakt_config.get("client_id"),

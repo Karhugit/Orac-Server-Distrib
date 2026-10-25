@@ -1,6 +1,12 @@
+import os
+import json
 import sqlite3
 from resources.lib.db_utils import db_connect
 from resources.lib.log_utils import log, LOGERROR, LOGINFO, LOGWARNING, LOGDEBUG
+
+DEFAULT_TRAKT_CLIENT_ID = "EfwA4IGG5EG2CsbH-uKDWCKAkRZ2HNxtPpbC1ExQZGM"
+OLD_TRAKT_CLIENT_ID = "f986871799a140dc20a166adfa637c98c8fa474dc80757aabad8668b99e184de"
+DEFAULT_TRAKT_REDIRECT_URI = "http://localhost:5555/api/web/platforms/trakt/callback"
 
 def _init_config_db(conn):
     """Ensures the config table exists."""
@@ -47,7 +53,61 @@ def get_trakt_refresh_token(config_db_path):
 
 
 def get_trakt_client_id(config_db_path):
-    return get_config_value('client_id', config_db_path)
+    cid = get_config_value('client_id', config_db_path)
+    if not cid or cid in ('empty_setting', '', OLD_TRAKT_CLIENT_ID):
+        return DEFAULT_TRAKT_CLIENT_ID
+    return cid
+
+def migrate_trakt_credentials(config_db_path, config_file_path=None):
+    """
+    Migrates legacy Trakt credentials to the new PKCE client ID and clears
+    invalidated tokens, flagging that re-authorization is required.
+    """
+    if not config_db_path:
+        return False
+    current_id = get_config_value('client_id', config_db_path)
+    migrated = False
+    if not current_id or current_id in ('empty_setting', '', OLD_TRAKT_CLIENT_ID):
+        log(f"[Trakt] Migrating Trakt credentials to new PKCE app (Client ID: {DEFAULT_TRAKT_CLIENT_ID[:6]}...)", level=LOGINFO)
+        existing_token = get_config_value('trakt_token', config_db_path)
+        had_auth = bool(existing_token and existing_token not in ('empty_setting', ''))
+
+        updates = {
+            'client_id': DEFAULT_TRAKT_CLIENT_ID,
+            'client_secret': '',
+            'trakt_client': DEFAULT_TRAKT_CLIENT_ID,
+            'trakt.client': DEFAULT_TRAKT_CLIENT_ID,
+        }
+        if had_auth:
+            updates.update({
+                'trakt_token': 'empty_setting',
+                'trakt.token': 'empty_setting',
+                'trakt_refresh': 'empty_setting',
+                'trakt.refresh': 'empty_setting',
+                'trakt_expires': 'empty_setting',
+                'trakt_reauth_required': 'true'
+            })
+            log("[Trakt] Invalidation of old Trakt OAuth token complete. User re-auth required.", level=LOGINFO)
+
+        update_config_values(updates, config_db_path)
+        migrated = True
+
+    if config_file_path and os.path.exists(config_file_path):
+        try:
+            with open(config_file_path, 'r', encoding='utf-8') as cf:
+                cdata = json.load(cf)
+            trakt_cfg = cdata.get('TRAKT', {})
+            if trakt_cfg.get('client_id') == OLD_TRAKT_CLIENT_ID or not trakt_cfg.get('client_id'):
+                trakt_cfg['client_id'] = DEFAULT_TRAKT_CLIENT_ID
+                trakt_cfg['client_secret'] = ''
+                cdata['TRAKT'] = trakt_cfg
+                with open(config_file_path, 'w', encoding='utf-8') as cf:
+                    json.dump(cdata, cf, indent=4)
+                log(f"[Trakt] Updated {config_file_path} with new Client ID", level=LOGINFO)
+        except Exception as ce:
+            log(f"[Trakt] Warning: Failed to update {config_file_path}: {ce}", level=LOGWARNING)
+
+    return migrated
 
 def get_trakt_client_secret(config_db_path):
     return get_config_value('client_secret', config_db_path)
@@ -175,4 +235,4 @@ def get_all_config(config_db_path):
             return {row[0]: row[1] for row in cursor.fetchall()}
     except Exception as e:
         log(f"Error fetching all config: {e}", LOGERROR)
-        return {}
+        return {}

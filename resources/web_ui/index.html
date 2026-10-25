@@ -1797,6 +1797,18 @@
                     </div>
                 </div>
 
+                <!-- Trakt Re-Auth Required Banner -->
+                <div id="trakt-reauth-banner" style="display: none; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 1.25rem; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <span style="font-size: 1.25rem;">⚠️</span>
+                        <div>
+                            <strong style="color: #fbbf24; font-size: 0.9rem;">Trakt Re-Authorization Required</strong>
+                            <div style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.15rem;">Trakt API authentication has upgraded to PKCE. Please re-authenticate your Trakt account to resume library & watch syncing.</div>
+                        </div>
+                    </div>
+                    <button class="btn-primary" onclick="openTraktAuthModal()" style="background: #f59e0b; border-color: #f59e0b; padding: 0.45rem 1rem; font-size: 0.85rem; white-space: nowrap;">Re-Authorise Trakt</button>
+                </div>
+
                 <!-- 3-Column Services Grid -->
                 <div class="services-grid">
                     <!-- Column 1: Authorised Platforms -->
@@ -2860,8 +2872,21 @@ Orac Server Port: 8000 (default)</div>
             
             <div id="trakt-auth-body" style="display: flex; flex-direction: column; gap: 1.25rem; align-items: center; width: 100%;">
                 <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0; line-height: 1.4;">
-                    Click the button below to approve Orac on Trakt, or scan the QR code and enter the PIN.
+                    Sign in to your Trakt account to link it with Orac.
                 </p>
+
+                <!-- Primary: PKCE Browser Sign-in -->
+                <button type="button" id="trakt-pkce-btn" onclick="openTraktPkceAuth()" class="btn-primary" style="padding: 0.75rem 1.5rem; font-size: 0.95rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.6rem; width: 100%; box-sizing: border-box; background: #ed1c24; border-color: #ed1c24; font-weight: 600; cursor: pointer; border-radius: 0.5rem;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+                    <span>Sign in with Trakt.tv (Browser)</span>
+                </button>
+
+                <!-- Divider -->
+                <div id="trakt-or-divider" style="display: flex; align-items: center; width: 100%; gap: 0.75rem; margin: -0.25rem 0;">
+                    <div style="flex: 1; height: 1px; background: var(--border-glass);"></div>
+                    <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">or use device code</span>
+                    <div style="flex: 1; height: 1px; background: var(--border-glass);"></div>
+                </div>
 
                 <div id="trakt-code-display" style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-glass); border-radius: 0.75rem; padding: 0.75rem 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; width: 100%; box-sizing: border-box;">
                     <span style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted);">Your Trakt PIN Code</span>
@@ -2872,9 +2897,9 @@ Orac Server Port: 8000 (default)</div>
                     <img id="trakt-qr-img" src="" alt="Trakt QR Code" style="width: 150px; height: 150px; display: block; border-radius: 0.25rem;">
                 </div>
 
-                <a id="trakt-browser-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-primary" style="padding: 0.6rem 1.4rem; font-size: 0.9rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;">
-                    <span>Open Trakt Activation</span>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                <a id="trakt-browser-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-secondary" style="padding: 0.55rem 1.25rem; font-size: 0.85rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;">
+                    <span>Open Activation Page</span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
                 </a>
 
                 <div id="trakt-auth-status" style="font-size: 0.85rem; padding: 0.5rem 0.75rem; border-radius: 0.4rem; width: 100%; box-sizing: border-box; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);">
@@ -3491,7 +3516,9 @@ Orac Server Port: 8000 (default)</div>
                         actionBtnHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openPunchPlayAuthModal()">Authorise</button>`;
                     }
                 } else if (platform.id === 'trakt' || platform.name.toLowerCase() === 'trakt') {
-                    if (isAuth) {
+                    if (platform.reauth_required) {
+                        actionBtnHtml = `<button class="btn-sm-action" onclick="openTraktAuthModal()" style="background:#f59e0b; border-color:#f59e0b; color:#fff;">Re-Auth</button>`;
+                    } else if (isAuth) {
                         actionBtnHtml = `<button class="btn-sm-action btn-sm-danger" onclick="revokeTraktAuth()">Revoke</button>`;
                     } else {
                         actionBtnHtml = `<button class="btn-sm-action btn-sm-primary" onclick="openTraktAuthModal()">Authorise</button>`;
@@ -3511,13 +3538,27 @@ Orac Server Port: 8000 (default)</div>
                     }
                 }
 
+                const displayHtml = platform.reauth_required
+                    ? `<span style="font-size:0.82rem; color: #f59e0b; font-weight: 500;">⚠️ Re-auth required</span>`
+                    : userDisplay;
+
                 row.innerHTML = `
-                    <div><span class="badge ${isAuth ? 'platform' : 'neutral'}">${escapeHtml(platform.name)}</span></div>
-                    <div class="item-name" style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${userDisplay}</div>
+                    <div><span class="badge ${isAuth && !platform.reauth_required ? 'platform' : (platform.reauth_required ? 'warning' : 'neutral')}">${escapeHtml(platform.name)}</span></div>
+                    <div class="item-name" style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${displayHtml}</div>
                     <div style="text-align: right;">${actionBtnHtml}</div>
                 `;
                 container.appendChild(row);
             });
+
+            const reauthBanner = document.getElementById('trakt-reauth-banner');
+            const traktPlatform = platforms.find(p => p.id === 'trakt');
+            if (reauthBanner) {
+                if (traktPlatform && traktPlatform.reauth_required) {
+                    reauthBanner.style.display = 'flex';
+                } else {
+                    reauthBanner.style.display = 'none';
+                }
+            }
 
             // Toggle switch for Trakt -> MDBlist sync (only show if both Trakt and MDBlist are authorized)
             if (syncToggleContainer && syncCheckbox) {
@@ -4939,6 +4980,8 @@ Orac Server Port: 8000 (default)</div>
 
         let traktPollInterval = null;
         let currentTraktDeviceCode = null;
+        let currentTraktState = null;
+        let currentTraktAuthUrl = null;
 
         function toggleTraktAuthModal(show) {
             const modal = document.getElementById('trakt-auth-modal');
@@ -4952,6 +4995,8 @@ Orac Server Port: 8000 (default)</div>
                     traktPollInterval = null;
                 }
                 currentTraktDeviceCode = null;
+                currentTraktState = null;
+                currentTraktAuthUrl = null;
             }
         }
 
@@ -4965,33 +5010,81 @@ Orac Server Port: 8000 (default)</div>
             }
         }
 
+        function openTraktPkceAuth() {
+            if (!currentTraktAuthUrl) return;
+            const popup = window.open(currentTraktAuthUrl, 'trakt_oauth', 'width=620,height=750,menubar=no,toolbar=no,location=yes,status=no');
+            if (popup) {
+                popup.focus();
+            } else {
+                window.open(currentTraktAuthUrl, '_blank');
+            }
+        }
+
+        // Listen for postMessage from Trakt callback page
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'trakt_auth_complete') {
+                if (traktPollInterval) {
+                    clearInterval(traktPollInterval);
+                    traktPollInterval = null;
+                }
+                const statusBox = document.getElementById('trakt-auth-status');
+                const statusText = document.getElementById('trakt-status-text');
+                if (statusBox && statusText) {
+                    statusBox.style.background = 'rgba(16, 185, 129, 0.15)';
+                    statusBox.style.color = '#34d399';
+                    statusBox.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                    statusText.textContent = `Successfully authorised as ${event.data.username}!`;
+                }
+                setTimeout(() => {
+                    toggleTraktAuthModal(false);
+                    fetchPlatforms();
+                    const banner = document.getElementById('trakt-reauth-banner');
+                    if (banner) banner.style.display = 'none';
+                }, 1000);
+            }
+        });
+
         async function startTraktAuth() {
             const statusText = document.getElementById('trakt-status-text');
             const statusBox = document.getElementById('trakt-auth-status');
             const qrImg = document.getElementById('trakt-qr-img');
             const browserLink = document.getElementById('trakt-browser-link');
             const codeDisplay = document.getElementById('trakt-user-code');
+            const pkceBtn = document.getElementById('trakt-pkce-btn');
 
             statusBox.style.background = 'rgba(99, 102, 241, 0.15)';
             statusBox.style.color = '#818cf8';
             statusBox.style.border = '1px solid rgba(99, 102, 241, 0.3)';
-            statusText.textContent = 'Requesting Trakt PIN code...';
+            statusText.textContent = 'Initializing Trakt authentication...';
             codeDisplay.textContent = '----';
-            browserLink.style.pointerEvents = 'none';
-            browserLink.style.opacity = '0.5';
+            if (browserLink) { browserLink.style.pointerEvents = 'none'; browserLink.style.opacity = '0.5'; }
+            if (pkceBtn) { pkceBtn.disabled = true; pkceBtn.style.opacity = '0.6'; }
 
             try {
                 const resp = await fetch('/api/web/platforms/trakt/start_auth', { method: 'POST' });
                 const data = await resp.json();
-                if (data.success && data.device_code) {
-                    currentTraktDeviceCode = data.device_code;
-                    codeDisplay.textContent = data.user_code;
-                    browserLink.href = data.verification_url;
-                    browserLink.style.pointerEvents = 'auto';
-                    browserLink.style.opacity = '1';
+                if (data.success) {
+                    currentTraktAuthUrl = data.auth_url || '';
+                    currentTraktState = data.state || '';
+                    currentTraktDeviceCode = data.device_code || '';
 
-                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(data.verification_url)}`;
-                    qrImg.src = qrUrl;
+                    if (pkceBtn && currentTraktAuthUrl) {
+                        pkceBtn.disabled = false;
+                        pkceBtn.style.opacity = '1';
+                    }
+
+                    if (data.user_code) {
+                        codeDisplay.textContent = data.user_code;
+                        if (browserLink) {
+                            browserLink.href = data.verification_url || 'https://auth.trakt.tv/activate';
+                            browserLink.style.pointerEvents = 'auto';
+                            browserLink.style.opacity = '1';
+                        }
+                        if (qrImg) {
+                            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(data.verification_url || 'https://auth.trakt.tv/activate')}`;
+                            qrImg.src = qrUrl;
+                        }
+                    }
 
                     statusText.textContent = 'Waiting for approval on Trakt...';
 
@@ -5027,7 +5120,7 @@ Orac Server Port: 8000 (default)</div>
         }
 
         async function checkTraktAuthOnce(isAutoPoll = false) {
-            if (!currentTraktDeviceCode) return;
+            if (!currentTraktDeviceCode && !currentTraktState) return;
 
             const statusText = document.getElementById('trakt-status-text');
             const statusBox = document.getElementById('trakt-auth-status');
@@ -5040,7 +5133,10 @@ Orac Server Port: 8000 (default)</div>
                 const resp = await fetch('/api/web/platforms/trakt/check_auth', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ device_code: currentTraktDeviceCode })
+                    body: JSON.stringify({
+                        device_code: currentTraktDeviceCode,
+                        state: currentTraktState
+                    })
                 });
                 const data = await resp.json();
                 if (data.success) {
@@ -5056,6 +5152,8 @@ Orac Server Port: 8000 (default)</div>
                     setTimeout(() => {
                         toggleTraktAuthModal(false);
                         fetchPlatforms();
+                        const banner = document.getElementById('trakt-reauth-banner');
+                        if (banner) banner.style.display = 'none';
                     }, 1000);
                 } else if (!isAutoPoll) {
                     statusText.textContent = data.error || 'Approval not detected yet. Please approve on Trakt.';

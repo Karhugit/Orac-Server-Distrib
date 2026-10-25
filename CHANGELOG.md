@@ -4,6 +4,14 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.5.4] - 2026-10-26
+
+### Added
+- **Trakt OAuth 2.0 PKCE Flow** — Upgraded Trakt authentication to PKCE (Proof Key for Code Exchange) compliant OAuth 2.0, supporting secure public client authorization without requiring a client secret. Added seamless one-click browser authorization via popup window (window.open + postMessage) and retained device code flow as a secondary fallback.
+- **Automated Client ID Migration & Database Invalidation** — Added automated startup migration in config_handler.py that transparently updates legacy Trakt client credentials to the new public client ID (EfwA4IGG5EG2CsbH-uKDWCKAkRZ2HNxtPpbC1ExQZGM), clears outdated client secrets, resets existing tokens, and flags the database for re-authorization.
+- **Web Dashboard Re-Authorization Notification** — Added a prominent amber banner and status badges to the Services tab in the Web Dashboard prompting users when Trakt re-authorization is required following client credential migration.
+- **Secret-less Token Refresh & Revocation** — Updated token refresh and revocation handlers to operate without client_secret when running under PKCE.
+
 ## [1.5.3] - 2026-10-25
 
 ### Fixed

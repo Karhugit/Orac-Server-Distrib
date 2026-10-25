@@ -29,7 +29,7 @@ class ConfigLoader:
                 "anime_mappings": str(self.project_root / "anime_mappings.db"),
             },
             "TRAKT": {
-                "client_id": os.environ.get("TRAKT_CLIENT_ID", ""),
+                "client_id": os.environ.get("TRAKT_CLIENT_ID", "EfwA4IGG5EG2CsbH-uKDWCKAkRZ2HNxtPpbC1ExQZGM"),
                 "client_secret": os.environ.get("TRAKT_CLIENT_SECRET", ""),
             },
             "TMDB": {
