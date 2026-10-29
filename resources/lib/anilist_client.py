@@ -295,6 +295,9 @@ def fetch_anime_list(
     username: Optional[str] = None,
     token: Optional[str] = None,
     anime_service=None,
+    min_rating: Optional[float] = None,
+    year_gte: Optional[int] = None,
+    year_lte: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Fetches an anime list from AniList and normalizes it for Kodi/Web clients.
@@ -353,6 +356,40 @@ def fetch_anime_list(
     else:
         variables["sort"] = ["TRENDING_DESC", "POPULARITY_DESC"]
 
+    if season and lt != "seasonal":
+        variables["season"] = season.upper()
+    if season_year and lt != "seasonal":
+        variables["seasonYear"] = int(season_year)
+
+    if min_rating is not None and str(min_rating).strip():
+        try:
+            r = float(min_rating)
+            if r <= 10.0:
+                r = r * 10.0
+            variables["averageScore_greater"] = int(round(r))
+        except (ValueError, TypeError):
+            pass
+
+    if year_gte is not None and str(year_gte).strip():
+        try:
+            yg = int(year_gte)
+            if yg < 10000:
+                variables["startDate_greater"] = yg * 10000
+            else:
+                variables["startDate_greater"] = yg
+        except (ValueError, TypeError):
+            pass
+
+    if year_lte is not None and str(year_lte).strip():
+        try:
+            yl = int(year_lte)
+            if yl < 10000:
+                variables["startDate_lesser"] = yl * 10000 + 1231
+            else:
+                variables["startDate_lesser"] = yl
+        except (ValueError, TypeError):
+            pass
+
     if genre:
         variables["genre"] = genre
 
@@ -369,7 +406,10 @@ def fetch_anime_list(
       $format: MediaFormat,
       $search: String,
       $genre: String,
-      $isAdult: Boolean
+      $isAdult: Boolean,
+      $averageScore_greater: Int,
+      $startDate_greater: FuzzyDateInt,
+      $startDate_lesser: FuzzyDateInt
     ) {
       Page(page: $page, perPage: $perPage) {
         pageInfo {
@@ -388,7 +428,10 @@ def fetch_anime_list(
           format: $format,
           search: $search,
           genre: $genre,
-          isAdult: $isAdult
+          isAdult: $isAdult,
+          averageScore_greater: $averageScore_greater,
+          startDate_greater: $startDate_greater,
+          startDate_lesser: $startDate_lesser
         ) {
           ...MediaFields
         }

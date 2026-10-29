@@ -71,15 +71,28 @@ def del_external_index(params, external_indexes_db_path):
         # Set a longer timeout to handle potential locks
         with sqlite3.connect(external_indexes_db_path, timeout=10.0) as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                DELETE FROM external_indexes
-                WHERE id = ? AND media_type = ?
-            """, (
-                params.get('index_id'),
-                params.get('item_type')
-            ))
+            index_id = params.get('index_id')
+            item_type = params.get('item_type')
+            if item_type and item_type != 'all':
+                if item_type in ('tv', 'tvshow', 'show'):
+                    cursor.execute("""
+                        DELETE FROM external_indexes
+                        WHERE id = ? AND (media_type IN ('tv', 'tvshow', 'show', 'media') OR media_type IS NULL OR media_type = '')
+                    """, (index_id,))
+                elif item_type == 'movie':
+                    cursor.execute("""
+                        DELETE FROM external_indexes
+                        WHERE id = ? AND (media_type IN ('movie', 'media') OR media_type IS NULL OR media_type = '')
+                    """, (index_id,))
+                else:
+                    cursor.execute("""
+                        DELETE FROM external_indexes
+                        WHERE id = ? AND (media_type = ? OR media_type = 'media' OR media_type IS NULL OR media_type = '')
+                    """, (index_id, item_type))
+            else:
+                cursor.execute("DELETE FROM external_indexes WHERE id = ?", (index_id,))
             conn.commit()  # Explicitly commit the transaction
-            log(f"[Orac] Deleted external index for ID {params.get('index_id')}", level=LOGDEBUG)
+            log(f"[Orac] Deleted external index for ID {index_id}", level=LOGDEBUG)
             return True
     except Exception as e:
         log(f"[Orac] Error deleting external index: {str(e)}", level=LOGERROR)

@@ -6,13 +6,20 @@ from .db_utils import get_discover_params_from_db
 
 
 
-def handle_discover_request(item_type, query_params, tmdb_handler, ext_indexes_cursor):
+def handle_discover_request(item_type, query_params, tmdb_handler, ext_indexes_cursor, trakt_handler=None):
     """
-    Handles a discover request by forwarding it to TMDb and formatting the response.
+    Handles a discover request by forwarding it to TMDb or Trakt Calendar and formatting the response.
     """
     log(f"Discover handler received query_params: {query_params}", LOGINFO)
-    if item_type not in ['tv', 'movie', 'tvshow']:
+    if item_type not in ['tv', 'movie', 'tvshow', 'trakt', 'calendar', 'media']:
         return 400, f"Unsupported item_type for discover: {item_type}", "text/plain"
+
+    # If item_type is 'trakt' or 'calendar', route directly to trakt calendar handler
+    if item_type in ['trakt', 'calendar']:
+        if trakt_handler:
+            from .trakt_calendar_handler import handle_trakt_calendar_request
+            return handle_trakt_calendar_request(query_params, trakt_handler, ext_indexes_cursor)
+        return 500, json.dumps({'error': 'Trakt handler not available'}), "application/json"
 
     # TMDb API uses 'tv' for tv shows
     if item_type == 'tvshow':
@@ -32,6 +39,17 @@ def handle_discover_request(item_type, query_params, tmdb_handler, ext_indexes_c
     db_params = None
     if query_name:
         db_params = get_discover_params_from_db(ext_indexes_cursor, query_name, item_type)
+        if not db_params:
+            db_params = get_discover_params_from_db(ext_indexes_cursor, query_name, 'media')
+        if not db_params:
+            db_params = get_discover_params_from_db(ext_indexes_cursor, query_name, None)
+
+    # If the stored index is a Trakt calendar query, delegate to trakt_calendar_handler
+    if db_params and (db_params.get('source') == 'trakt' or 'preset' in db_params or 'calendar' in db_params):
+        if trakt_handler:
+            from .trakt_calendar_handler import handle_trakt_calendar_request
+            return handle_trakt_calendar_request(query_params, trakt_handler, ext_indexes_cursor, target_media_type=item_type)
+        return 500, json.dumps({'error': 'Trakt handler not available'}), "application/json" 
 
     if db_params:
         processed_params.update(db_params)

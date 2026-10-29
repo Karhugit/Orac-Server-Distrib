@@ -88,6 +88,7 @@ def backfill_missing_show_imdb_ids(tvshows_static_db_path, tmdb_handler, max_sho
             cursor.execute("""
                 SELECT show_tmdb_id, title FROM shows
                 WHERE (imdb_id IS NULL OR imdb_id = '')
+                  AND (dropped = 0 OR dropped IS NULL)
                 LIMIT ?
             """, (max_shows,))
             missing_shows = cursor.fetchall()

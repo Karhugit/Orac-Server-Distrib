@@ -835,23 +835,39 @@ async def get_external_index_lists(trakt_handler, tmdb_handler, external_indexes
     tasks = []
     for index in active_indexes:
         list_id = index['id'].lower().replace(' ', '-').replace('_', '-')
+        raw_params = index.get('parameters', {})
+        if isinstance(raw_params, str):
+            try:
+                raw_params = json.loads(raw_params)
+            except Exception:
+                raw_params = {}
+
+        is_trakt = raw_params.get('source') == 'trakt' or 'preset' in raw_params or 'calendar' in raw_params
+        prefix = "trakt:index" if is_trakt else "tmdb:index"
+        source_name = "trakt" if is_trakt else "tmdb"
         
         # We only sync if the setting is explicitly 1. Otherwise, we skip.
-        # The original check `if lists_library_settings and ...` was buggy because an empty dict is False,
-        # causing the condition to fail and the sync to proceed incorrectly when no lists were configured.
-        if not (lists_library_settings and lists_library_settings.get(f"tmdb:index:{list_id}") == 1):
+        is_enabled = (
+            lists_library_settings and (
+                lists_library_settings.get(f"{prefix}:{list_id}") == 1 or
+                lists_library_settings.get(f"tmdb:index:{list_id}") == 1
+            )
+        )
+        if not is_enabled:
             log(f"[Orac] Skipping external index '{list_id}' as it's not enabled for library sync.", level=LOGINFO)
             # We still need to add the list to the lists table if not present
             with db_connect(lists_db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT 1 FROM lists WHERE list_id=?", (f"tmdb:index:{list_id}",))
+                cursor.execute("SELECT 1 FROM lists WHERE list_id=?", (f"{prefix}:{list_id}",))
                 if not cursor.fetchone():
                     cursor.execute("INSERT OR REPLACE INTO lists (list_id, source, user, owned_by_user, slug, name, description, last_checked, item_count_movies, item_count_shows, add_to_library) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                    (f"tmdb:index:{list_id}", "tmdb", "tmdb", 0, list_id, index['id'].replace('_', ' ').title(), f"External Index: {index['id']}", "1970-01-01T00:00:00.000Z", 0, 0, 0))
+                                    (f"{prefix}:{list_id}", source_name, source_name, 0, list_id, index['id'].replace('_', ' ').title(), f"External Index: {index['id']}", "1970-01-01T00:00:00.000Z", 0, 0, 0))
                     conn.commit()
             continue
 
-        if index['media_type'] == 'movie':
+        if is_trakt:
+            tasks.append(fetch_external_trakt_calendar_index(trakt_handler, index))
+        elif index['media_type'] == 'movie':
             tasks.append(fetch_external_movies_index(trakt_handler, tmdb_handler, index, movie_static_db_path))
         elif index['media_type'] in ['show', 'tvshow']:
              tasks.append(fetch_external_shows_index(trakt_handler, tmdb_handler, index, tvshows_static_db_path))
@@ -901,6 +917,86 @@ async def resolve_tmdb_to_trakt(tmdb_id, media_type, trakt_handler, static_curso
 
     except Exception as e:
         log(f"[Orac] Error resolving TMDB ID {tmdb_id} to Trakt ID: {e}", level=LOGDEBUG)
+        return None
+
+
+async def fetch_external_trakt_calendar_index(trakt_handler, index):
+    """
+    Fetches items from a Trakt Calendar external index and formats them as a list.
+    """
+    try:
+        from .trakt_calendar_handler import handle_trakt_calendar_request
+        raw_params = index.get('parameters', {})
+        if isinstance(raw_params, str):
+            try:
+                raw_params = json.loads(raw_params)
+            except Exception:
+                raw_params = {}
+        params = dict(raw_params)
+
+        status, body, _ = handle_trakt_calendar_request(params, trakt_handler)
+        if status != 200:
+            log(f"[Orac] Trakt calendar request for index '{index.get('id')}' failed with HTTP {status}", level=LOGWARNING)
+            return None
+
+        items = json.loads(body)
+        if not isinstance(items, list):
+            return None
+
+        resolved_items = []
+        for item in items:
+            m_type = item.get('media_type', 'movie')
+            trakt_id = item.get('trakt_id')
+            tmdb_id = item.get('tmdb_id')
+            if not trakt_id and not tmdb_id:
+                continue
+            if not trakt_id and tmdb_id:
+                trakt_id = -int(tmdb_id)
+            if not tmdb_id and trakt_id:
+                tmdb_id = -int(trakt_id)
+
+            title = item.get('title')
+            year = item.get('year')
+
+            if m_type in ('tv', 'show'):
+                resolved_items.append({
+                    "type": "show",
+                    "show": {
+                        "ids": {
+                            "trakt": trakt_id,
+                            "tmdb": tmdb_id
+                        },
+                        "title": title,
+                        "year": year
+                    }
+                })
+            else:
+                resolved_items.append({
+                    "type": "movie",
+                    "movie": {
+                        "ids": {
+                            "trakt": trakt_id,
+                            "tmdb": tmdb_id
+                        },
+                        "title": title,
+                        "year": year
+                    }
+                })
+
+        slug = index['id'].lower().replace(' ', '-').replace('_', '-')
+        list_meta = {
+            "ids": {"slug": slug},
+            "name": index['id'].replace('_', ' ').title(),
+            "description": f"External Trakt Calendar Index: {index['id']}",
+            "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            "user": {"ids": {"slug": "trakt"}},
+            "list_id": f"trakt:index:{slug}",
+            "source": "trakt",
+            "items": resolved_items
+        }
+        return list_meta
+    except Exception as e:
+        log(f"[Orac] Error processing external Trakt calendar index '{index.get('id')}': {e}", level=LOGERROR)
         return None
 
 async def fetch_external_movies_index(trakt_handler, tmdb_handler, index, movie_static_db_path):
@@ -1223,7 +1319,7 @@ async def sync_recent_tvshow_updates(trakt_handler, tmdb_handler, tvshows_static
         # Load local show IDs for instant O(1) matching
         static_conn = db_connect(tvshows_static_db_path)
         static_cursor = static_conn.cursor()
-        static_cursor.execute("SELECT show_trakt_id, last_updated FROM shows WHERE show_trakt_id IS NOT NULL AND show_trakt_id > 0")
+        static_cursor.execute("SELECT show_trakt_id, last_updated FROM shows WHERE show_trakt_id IS NOT NULL AND show_trakt_id > 0 AND (dropped = 0 OR dropped IS NULL)")
         db_shows = {row[0]: row[1] for row in static_cursor.fetchall()}
         static_conn.close()
 
@@ -1347,7 +1443,7 @@ async def sync_recent_tmdb_tv_changes(trakt_handler, tmdb_handler, tvshows_stati
         cursor = static_conn.cursor()
         
         # Build lookup for existing shows
-        cursor.execute("SELECT show_tmdb_id, show_trakt_id, title FROM shows")
+        cursor.execute("SELECT show_tmdb_id, show_trakt_id, title FROM shows WHERE (dropped = 0 OR dropped IS NULL)")
         existing_shows = {row[0]: (row[1], row[2]) for row in cursor.fetchall()}
         static_conn.close()
 

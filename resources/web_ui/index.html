@@ -1884,19 +1884,26 @@
         <section id="tab-discover" class="tab-pane">
             <div class="glass-panel" style="margin-bottom: 1.5rem;">
                 <div class="panel-title" style="justify-content: space-between; flex-wrap: wrap;">
-                    <div style="display: flex; align-items: center; gap: 0.6rem;">
+                    <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
-                        <span>TMDb Discover Studio</span>
+                        <span>Discover Studio</span>
+                        <div class="btn-toggle-group" id="discover-engine-toggle" style="margin-left: 0.5rem;">
+                            <button type="button" class="btn-toggle active" id="engine-tmdb-btn" onclick="setDiscoverEngine('tmdb')">TMDb</button>
+                            <button type="button" class="btn-toggle" id="engine-trakt-btn" onclick="setDiscoverEngine('trakt')">Trakt</button>
+                            <button type="button" class="btn-toggle" id="engine-anime-btn" onclick="setDiscoverEngine('anime')">Anime</button>
+                        </div>
                     </div>
                     <div style="display: flex; gap: 0.5rem; align-items: center;">
                         <button class="btn-secondary" onclick="resetDiscoverFilters()" style="padding: 0.45rem 0.9rem; font-size: 0.8rem;">↺ Reset</button>
-                        <button class="btn-secondary" onclick="openSaveIndexModal()" style="padding: 0.45rem 0.9rem; font-size: 0.8rem;">📑 Save as Index</button>
+                        <button class="btn-secondary" id="discover-save-index-btn" onclick="openSaveIndexModal()" style="padding: 0.45rem 0.9rem; font-size: 0.8rem;">📑 Save as Index</button>
                         <button class="btn-primary" onclick="runDiscoverQuery()" style="padding: 0.45rem 1.1rem; font-size: 0.85rem;">🔍 Discover</button>
                     </div>
                 </div>
 
                 <!-- Discover Controls -->
                 <div class="filter-section">
+                    <!-- TMDb Controls -->
+                    <div id="discover-tmdb-controls" style="display: flex; flex-direction: column; gap: 1.25rem;">
                     <!-- Row 1: Media Type & Presets -->
                     <div class="filter-row" style="justify-content: space-between;">
                         <div class="filter-group">
@@ -1998,6 +2005,131 @@
                             </select>
                         </div>
                     </div>
+                    </div>
+
+                    <!-- Trakt Calendar Controls -->
+                    <div id="discover-trakt-controls" style="display: none; flex-direction: column; gap: 1.25rem;">
+                        <!-- Row 1: Scope & Quick Presets -->
+                        <div class="filter-row" style="justify-content: space-between; align-items: flex-start;">
+                            <div class="filter-group">
+                                <label class="filter-label">Calendar Scope</label>
+                                <div class="btn-toggle-group">
+                                    <button type="button" class="btn-toggle active" id="trakt-target-all-btn" onclick="setTraktTarget('all')">All Releases</button>
+                                    <button type="button" class="btn-toggle" id="trakt-target-my-btn" onclick="setTraktTarget('my')">My Calendar</button>
+                                </div>
+                            </div>
+
+                            <div class="filter-group" style="flex-grow: 1;">
+                                <label class="filter-label">Quick Presets</label>
+                                <div style="display: flex; flex-wrap: wrap; gap: 0.4rem;" id="trakt-presets-container">
+                                    <button type="button" class="filter-chip preset-chip" data-preset="new_shows" onclick="applyTraktPreset('new_shows')">🆕 New Shows</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="season_premieres" onclick="applyTraktPreset('season_premieres')">🌟 Season Premieres</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="finales" onclick="applyTraktPreset('finales')">🏁 Finales</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="movies" onclick="applyTraktPreset('movies')">🎬 Movies</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="streaming_releases" onclick="applyTraktPreset('streaming_releases')">📺 Streaming Releases</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="dvd_releases" onclick="applyTraktPreset('dvd_releases')">📀 DVD Releases</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="media" onclick="applyTraktPreset('media')">🎞️ Media</button>
+                                    <button type="button" class="filter-chip preset-chip active" data-preset="hot_releases" onclick="applyTraktPreset('hot_releases')">🔥 Hot Releases</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="hot_premieres" onclick="applyTraktPreset('hot_premieres')">🔥 Hot Premieres</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="hot_finales" onclick="applyTraktPreset('hot_finales')">🔥 Hot Finales</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="hot_new_shows" onclick="applyTraktPreset('hot_new_shows')">🔥 Hot New Shows</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Row 2: Trakt Genres Multi-Select -->
+                        <div class="filter-group">
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;">
+                                <label class="filter-label">Genres (Click to toggle &amp; refine loaded results)</label>
+                                <div style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; color: var(--text-muted);">
+                                    <span>Match:</span>
+                                    <button type="button" id="trakt-genre-match-any-btn" class="filter-chip active" style="padding: 0.15rem 0.55rem; font-size: 0.7rem;" onclick="setTraktGenreMatchMode('any')">Any</button>
+                                    <button type="button" id="trakt-genre-match-all-btn" class="filter-chip" style="padding: 0.15rem 0.55rem; font-size: 0.7rem;" onclick="setTraktGenreMatchMode('all')">All</button>
+                                </div>
+                            </div>
+                            <div class="chip-container" id="trakt-genres-container">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Row 3: Parameters -->
+                        <div class="filter-row">
+                            <div class="filter-group">
+                                <label class="filter-label" title="Start date of calendar window. Enter a date (YYYY-MM-DD) or rolling relative date like T-0 or T-7">Start Date</label>
+                                <input type="text" id="trakt-filter-start-date" class="form-input" placeholder="e.g. T-0" value="T-0" style="width: 125px;">
+                            </div>
+                            <div class="filter-group">
+                                <label class="filter-label" title="Number of days (1 to 33, Trakt API maximum)">Days (1 - 33)</label>
+                                <input type="number" id="trakt-filter-days" class="form-input" placeholder="7" value="7" min="1" max="33" style="width: 100px;">
+                            </div>
+                            <div class="filter-group">
+                                <label class="filter-label" title="Optional end date (YYYY-MM-DD or T+N)">End Date (Optional)</label>
+                                <input type="text" id="trakt-filter-end-date" class="form-input" placeholder="e.g. T+14" style="width: 125px;">
+                            </div>
+                            <div class="filter-group">
+                                <label class="filter-label" title="Minimum rating on 0 - 10 scale (e.g. 7.5)">Min Rating (0 - 10)</label>
+                                <input type="number" id="trakt-filter-rating" class="form-input" placeholder="e.g. 7.5" min="0" max="10" step="0.5" style="width: 115px;">
+                            </div>
+                            <div class="filter-group" style="flex-grow: 1;">
+                                <label class="filter-label" title="Runtime in minutes (e.g. 45 or 60-120)">Runtime (Mins)</label>
+                                <input type="text" id="trakt-filter-runtime" class="form-input" placeholder="e.g. 45 or 60-120" style="width: 130px;">
+                            </div>
+                        </div>
+                    </div>
+                
+
+                    <!-- Anime Controls (Anime Hub) -->
+                    <div id="discover-anime-controls" style="display: none; flex-direction: column; gap: 1.25rem;">
+                        <!-- Row 1: Anime Hub Presets -->
+                        <div class="filter-row" style="justify-content: space-between;">
+                            <div class="filter-group" style="flex-grow: 1;">
+                                <label class="filter-label">Anime Hub Presets</label>
+                                <div style="display: flex; flex-wrap: wrap; gap: 0.4rem;" id="anime-presets-container">
+                                    <button type="button" class="filter-chip preset-chip active" data-preset="trending" onclick="applyAnimePreset('trending')">🔥 Trending</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="popular" onclick="applyAnimePreset('popular')">🌟 Popular</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="airing" onclick="applyAnimePreset('airing')">📺 Currently Airing</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="seasonal" onclick="applyAnimePreset('seasonal')">🍂 Seasonal Anime</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="top_rated" onclick="applyAnimePreset('top_rated')">⭐ Top Rated</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="upcoming" onclick="applyAnimePreset('upcoming')">📅 Upcoming</button>
+                                    <button type="button" class="filter-chip preset-chip" data-preset="movies" onclick="applyAnimePreset('movies')">🎬 Anime Movies</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Row 2: Date & Rating Filters -->
+                        <div class="filter-row" style="align-items: flex-end; flex-wrap: wrap; gap: 1rem;">
+                            <div class="filter-group">
+                                <label class="filter-label" title="Filter anime releasing on or after this year (e.g. 2024)">From Year</label>
+                                <input type="text" id="anime-filter-year-gte" class="form-input" placeholder="e.g. 2024" style="width: 120px; font-size: 0.85rem;">
+                            </div>
+
+                            <div class="filter-group">
+                                <label class="filter-label" title="Filter anime releasing on or before this year (e.g. 2026)">To Year</label>
+                                <input type="text" id="anime-filter-year-lte" class="form-input" placeholder="e.g. 2026" style="width: 120px; font-size: 0.85rem;">
+                            </div>
+
+                            <div class="filter-group">
+                                <label class="filter-label" title="Optional broadcast season">Season</label>
+                                <select id="anime-filter-season" class="form-select" style="width: 130px; font-size: 0.85rem;">
+                                    <option value="">All Seasons</option>
+                                    <option value="WINTER">Winter</option>
+                                    <option value="SPRING">Spring</option>
+                                    <option value="SUMMER">Summer</option>
+                                    <option value="FALL">Fall</option>
+                                </select>
+                            </div>
+
+                            <div class="filter-group">
+                                <label class="filter-label" title="Minimum AniList rating on a 0 - 10 scale (e.g. 7.5)">Min Rating (0 - 10)</label>
+                                <input type="number" id="anime-filter-rating" class="form-input" placeholder="e.g. 7.5" min="0" max="10" step="0.5" style="width: 120px; font-size: 0.85rem;">
+                            </div>
+
+                            <div class="filter-group" style="flex-grow: 1; min-width: 180px;">
+                                <label class="filter-label" title="Search for anime by title keywords">Search Keyword</label>
+                                <input type="text" id="anime-filter-search" class="form-input" placeholder="Optional title search..." style="width: 100%; font-size: 0.85rem;">
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -2013,7 +2145,7 @@
 
                 <div class="items-grid" id="discover-results-container">
                     <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted);">
-                        Select your filters above and click <strong>Discover</strong> to query TMDb.
+                        Select your filters above and click <strong>Discover</strong> to query.
                     </div>
                 </div>
             </div>
@@ -2948,6 +3080,7 @@ Orac Server Port: 8000 (default)</div>
                     <select id="modal-idx-media-type" class="form-select">
                         <option value="movie">Movies</option>
                         <option value="tv">TV Shows</option>
+                        <option value="media">All Media (TV & Movies)</option>
                     </select>
                 </div>
 
@@ -5404,8 +5537,193 @@ Orac Server Port: 8000 (default)</div>
         }
 
         // -------------------------------------------------------------
-        // DISCOVER STUDIO LOGIC
+        // DISCOVER STUDIO LOGIC (TMDb & Trakt)
         // -------------------------------------------------------------
+        let discoverEngine = 'tmdb'; // 'tmdb', 'trakt', or 'anime'
+        let activeTraktPresetKey = 'hot_releases';
+        let activeTraktTarget = 'all'; // 'all' or 'my'
+        let traktGenresList = [];
+        const activeTraktGenres = new Set();
+        let traktGenreMatchMode = 'any';
+        let activeAnimePresetKey = 'trending';
+
+        function setDiscoverEngine(engine) {
+            discoverEngine = engine;
+            const tmdbBtn = document.getElementById('engine-tmdb-btn');
+            const traktBtn = document.getElementById('engine-trakt-btn');
+            const animeBtn = document.getElementById('engine-anime-btn');
+            if (tmdbBtn) tmdbBtn.classList.toggle('active', engine === 'tmdb');
+            if (traktBtn) traktBtn.classList.toggle('active', engine === 'trakt');
+            if (animeBtn) animeBtn.classList.toggle('active', engine === 'anime');
+
+            const tmdbControls = document.getElementById('discover-tmdb-controls');
+            const traktControls = document.getElementById('discover-trakt-controls');
+            const animeControls = document.getElementById('discover-anime-controls');
+            if (tmdbControls) tmdbControls.style.display = engine === 'tmdb' ? 'flex' : 'none';
+            if (traktControls) traktControls.style.display = engine === 'trakt' ? 'flex' : 'none';
+            if (animeControls) animeControls.style.display = engine === 'anime' ? 'flex' : 'none';
+
+            const saveIdxBtn = document.getElementById('discover-save-index-btn');
+            if (saveIdxBtn) saveIdxBtn.style.display = engine === 'anime' ? 'none' : 'inline-block';
+
+            lastDiscoverResults = [];
+            const badge = document.getElementById('discover-results-badge');
+            if (badge) badge.textContent = '0 items';
+            const container = document.getElementById('discover-results-container');
+            if (container) {
+                const srcLabel = engine === 'trakt' ? 'Trakt.tv Calendar' : (engine === 'anime' ? 'AniList Anime Hub' : 'TMDb');
+                container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted);">Select your filters above and click <strong>Discover</strong> to query ${srcLabel}.</div>`;
+            }
+
+            if (engine === 'trakt' && traktGenresList.length === 0) {
+                loadTraktGenres();
+            }
+        }
+
+        function applyAnimePreset(presetKey) {
+            activeAnimePresetKey = presetKey;
+            const container = document.getElementById('anime-presets-container');
+            if (container) {
+                container.querySelectorAll('.preset-chip').forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.preset === presetKey);
+                });
+            }
+            runDiscoverQuery(true);
+        }
+
+        function buildAnimeDiscoverParams() {
+            const params = {
+                preset: activeAnimePresetKey || 'trending'
+            };
+            const yGte = (document.getElementById('anime-filter-year-gte')?.value || '').trim();
+            if (yGte) params.year_gte = yGte;
+            const yLte = (document.getElementById('anime-filter-year-lte')?.value || '').trim();
+            if (yLte) params.year_lte = yLte;
+            const season = (document.getElementById('anime-filter-season')?.value || '').trim();
+            if (season) params.season = season;
+            const rating = (document.getElementById('anime-filter-rating')?.value || '').trim();
+            if (rating) params.min_rating = rating;
+            const search = (document.getElementById('anime-filter-search')?.value || '').trim();
+            if (search) params.search = search;
+            return params;
+        }
+
+        async function loadTraktGenres() {
+            try {
+                const res = await fetch('/api/web/trakt/genres');
+                const data = await res.json();
+                if (data.success && Array.isArray(data.genres)) {
+                    traktGenresList = data.genres;
+                    renderTraktGenreChips();
+                }
+            } catch (err) {
+                console.error('Error loading Trakt genres:', err);
+            }
+        }
+
+        function setTraktTarget(target) {
+            activeTraktTarget = target;
+            const allBtn = document.getElementById('trakt-target-all-btn');
+            const myBtn = document.getElementById('trakt-target-my-btn');
+            if (allBtn) allBtn.classList.toggle('active', target === 'all');
+            if (myBtn) myBtn.classList.toggle('active', target === 'my');
+        }
+
+        function applyTraktPreset(presetKey) {
+            activeTraktPresetKey = presetKey;
+            const container = document.getElementById('trakt-presets-container');
+            if (container) {
+                container.querySelectorAll('.preset-chip').forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.preset === presetKey);
+                });
+            }
+            runDiscoverQuery(true);
+        }
+
+        function setTraktGenreMatchMode(mode) {
+            traktGenreMatchMode = mode;
+            const anyBtn = document.getElementById('trakt-genre-match-any-btn');
+            const allBtn = document.getElementById('trakt-genre-match-all-btn');
+            if (anyBtn) anyBtn.classList.toggle('active', mode === 'any');
+            if (allBtn) allBtn.classList.toggle('active', mode === 'all');
+            if (lastDiscoverResults && lastDiscoverResults.length > 0) {
+                filterDisplayedDiscoverResults();
+            }
+        }
+
+        function renderTraktGenreChips() {
+            const container = document.getElementById('trakt-genres-container');
+            if (!container) return;
+            container.innerHTML = '';
+            const hasLoadedItems = Array.isArray(lastDiscoverResults) && lastDiscoverResults.length > 0;
+
+            (traktGenresList || []).forEach(g => {
+                const chip = document.createElement('div');
+                chip.className = `filter-chip ${activeTraktGenres.has(g.slug) ? 'active' : ''}`;
+
+                if (hasLoadedItems) {
+                    const matchCount = lastDiscoverResults.filter(item => {
+                        const itemGenres = Array.isArray(item.genres) ? item.genres.map(s => String(s).toLowerCase()) : [];
+                        return itemGenres.includes(g.slug.toLowerCase());
+                    }).length;
+                    chip.textContent = `${g.name} (${matchCount})`;
+                    if (matchCount === 0 && !activeTraktGenres.has(g.slug)) {
+                        chip.style.opacity = '0.45';
+                    }
+                } else {
+                    chip.textContent = g.name;
+                }
+
+                chip.onclick = () => {
+                    if (activeTraktGenres.has(g.slug)) {
+                        activeTraktGenres.delete(g.slug);
+                    } else {
+                        activeTraktGenres.add(g.slug);
+                    }
+                    renderTraktGenreChips();
+                    if (hasLoadedItems) {
+                        filterDisplayedDiscoverResults();
+                    }
+                };
+                container.appendChild(chip);
+            });
+        }
+
+        function getTraktPresetMediaType(presetKey) {
+            const tvPresets = ['new_shows', 'season_premieres', 'finales', 'hot_premieres', 'hot_finales', 'hot_new_shows'];
+            const moviePresets = ['movies', 'streaming_releases', 'dvd_releases'];
+            if (tvPresets.includes(presetKey)) return 'tv';
+            if (moviePresets.includes(presetKey)) return 'movie';
+            return 'media';
+        }
+
+        function buildTraktDiscoverParams() {
+            const params = {
+                source: 'trakt',
+                preset: activeTraktPresetKey,
+                target: activeTraktTarget
+            };
+            const sDate = document.getElementById('trakt-filter-start-date');
+            if (sDate && sDate.value.trim()) params.start_date = sDate.value.trim();
+
+            const daysEl = document.getElementById('trakt-filter-days');
+            if (daysEl && daysEl.value.trim()) params.days = daysEl.value.trim();
+
+            const eDate = document.getElementById('trakt-filter-end-date');
+            if (eDate && eDate.value.trim()) params.end_date = eDate.value.trim();
+
+            const ratingEl = document.getElementById('trakt-filter-rating');
+            if (ratingEl && ratingEl.value.trim()) params.ratings = ratingEl.value.trim();
+
+            const runtimeEl = document.getElementById('trakt-filter-runtime');
+            if (runtimeEl && runtimeEl.value.trim()) params.runtimes = runtimeEl.value.trim();
+
+            if (activeTraktGenres.size > 0) {
+                params.genres = Array.from(activeTraktGenres).join(traktGenreMatchMode === 'all' ? ',' : '|');
+            }
+            return params;
+        }
+
         async function loadGenresAndProviders() {
             try {
                 // Fetch Genres
@@ -5567,6 +5885,28 @@ Orac Server Port: 8000 (default)</div>
             if (!Array.isArray(lastDiscoverResults) || lastDiscoverResults.length === 0) {
                 return;
             }
+
+            if (discoverEngine === 'trakt') {
+                if (activeTraktGenres.size === 0) {
+                    if (badge) badge.textContent = `${lastDiscoverResults.length} items`;
+                    renderDiscoverResults(lastDiscoverResults);
+                    return;
+                }
+                const filtered = lastDiscoverResults.filter(item => {
+                    const itemGenres = Array.isArray(item.genres) ? item.genres.map(s => String(s).toLowerCase()) : [];
+                    if (traktGenreMatchMode === 'all') {
+                        return Array.from(activeTraktGenres).every(g => itemGenres.includes(g.toLowerCase()));
+                    } else {
+                        return Array.from(activeTraktGenres).some(g => itemGenres.includes(g.toLowerCase()));
+                    }
+                });
+                if (badge) {
+                    badge.textContent = `${filtered.length} / ${lastDiscoverResults.length} items`;
+                }
+                renderDiscoverResults(filtered);
+                return;
+            }
+
             if (activeGenres.size === 0) {
                 if (badge) badge.textContent = `${lastDiscoverResults.length} items`;
                 renderDiscoverResults(lastDiscoverResults);
@@ -5787,6 +6127,67 @@ Orac Server Port: 8000 (default)</div>
         }
 
         function resetDiscoverFilters(reRender = true) {
+            if (discoverEngine === 'anime') {
+                activeAnimePresetKey = 'trending';
+                const pContainer = document.getElementById('anime-presets-container');
+                if (pContainer) {
+                    pContainer.querySelectorAll('.preset-chip').forEach(btn => {
+                        btn.classList.toggle('active', btn.dataset.preset === 'trending');
+                    });
+                }
+                const yGte = document.getElementById('anime-filter-year-gte');
+                if (yGte) yGte.value = '';
+                const yLte = document.getElementById('anime-filter-year-lte');
+                if (yLte) yLte.value = '';
+                const season = document.getElementById('anime-filter-season');
+                if (season) season.value = '';
+                const rating = document.getElementById('anime-filter-rating');
+                if (rating) rating.value = '';
+                const search = document.getElementById('anime-filter-search');
+                if (search) search.value = '';
+                if (reRender) {
+                    lastDiscoverResults = [];
+                    const badge = document.getElementById('discover-results-badge');
+                    if (badge) badge.textContent = '0 items';
+                    const container = document.getElementById('discover-results-container');
+                    if (container) {
+                        container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted);">Select your filters above and click <strong>Discover</strong> to query AniList Anime Hub.</div>`;
+                    }
+                }
+                return;
+            }
+
+            if (discoverEngine === 'trakt') {
+                activeTraktPresetKey = 'hot_releases';
+                activeTraktTarget = 'all';
+                setTraktTarget('all');
+                activeTraktGenres.clear();
+                const sDate = document.getElementById('trakt-filter-start-date');
+                if (sDate) sDate.value = 'T-0';
+                const daysEl = document.getElementById('trakt-filter-days');
+                if (daysEl) daysEl.value = '7';
+                const eDate = document.getElementById('trakt-filter-end-date');
+                if (eDate) eDate.value = '';
+                const rEl = document.getElementById('trakt-filter-rating');
+                if (rEl) rEl.value = '';
+                const rtEl = document.getElementById('trakt-filter-runtime');
+                if (rtEl) rtEl.value = '';
+
+                const pContainer = document.getElementById('trakt-presets-container');
+                if (pContainer) {
+                    pContainer.querySelectorAll('.preset-chip').forEach(btn => {
+                        btn.classList.toggle('active', btn.dataset.preset === 'hot_releases');
+                    });
+                }
+                if (reRender) {
+                    renderTraktGenreChips();
+                    if (Array.isArray(lastDiscoverResults) && lastDiscoverResults.length > 0) {
+                        filterDisplayedDiscoverResults();
+                    }
+                }
+                return;
+            }
+
             activePresetKey = '';
             activeGenres.clear();
             activeProviders.clear();
@@ -5866,6 +6267,75 @@ Orac Server Port: 8000 (default)</div>
         }
 
         async function runDiscoverQuery(fromPreset = false) {
+            const container = document.getElementById('discover-results-container');
+            const spinner = document.getElementById('discover-loading-spinner');
+            const badge = document.getElementById('discover-results-badge');
+
+            if (discoverEngine === 'trakt') {
+                spinner.style.display = 'block';
+                container.innerHTML = `
+                    <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; color: var(--text-muted); gap: 1rem;">
+                        <div class="scrape-spinner" style="margin: 0;"></div>
+                        <span style="font-size: 0.9rem;">Fetching calendar releases from Trakt.tv...</span>
+                    </div>
+                `;
+
+                const queryObj = buildTraktDiscoverParams();
+                const qs = new URLSearchParams(queryObj).toString();
+                const endpoint = `/discover/trakt?${qs}`;
+
+                try {
+                    const res = await fetch(endpoint);
+                    const data = await res.json();
+                    spinner.style.display = 'none';
+
+                    if (Array.isArray(data)) {
+                        lastDiscoverResults = data;
+                        renderTraktGenreChips();
+                        filterDisplayedDiscoverResults();
+                    } else {
+                        container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--log-error);">${data.error || 'Failed to fetch Trakt calendar releases'}</div>`;
+                    }
+                } catch (err) {
+                    spinner.style.display = 'none';
+                    console.error('Trakt discover error:', err);
+                    container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--log-error);">Error executing calendar query: ${err.message}</div>`;
+                }
+                return;
+            }
+
+            if (discoverEngine === 'anime') {
+                spinner.style.display = 'block';
+                container.innerHTML = `
+                    <div style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 1rem; color: var(--text-muted); gap: 1rem;">
+                        <div class="scrape-spinner" style="margin: 0;"></div>
+                        <span style="font-size: 0.9rem;">Fetching anime from AniList Anime Hub...</span>
+                    </div>
+                `;
+
+                const queryObj = buildAnimeDiscoverParams();
+                const qs = new URLSearchParams(queryObj).toString();
+                const endpoint = `/discover/anime?${qs}`;
+
+                try {
+                    const res = await fetch(endpoint);
+                    const data = await res.json();
+                    spinner.style.display = 'none';
+
+                    if (Array.isArray(data)) {
+                        lastDiscoverResults = data;
+                        renderDiscoverResults(data);
+                    } else {
+                        container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--log-error);">${data.error || 'Failed to fetch anime releases'}</div>`;
+                    }
+                } catch (err) {
+                    spinner.style.display = 'none';
+                    console.error('Anime discover error:', err);
+                    container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: var(--log-error);">Error executing anime query: ${err.message}</div>`;
+                }
+                return;
+            }
+
             if (!fromPreset && activePresetKey) {
                 activePresetKey = '';
                 activeReleaseType = '';
@@ -5874,10 +6344,6 @@ Orac Server Port: 8000 (default)</div>
                 activeWithStatus = '';
                 renderDiscoverPresets();
             }
-
-            const container = document.getElementById('discover-results-container');
-            const spinner = document.getElementById('discover-loading-spinner');
-            const badge = document.getElementById('discover-results-badge');
             
             spinner.style.display = 'block';
             container.innerHTML = `
@@ -5922,8 +6388,11 @@ Orac Server Port: 8000 (default)</div>
             items.forEach(item => {
                 const card = document.createElement('div');
                 card.className = 'media-card';
-                card.dataset.mediaType = discoverMediaType;
+                const effectiveMediaType = item.media_type || (discoverEngine === 'trakt' ? (item.episode ? 'tv' : 'movie') : (discoverEngine === 'anime' ? (item.format === 'MOVIE' ? 'movie' : 'tv') : discoverMediaType));
+                card.dataset.mediaType = effectiveMediaType;
                 card.dataset.tmdbId = item.tmdb_id || '';
+                card.dataset.traktId = item.trakt_id || '';
+                card.dataset.anilistId = item.anilist_id || '';
                 card.dataset.title = item.title || item.original_title || 'Unknown';
                 card.dataset.year = item.year || (item.premiered ? item.premiered.split('-')[0] : 'N/A');
                 card.dataset.rating = item.rating ? parseFloat(item.rating).toFixed(1) : '0.0';
@@ -5937,11 +6406,16 @@ Orac Server Port: 8000 (default)</div>
                 const safeTitle = escapeHtml(card.dataset.title);
                 const safeRating = escapeHtml(card.dataset.rating);
                 const safeYear = escapeHtml(card.dataset.year);
-                const safeType = escapeHtml(discoverMediaType);
+                const safeType = escapeHtml(effectiveMediaType);
+
+                const epBadge = (item.episode && item.episode.season != null && item.episode.number != null)
+                    ? `<span class="badge" style="position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.82); backdrop-filter: blur(4px); font-size: 0.7rem; border: 1px solid var(--border-glass); z-index: 2;">S${String(item.episode.season).padStart(2, '0')}E${String(item.episode.number).padStart(2, '0')}</span>`
+                    : '';
 
                 card.innerHTML = `
                     <div class="media-poster-container">
                         <img src="${posterUrl}" alt="${safeTitle} Poster" class="media-poster" loading="lazy" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNDAiIGhlaWdodD0iMjEwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDUpIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIi8+PC9zdmc+';">
+                        ${epBadge}
                         <div class="media-card-actions">
                             <div class="card-menu-main" style="display: flex; gap: 0.4rem; justify-content: center; flex-wrap: wrap;">
                                 <button class="action-btn details" onclick="handleDetailsClick(event)">Details</button>
@@ -6038,6 +6512,38 @@ Orac Server Port: 8000 (default)</div>
             try {
                 const params = JSON.parse(paramsJson);
                 switchTab('tab-discover');
+
+                if (params.source === 'trakt' || params.preset || params.calendar) {
+                    setDiscoverEngine('trakt');
+                    activeTraktPresetKey = params.preset || params.calendar || 'hot_releases';
+                    activeTraktTarget = params.target || 'all';
+                    setTraktTarget(activeTraktTarget);
+
+                    if (params.start_date) document.getElementById('trakt-filter-start-date').value = params.start_date;
+                    if (params.days) document.getElementById('trakt-filter-days').value = params.days;
+                    if (params.end_date) document.getElementById('trakt-filter-end-date').value = params.end_date;
+                    if (params.ratings) document.getElementById('trakt-filter-rating').value = params.ratings;
+                    if (params.runtimes) document.getElementById('trakt-filter-runtime').value = params.runtimes;
+
+                    if (params.genres) {
+                        activeTraktGenres.clear();
+                        params.genres.split(/[,|]/).forEach(g => {
+                            if (g.trim()) activeTraktGenres.add(g.trim());
+                        });
+                        renderTraktGenreChips();
+                    }
+
+                    const pContainer = document.getElementById('trakt-presets-container');
+                    if (pContainer) {
+                        pContainer.querySelectorAll('.preset-chip').forEach(btn => {
+                            btn.classList.toggle('active', btn.dataset.preset === activeTraktPresetKey);
+                        });
+                    }
+                    runDiscoverQuery();
+                    return;
+                }
+
+                setDiscoverEngine('tmdb');
                 setDiscoverMediaType(mediaType);
                 resetDiscoverFilters(false);
 
@@ -6092,8 +6598,13 @@ Orac Server Port: 8000 (default)</div>
             document.getElementById('save-index-modal-title').textContent = 'Save as External Index';
             document.getElementById('modal-idx-orig-label').value = '';
             document.getElementById('modal-idx-label').value = '';
-            document.getElementById('modal-idx-media-type').value = discoverMediaType;
-            document.getElementById('modal-idx-params-json').value = JSON.stringify(buildDiscoverParams(), null, 2);
+            if (discoverEngine === 'trakt') {
+                document.getElementById('modal-idx-media-type').value = getTraktPresetMediaType(activeTraktPresetKey);
+                document.getElementById('modal-idx-params-json').value = JSON.stringify(buildTraktDiscoverParams(), null, 2);
+            } else {
+                document.getElementById('modal-idx-media-type').value = discoverMediaType;
+                document.getElementById('modal-idx-params-json').value = JSON.stringify(buildDiscoverParams(), null, 2);
+            }
             document.getElementById('modal-idx-library').checked = false;
             setModalIndexType('external');
             toggleSaveIndexModal(true);

@@ -4,6 +4,16 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.5.5] - 2026-10-30
+
+### Added
+- **Discover Studio Trakt Calendars Engine** — Added a dedicated Trakt Calendars discovery engine supporting 11 dynamic presets (My Shows, Premieres, New Shows, All Shows, Season Finales, My Movies, All Movies, DVD/Streaming Releases, Box Office, Anticipated, and Trending). Features configurable lookahead/lookback windows (up to 30 days) and automated bidirectional episode coordinate resolution.
+- **Discover Studio Anime Hub Engine** — Integrated AniList-powered Anime discovery presets (Current Season Popular/Top, Next Season Upcoming, All Time Popular/Top Rated, Trending Anime, and Top Anime Movies) with interactive season/year selectors, genre filtering, minimum rating thresholds, and format filters.
+- **External Index Sync for Discover Presets** — Enabled one-click syncing of Trakt calendar and Anime discover feeds into Liberator's external index database (`ext_indexes.db`), including automated cache warming, episode metadata caching, and Liberator `media_type` compatibility handling (`trakt_calendar` and `anime`).
+
+### Improved
+- **Periodic Update Optimization for Dropped Shows** — Enhanced background TV show maintenance in `sync_trakt_with_db.py`, `fanart_client.py`, and `introdb_client.py` to skip metadata refreshes, artwork sync, and skip-intro indexing for shows marked as dropped.
+
 ## [1.5.4] - 2026-10-26
 
 ### Added

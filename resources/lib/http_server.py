@@ -791,8 +791,13 @@ def app_factory(
             with app.state.db_manager.connection(app.state.ext_indexes_db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                if media_type:
-                    cursor.execute("SELECT * FROM external_indexes WHERE media_type = ? ORDER BY id", (media_type,))
+                if media_type and media_type != 'all':
+                    if media_type in ('tv', 'tvshow', 'show'):
+                        cursor.execute("SELECT * FROM external_indexes WHERE media_type IN ('tv', 'tvshow', 'show', 'media') OR media_type IS NULL OR media_type = '' ORDER BY id")
+                    elif media_type == 'movie':
+                        cursor.execute("SELECT * FROM external_indexes WHERE media_type IN ('movie', 'media') OR media_type IS NULL OR media_type = '' ORDER BY id")
+                    else:
+                        cursor.execute("SELECT * FROM external_indexes WHERE media_type = ? OR media_type = 'media' OR media_type IS NULL OR media_type = '' ORDER BY id", (media_type,))
                 else:
                     cursor.execute("SELECT * FROM external_indexes ORDER BY id")
                 rows = cursor.fetchall()
@@ -1036,18 +1041,95 @@ def app_factory(
 
     @app.get("/discover/{item_type}")
     async def discover_route(item_type: str, request: Request):
+        if item_type.lower() == 'anime':
+            return await discover_anime_route(request)
         query = parse_qs_fastapi(request)
         conn = None
         try:
             conn = app.state.db_manager.get_connection(app.state.ext_indexes_db_path)
             cursor = conn.cursor()
-            status, body, content_type = handle_discover_request(item_type, query, app.state.tmdb_handler, cursor)
+            status, body, content_type = handle_discover_request(
+                item_type, query, app.state.tmdb_handler, cursor, trakt_handler=getattr(app.state, 'trakt_handler', None)
+            )
             return send_safe(status, body, content_type)
         except Exception:
             return PlainTextResponse("Database error", status_code=500)
         finally:
             if conn:
                 conn.close()
+
+    @app.get("/discover/trakt")
+    @app.get("/api/web/discover/trakt")
+    async def discover_trakt_route(request: Request):
+        query = parse_qs_fastapi(request)
+        conn = None
+        try:
+            conn = app.state.db_manager.get_connection(app.state.ext_indexes_db_path)
+            cursor = conn.cursor()
+            from .trakt_calendar_handler import handle_trakt_calendar_request
+            status, body, content_type = handle_trakt_calendar_request(
+                query, getattr(app.state, 'trakt_handler', None), cursor
+            )
+            return send_safe(status, body, content_type)
+        except Exception as e:
+            log(f"Error in discover_trakt_route: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"error": str(e)})
+        finally:
+            if conn:
+                conn.close()
+
+    @app.get("/discover/anime")
+    @app.get("/api/web/discover/anime")
+    async def discover_anime_route(request: Request):
+        query = parse_qs_fastapi(request)
+        svc = _get_anime_service()
+        creds = get_anilist_credentials(app.state.config_db_path)
+
+        list_type = query.get("preset", query.get("list_type", query.get("name", ["trending"])))[0]
+        page = int(query.get("page", [1])[0] or 1)
+        per_page = int(query.get("per_page", [50])[0] or 50)
+        season = query.get("season", [None])[0]
+        season_year_raw = query.get("season_year", query.get("year", [None]))[0]
+        season_year = int(season_year_raw) if season_year_raw and str(season_year_raw).isdigit() else None
+        search_q = query.get("search", query.get("q", [None]))[0]
+        genre = query.get("genre", [None])[0]
+        username = query.get("username", query.get("user", [None]))[0] or creds.get("user") or None
+
+        min_rating_raw = query.get("min_rating", query.get("rating", query.get("vote_average.gte", [None])))[0]
+        min_rating = float(min_rating_raw) if min_rating_raw and str(min_rating_raw).replace('.', '', 1).isdigit() else None
+        year_gte_raw = query.get("year_gte", query.get("primary_release_date.gte", query.get("first_air_date.gte", [None])))[0]
+        year_gte = int(str(year_gte_raw).split('-')[0]) if year_gte_raw and str(year_gte_raw).split('-')[0].isdigit() else None
+        year_lte_raw = query.get("year_lte", query.get("primary_release_date.lte", query.get("first_air_date.lte", [None])))[0]
+        year_lte = int(str(year_lte_raw).split('-')[0]) if year_lte_raw and str(year_lte_raw).split('-')[0].isdigit() else None
+
+        res = await asyncio.to_thread(
+            fetch_anime_list,
+            list_type=list_type,
+            page=page,
+            per_page=per_page,
+            season=season,
+            season_year=season_year,
+            search=search_q,
+            genre=genre,
+            username=username,
+            token=creds.get("token") or None,
+            anime_service=svc,
+            min_rating=min_rating,
+            year_gte=year_gte,
+            year_lte=year_lte,
+        )
+        items = res.get("results", []) if res.get("success") else []
+        return JSONResponse(status_code=200, content=items)
+
+    @app.get("/api/web/trakt/genres")
+    async def trakt_genres_api():
+        try:
+            from .trakt_calendar_handler import get_trakt_genres
+            genres = get_trakt_genres(getattr(app.state, 'trakt_handler', None))
+            return JSONResponse(status_code=200, content={"success": True, "genres": genres})
+        except Exception as e:
+            log(f"Error fetching Trakt genres: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
     # --- WEB DASHBOARD ROUTES ---
     @app.get("/api/web/scrapers")
@@ -2845,13 +2927,14 @@ def app_factory(
             if index_type == "external":
                 with db_connect(app.state.ext_indexes_db_path) as conn:
                     cursor = conn.cursor()
-                    status, body, _ = handle_discover_request(item_type, {'name': [index_id]}, app.state.tmdb_handler, cursor)
+                    status, body, _ = handle_discover_request(item_type, {'name': [index_id]}, app.state.tmdb_handler, cursor, trakt_handler=getattr(app.state, 'trakt_handler', None))
                     if status == 200:
                         raw_results = json.loads(body)
                         from resources.lib.formatting_utils import format_image_url
                         for r in raw_results:
+                            m_type = r.get("media_type") or (item_type if item_type != 'tv' else 'tvshow')
                             items.append({
-                                "media_type": item_type if item_type != 'tv' else 'tvshow',
+                                "media_type": m_type, 
                                 "tmdb_id": r.get("tmdb_id") or r.get("id"),
                                 "trakt_id": r.get("trakt_id"),
                                 "title": r.get("title") or r.get("name") or "Unknown",
@@ -3840,6 +3923,13 @@ def app_factory(
         genre = query.get("genre", [None])[0]
         username = query.get("username", query.get("user", [None]))[0] or creds.get("user") or None
 
+        min_rating_raw = query.get("min_rating", query.get("rating", query.get("vote_average.gte", [None])))[0]
+        min_rating = float(min_rating_raw) if min_rating_raw and str(min_rating_raw).replace('.', '', 1).isdigit() else None
+        year_gte_raw = query.get("year_gte", query.get("primary_release_date.gte", query.get("first_air_date.gte", [None])))[0]
+        year_gte = int(str(year_gte_raw).split('-')[0]) if year_gte_raw and str(year_gte_raw).split('-')[0].isdigit() else None
+        year_lte_raw = query.get("year_lte", query.get("primary_release_date.lte", query.get("first_air_date.lte", [None])))[0]
+        year_lte = int(str(year_lte_raw).split('-')[0]) if year_lte_raw and str(year_lte_raw).split('-')[0].isdigit() else None
+
         res = await asyncio.to_thread(
             fetch_anime_list,
             list_type=list_type,
@@ -3852,6 +3942,9 @@ def app_factory(
             username=username,
             token=creds.get("token") or None,
             anime_service=svc,
+            min_rating=min_rating,
+            year_gte=year_gte,
+            year_lte=year_lte,
         )
         return JSONResponse(status_code=200 if res.get("success") else 502, content=res)
 

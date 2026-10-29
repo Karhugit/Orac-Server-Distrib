@@ -338,7 +338,8 @@ def run_fanart_latest_sync(config_db_path, tmdb_handler):
                 # Check match on show_tmdb_id, imdb_id, or tvdb_id
                 cursor.execute(f"""
                     SELECT show_tmdb_id FROM shows 
-                    WHERE show_tmdb_id IN ({placeholders}) OR imdb_id IN ({placeholders}) OR tvdb_id IN ({placeholders})
+                    WHERE (show_tmdb_id IN ({placeholders}) OR imdb_id IN ({placeholders}) OR tvdb_id IN ({placeholders}))
+                      AND (dropped = 0 OR dropped IS NULL)
                 """, changed_tv_ids + changed_tv_ids + changed_tv_ids)
                 shows_to_update = [row[0] for row in cursor.fetchall()]
                 
