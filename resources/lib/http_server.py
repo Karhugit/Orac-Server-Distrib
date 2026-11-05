@@ -4329,6 +4329,89 @@ def app_factory(
 
         raise HTTPException(status_code=404, detail="Asset not found")
 
+    # Local Folders & Directory Browsing Endpoints
+    @app.get("/api/system/browse_dir")
+    async def api_system_browse_dir(request: Request, path: Optional[str] = None):
+        from resources.lib.local_folders_handler import browse_system_dir
+        return browse_system_dir(path)
+
+    @app.get("/api/local_folders/config")
+    @app.get("/api/web/local_folders")
+    async def api_get_local_folders_config(request: Request):
+        from resources.lib.local_folders_handler import get_local_folders_config
+        cfg = get_local_folders_config(app.state.config_db_path)
+        return {"success": True, "folders": cfg}
+
+    @app.post("/api/local_folders/config")
+    @app.post("/api/web/local_folders")
+    async def api_save_local_folders_config(request: Request):
+        from resources.lib.local_folders_handler import save_local_folder_config
+        body = await request.json()
+        folder_id = body.get("folder_id")
+        if not folder_id:
+            raise HTTPException(status_code=400, detail="Missing folder_id")
+        save_local_folder_config(app.state.config_db_path, folder_id, body)
+        return {"success": True}
+
+    @app.get("/api/local_folders/scan")
+    async def api_local_folders_scan(
+        request: Request,
+        folder_id: Optional[str] = None,
+        media_type: str = "movie",
+        title: str = "",
+        year: Optional[int] = None,
+        season: Optional[int] = None,
+        episode: Optional[int] = None,
+        aliases: Optional[str] = None
+    ):
+        from resources.lib.local_folders_handler import scan_local_media_folders
+        aliases_list = None
+        if aliases:
+            try:
+                aliases_list = json.loads(aliases) if aliases.startswith('[') else [a.strip() for a in aliases.split(',') if a.strip()]
+            except Exception:
+                aliases_list = [aliases]
+        results = scan_local_media_folders(
+            config_db_path=app.state.config_db_path,
+            folder_id=folder_id,
+            media_type=media_type,
+            title=title,
+            year=year,
+            season=season,
+            episode=episode,
+            aliases=aliases_list
+        )
+        return {"success": True, "results": results}
+
+    @app.get("/api/local_folders/stream")
+    async def api_local_folders_stream(request: Request, file: str = Query(...)):
+        import mimetypes
+        from resources.lib.local_folders_handler import SUPPORTED_VIDEO_EXTENSIONS
+        file_path = unquote(file)
+        if not os.path.exists(file_path) or not os.path.isfile(file_path):
+            raise HTTPException(status_code=404, detail="Media file not found")
+        ext = os.path.splitext(file_path)[-1].lower()
+        if ext not in SUPPORTED_VIDEO_EXTENSIONS:
+            raise HTTPException(status_code=403, detail="File format not permitted")
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if not mime_type:
+            if ext == '.mkv':
+                mime_type = 'video/x-matroska'
+            elif ext in ('.mp4', '.m4v'):
+                mime_type = 'video/mp4'
+            elif ext == '.avi':
+                mime_type = 'video/x-msvideo'
+            elif ext == '.ts':
+                mime_type = 'video/mp2t'
+            else:
+                mime_type = 'video/mp4'
+        return FileResponse(
+            path=file_path,
+            filename=os.path.basename(file_path),
+            media_type=mime_type,
+            headers={"Accept-Ranges": "bytes"}
+        )
+
     # Serve static UI files at /web
     # The directory needs to exist to mount properly
     ui_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web_ui")

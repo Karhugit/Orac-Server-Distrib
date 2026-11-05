@@ -1875,6 +1875,21 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Local Folders Source Configuration Pane -->
+                <div class="status-card" style="margin-top: 1.5rem; width: 100%; box-sizing: border-box;">
+                    <div class="status-card-header" style="justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+                        <span class="status-card-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                            Local Folder Sources (Server Storage)
+                        </span>
+                        <span style="font-size: 0.8rem; color: var(--text-muted);">Configure server directory locations for up to 5 folders. In Liberator, select 'Orac' to scrape from these.</span>
+                    </div>
+
+                    <div id="local-folders-list" style="display: flex; flex-direction: column; gap: 0.75rem; padding: 1rem 0 0.5rem 0;">
+                        <!-- 5 folder cards rendered dynamically -->
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -3141,6 +3156,47 @@ Orac Server Port: 8000 (default)</div>
         </div>
     </div>
 
+    <!-- Directory Browser Modal Overlay -->
+    <div id="dir-browser-modal" class="modal-overlay" onclick="closeDirBrowserModal(event)" style="z-index: 1250;">
+        <div class="modal-container" style="max-width: 650px; height: auto; max-height: 85vh; padding: 1.5rem; gap: 1rem;" onclick="event.stopPropagation()">
+            <div class="modal-header" style="margin-bottom: 0; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-glass);">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                    <h3 id="dir-browser-title" style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-main);">Browse Directory</h3>
+                </div>
+                <button class="modal-close-btn" onclick="toggleDirBrowserModal(false)">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; min-height: 0;">
+                <!-- Drive Quick Jump buttons -->
+                <div id="dir-browser-drives" style="display: flex; flex-wrap: wrap; gap: 0.4rem;"></div>
+
+                <!-- Path navigation bar -->
+                <div style="display: flex; gap: 0.4rem; align-items: center;">
+                    <button type="button" class="btn-sm-action btn-sm-secondary" id="dir-browser-up-btn" onclick="navigateDirUp()" title="Go up one folder" style="padding: 0.35rem 0.7rem; font-size: 0.85rem;">⬆ Up</button>
+                    <input type="text" id="dir-browser-path-input" class="form-input" placeholder="e.g. D:\Movies or \\NAS\Share\Movies" style="flex: 1; font-family: monospace; font-size: 0.82rem;" onkeydown="if(event.key==='Enter') navigateToInputPath()">
+                    <button type="button" class="btn-sm-action btn-sm-primary" onclick="navigateToInputPath()" style="padding: 0.35rem 0.75rem;">Go</button>
+                </div>
+
+                <!-- Directory items list -->
+                <div id="dir-browser-list" style="background: rgba(10, 15, 28, 0.7); border: 1px solid var(--border-glass); border-radius: 0.5rem; height: 300px; overflow-y: auto; padding: 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;">
+                    <div style="color: var(--text-muted); text-align: center; padding: 2rem;">Loading...</div>
+                </div>
+
+                <div style="font-size: 0.75rem; color: var(--text-muted); line-height: 1.3;">
+                    Click a folder to enter it. You can also enter network UNC shares (e.g. <code>\\ServerName\Share</code>) in the path input above and click Go.
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-glass);">
+                <button type="button" class="btn-secondary" onclick="toggleDirBrowserModal(false)">Cancel</button>
+                <button type="button" class="btn-primary" id="dir-browser-select-btn" onclick="confirmSelectedDir()">Select This Folder</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Lists Manager Modal Overlay -->
     <div id="lists-manager-modal" class="modal-overlay" onclick="closeListsManagerModal(event)" style="z-index: 1200;">
         <div class="modal-container" style="max-width: 520px; height: auto; max-height: 80vh; padding: 1.5rem; gap: 1rem;" onclick="event.stopPropagation()">
@@ -3263,6 +3319,7 @@ Orac Server Port: 8000 (default)</div>
             } else if (tabId === 'tab-services') {
                 fetchPlatforms();
                 fetchDiagnostics();
+                fetchLocalFoldersConfig();
             } else if (tabId === 'tab-help') {
                 fetchDiagnostics();
             }
@@ -7732,6 +7789,221 @@ Orac Server Port: 8000 (default)</div>
             if (!str) return '';
             return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
         }
+
+        // -------------------------------------------------------------
+        // LOCAL FOLDERS & DIRECTORY BROWSER
+        // -------------------------------------------------------------
+        let currentLocalFoldersData = {};
+        let activeSlotForBrowser = null;
+        let activeTypeForBrowser = null;
+        let currentBrowserPath = '';
+        let currentBrowserParent = '';
+
+        async function fetchLocalFoldersConfig() {
+            try {
+                const res = await fetch('/api/local_folders/config');
+                const data = await res.json();
+                if (data.success && data.folders) {
+                    currentLocalFoldersData = data.folders;
+                    renderLocalFoldersUI();
+                }
+            } catch (e) {
+                console.error('Error fetching local folders config:', e);
+            }
+        }
+
+        function renderLocalFoldersUI() {
+            const container = document.getElementById('local-folders-list');
+            if (!container) return;
+            let html = '';
+            for (let slot = 1; slot <= 5; slot++) {
+                const folder = currentLocalFoldersData[String(slot)] || {
+                    display_name: `Folder ${slot}`,
+                    movies_directory: 'none',
+                    tv_shows_directory: 'none'
+                };
+                const mDir = folder.movies_directory || 'none';
+                const tvDir = folder.tv_shows_directory || 'none';
+                html += `
+                    <div class="local-folder-row" style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-glass); border-radius: 0.5rem; padding: 0.85rem 1rem; display: flex; flex-direction: column; gap: 0.65rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                <span style="font-weight: 600; font-size: 0.95rem; color: var(--text-main);">Folder ${slot}</span>
+                                <input type="text" id="lf-display-name-${slot}" class="form-input" style="padding: 0.25rem 0.6rem; font-size: 0.82rem; width: 170px;" value="${folder.display_name || ('Folder ' + slot)}" placeholder="Display Name" onchange="saveLocalFolderSlot('${slot}')">
+                            </div>
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">Slot ${slot}</span>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 0.75rem;">
+                            <!-- Movies Directory -->
+                            <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                                <label style="font-size: 0.78rem; color: var(--text-muted); font-weight: 500;">Movies Directory</label>
+                                <div style="display: flex; gap: 0.35rem; align-items: center;">
+                                    <input type="text" id="lf-movies-dir-${slot}" class="form-input" style="flex: 1; font-family: monospace; font-size: 0.8rem; background: rgba(0,0,0,0.25);" value="${mDir}" placeholder="none" onchange="saveLocalFolderSlot('${slot}')">
+                                    <button type="button" class="btn-sm-action btn-sm-secondary" onclick="openDirBrowser('${slot}', 'movies')">Browse</button>
+                                    <button type="button" class="btn-sm-action btn-sm-secondary" style="color: #fb7185;" onclick="clearLocalFolderSlot('${slot}', 'movies')">Clear</button>
+                                </div>
+                            </div>
+                            <!-- TV Shows Directory -->
+                            <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                                <label style="font-size: 0.78rem; color: var(--text-muted); font-weight: 500;">TV Shows Directory</label>
+                                <div style="display: flex; gap: 0.35rem; align-items: center;">
+                                    <input type="text" id="lf-tv-dir-${slot}" class="form-input" style="flex: 1; font-family: monospace; font-size: 0.8rem; background: rgba(0,0,0,0.25);" value="${tvDir}" placeholder="none" onchange="saveLocalFolderSlot('${slot}')">
+                                    <button type="button" class="btn-sm-action btn-sm-secondary" onclick="openDirBrowser('${slot}', 'tv')">Browse</button>
+                                    <button type="button" class="btn-sm-action btn-sm-secondary" style="color: #fb7185;" onclick="clearLocalFolderSlot('${slot}', 'tv')">Clear</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        async function saveLocalFolderSlot(slot) {
+            const dispName = document.getElementById(`lf-display-name-${slot}`)?.value || `Folder ${slot}`;
+            const mDir = document.getElementById(`lf-movies-dir-${slot}`)?.value || 'none';
+            const tvDir = document.getElementById(`lf-tv-dir-${slot}`)?.value || 'none';
+            const payload = {
+                folder_id: slot,
+                display_name: dispName,
+                movies_directory: mDir,
+                tv_shows_directory: tvDir
+            };
+            try {
+                await fetch('/api/local_folders/config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                currentLocalFoldersData[String(slot)] = payload;
+            } catch (e) {
+                console.error('Error saving local folder slot:', e);
+            }
+        }
+
+        function clearLocalFolderSlot(slot, type) {
+            const inputId = type === 'movies' ? `lf-movies-dir-${slot}` : `lf-tv-dir-${slot}`;
+            const el = document.getElementById(inputId);
+            if (el) {
+                el.value = 'none';
+                saveLocalFolderSlot(slot);
+            }
+        }
+
+        function openDirBrowser(slot, type) {
+            activeSlotForBrowser = slot;
+            activeTypeForBrowser = type;
+            const inputId = type === 'movies' ? `lf-movies-dir-${slot}` : `lf-tv-dir-${slot}`;
+            let currentVal = document.getElementById(inputId)?.value || '';
+            if (currentVal.toLowerCase() === 'none') currentVal = '';
+            
+            const titleEl = document.getElementById('dir-browser-title');
+            if (titleEl) {
+                titleEl.textContent = `Browse ${type === 'movies' ? 'Movies' : 'TV Shows'} Directory (Folder ${slot})`;
+            }
+            toggleDirBrowserModal(true);
+            loadDirectory(currentVal);
+        }
+
+        function toggleDirBrowserModal(show) {
+            const modal = document.getElementById('dir-browser-modal');
+            if (show) modal.classList.add('visible');
+            else modal.classList.remove('visible');
+        }
+
+        function closeDirBrowserModal(e) {
+            if (e.target.id === 'dir-browser-modal') {
+                toggleDirBrowserModal(false);
+            }
+        }
+
+        async function loadDirectory(path) {
+            const listEl = document.getElementById('dir-browser-list');
+            const pathInput = document.getElementById('dir-browser-path-input');
+            const upBtn = document.getElementById('dir-browser-up-btn');
+            const drivesContainer = document.getElementById('dir-browser-drives');
+            
+            listEl.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 2rem;">Loading...</div>';
+            
+            try {
+                const url = path ? `/api/system/browse_dir?path=${encodeURIComponent(path)}` : '/api/system/browse_dir';
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                if (!data.success) {
+                    listEl.innerHTML = `<div style="color: #fb7185; padding: 1rem; text-align: center;">${data.error || 'Failed to load directory.'}</div>`;
+                    return;
+                }
+                
+                currentBrowserPath = data.current_path || '';
+                currentBrowserParent = data.parent_path || '';
+                if (pathInput) pathInput.value = currentBrowserPath;
+                if (upBtn) upBtn.disabled = !currentBrowserParent && !currentBrowserPath;
+                
+                // Render drives if provided
+                if (data.drives && data.drives.length > 0 && drivesContainer) {
+                    drivesContainer.innerHTML = data.drives.map(d => {
+                        const escapedDPath = d.path.replace(/\\/g, '\\\\');
+                        return `<button type="button" class="filter-chip" style="padding: 0.25rem 0.6rem; font-size: 0.78rem;" onclick="loadDirectory('${escapedDPath}')">💾 ${d.name}</button>`;
+                    }).join('');
+                }
+                
+                // Render directories
+                if (!data.directories || data.directories.length === 0) {
+                    listEl.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 2rem;">No subdirectories found.</div>';
+                    return;
+                }
+                
+                let html = '';
+                data.directories.forEach(item => {
+                    const escapedPath = item.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    const icon = item.is_drive ? '💾' : '📁';
+                    html += `
+                        <div class="dir-item" style="display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0.6rem; border-radius: 0.35rem; cursor: pointer; user-select: none;" 
+                             onmouseover="this.style.background='rgba(255,255,255,0.06)'" 
+                             onmouseout="this.style.background='transparent'" 
+                             onclick="loadDirectory('${escapedPath}')">
+                            <span style="font-size: 1.1rem;">${icon}</span>
+                            <span style="font-size: 0.85rem; color: var(--text-main); font-weight: 500;">${item.name}</span>
+                        </div>
+                    `;
+                });
+                listEl.innerHTML = html;
+            } catch (e) {
+                listEl.innerHTML = `<div style="color: #fb7185; padding: 1rem; text-align: center;">Error: ${e.message}</div>`;
+            }
+        }
+
+        function navigateDirUp() {
+            loadDirectory(currentBrowserParent);
+        }
+
+        function navigateToInputPath() {
+            const pathInput = document.getElementById('dir-browser-path-input');
+            if (pathInput && pathInput.value.trim()) {
+                loadDirectory(pathInput.value.trim());
+            }
+        }
+
+        function confirmSelectedDir() {
+            const pathInput = document.getElementById('dir-browser-path-input');
+            const selected = pathInput ? pathInput.value.trim() : currentBrowserPath;
+            if (!selected) {
+                alert('Please choose or enter a directory path.');
+                return;
+            }
+            if (activeSlotForBrowser && activeTypeForBrowser) {
+                const inputId = activeTypeForBrowser === 'movies' ? `lf-movies-dir-${activeSlotForBrowser}` : `lf-tv-dir-${activeSlotForBrowser}`;
+                const targetInput = document.getElementById(inputId);
+                if (targetInput) {
+                    targetInput.value = selected;
+                    saveLocalFolderSlot(activeSlotForBrowser);
+                }
+            }
+            toggleDirBrowserModal(false);
+        }
+
     </script>
 </body>
 </html>

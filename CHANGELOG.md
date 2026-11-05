@@ -4,6 +4,14 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.5.6] - 2026-11-05
+
+### Added
+- **Local Folders Source Management** — Added dedicated Local Folder Sources configuration panel in the Services tab supporting 5 configurable folder slots for Movies and TV Shows.
+- **Interactive Directory Browser** — Added a responsive directory navigation modal supporting system drive enumeration (C:, D:, etc.), subdirectory drill-down, and direct manual entry of local or UNC network paths (e.g. \\server\share).
+- **Media Scanning API** — Added /api/local_folders/scan endpoint allowing Liberator to query Orac Server for matching video files across configured server directories.
+- **Direct Video Streaming Endpoint** — Added /api/local_folders/stream with native HTTP byte-range request support (HTTP 206 Partial Content) enabling seeking and audio track selection during playback in Kodi.
+
 ## [1.5.5] - 2026-10-30
 
 ### Added
