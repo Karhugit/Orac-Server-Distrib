@@ -144,7 +144,11 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
                 is_daily = True
             elif any(gn in ['news', 'talk'] for gn in genre_names):
                 is_daily = True
-            elif int(scrape_data.get('season') or 0) >= 30:
+            elif int(scrape_data.get('season') or 0) >= 1900:
+                # 4-digit year as season number indicates daily broadcast / syndication
+                is_daily = True
+            elif int(scrape_data.get('episode') or 0) >= 60:
+                # 60+ episodes in a single season is characteristic of daily soap operas / daytime shows
                 is_daily = True
             elif query.get('is_daily', ['false'])[0].lower() in ('true', '1'):
                 is_daily = True
@@ -267,6 +271,63 @@ async def handle_scrape_request(query, scraper_manager, movies_db, tvshows_db, t
             f"S{scrape_data.get('season')}E{scrape_data.get('episode')}, aliases={len(existing_aliases)}",
             level=LOGINFO,
         )
+
+    # Country-suffix and country code handling for TV shows & movies
+    check_title_val = scrape_data.get("tvshowtitle") or scrape_data.get("title") or ""
+    if check_title_val:
+        existing_aliases = list(scrape_data.get("aliases") or [])
+        seen_aliases = {
+            (a.get("title") if isinstance(a, dict) else str(a)).strip().lower()
+            for a in existing_aliases
+            if a
+        }
+        if check_title_val.strip().lower():
+            seen_aliases.add(check_title_val.strip().lower())
+
+        # Check for country suffixes like "Survivor USA", "Survivor (US)", "Ghosts (UK)"
+        m_c = re.search(r'[\s._\-\[\(]+(US|USA|UK|GB|AU|NZ|CA)[\s._\-\]\)]*$', check_title_val, re.I)
+        if m_c:
+            base = check_title_val[:m_c.start()].strip()
+            c_code = m_c.group(1).upper()
+            if base:
+                if base.lower() not in seen_aliases:
+                    seen_aliases.add(base.lower())
+                    existing_aliases.append({"title": base, "country": ""})
+                
+                # Add country variants for this base title
+                country_variants = [f"{base} {c_code}", f"{base} ({c_code})"]
+                if c_code in ('US', 'USA'):
+                    country_variants.extend([f"{base} US", f"{base} USA", f"{base} (US)", f"{base} (USA)"])
+                elif c_code in ('UK', 'GB'):
+                    country_variants.extend([f"{base} UK", f"{base} GB", f"{base} (UK)", f"{base} (GB)"])
+                
+                for var in country_variants:
+                    if var.lower() not in seen_aliases:
+                        seen_aliases.add(var.lower())
+                        existing_aliases.append({"title": var, "country": ""})
+                
+                # Update tvshowtitle to clean base title so scrapers searching by text search the canonical show name
+                if scrape_data.get("tvshowtitle"):
+                    scrape_data["tvshowtitle"] = base
+
+        # Also check country metadata (e.g. country = 'US' or origin_country has 'US')
+        c_meta = scrape_data.get("country") or scrape_data.get("origin_country") or ""
+        if isinstance(c_meta, list) and c_meta:
+            c_meta = c_meta[0]
+        c_code_meta = str(c_meta).upper().strip()
+        if c_code_meta in ('US', 'USA', 'UK', 'GB', 'AU', 'NZ', 'CA'):
+            curr_title = scrape_data.get("tvshowtitle") or scrape_data.get("title") or check_title_val
+            variants = [f"{curr_title} {c_code_meta}", f"{curr_title} ({c_code_meta})"]
+            if c_code_meta in ('US', 'USA'):
+                variants.extend([f"{curr_title} US", f"{curr_title} USA", f"{curr_title} (US)", f"{curr_title} (USA)"])
+            elif c_code_meta in ('UK', 'GB'):
+                variants.extend([f"{curr_title} UK", f"{curr_title} GB", f"{curr_title} (UK)", f"{curr_title} (GB)"])
+            for var in variants:
+                if var.lower() not in seen_aliases:
+                    seen_aliases.add(var.lower())
+                    existing_aliases.append({"title": var, "country": ""})
+
+        scrape_data["aliases"] = existing_aliases
 
     # Ensure 'imdb' and 'tmdb_id' keys exist for scrapers as strings.
     for key in ["imdb", "imdb_id", "tmdb_id", "episode_imdb", "show_imdb"]:
