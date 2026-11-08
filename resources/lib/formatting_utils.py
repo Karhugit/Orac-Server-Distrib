@@ -134,8 +134,8 @@ def format_movie(item, tmdb_handler, media_type='movie'):
         "runtime": item.get("runtime"),
         "tagline": item.get("tagline"),
         "country": item.get("country") or (item.get("production_countries", [{}])[0].get("iso_3166_1") if item.get("production_countries") else None),
-        "rating": item.get("rating") or item.get("vote_average"),
-        "votes": item.get("votes") or item.get("vote_count"),
+        "rating": item.get("rating") or item.get("vote_average") or 0.0,
+        "votes": item.get("votes") or item.get("vote_count") or 0,
         "language": item.get("language") or item.get("original_language"),
         "certification": item.get("certification"),
         "poster_path": get_url(item.get("poster_path"), "w780"),
@@ -145,6 +145,120 @@ def format_movie(item, tmdb_handler, media_type='movie'):
         "clearlogo_path": get_url(item.get("clearlogo_path"), "w500"),
         "belongs_to_collection": belongs_to_collection,
         "studio": studio,
+        "genres": genre_names,
+        "media_type": media_type,
+        "watched": item.get("watched", 0),
+        "watched_status": item.get("watched_status", 0),
+        "trailer": item.get("trailer", "")
+    }
+    return formatted
+
+
+tvshow_genres = [
+    {'id': 10759, 'name': 'Action & Adventure'}, {'id': 16, 'name': 'Animation'}, {'id': 35, 'name': 'Comedy'},
+    {'id': 80, 'name': 'Crime'}, {'id': 99, 'name': 'Documentary'}, {'id': 18, 'name': 'Drama'},
+    {'id': 10751, 'name': 'Family'}, {'id': 10762, 'name': 'Kids'}, {'id': 9648, 'name': 'Mystery'},
+    {'id': 10763, 'name': 'News'}, {'id': 10764, 'name': 'Reality'}, {'id': 10765, 'name': 'Sci-Fi & Fantasy'},
+    {'id': 10766, 'name': 'Soap'}, {'id': 10767, 'name': 'Talk'}, {'id': 10768, 'name': 'War & Politics'},
+    {'id': 37, 'name': 'Western'}
+]
+
+TV_GENRE_MAP = {genre['id']: genre['name'] for genre in tvshow_genres}
+
+def format_tvshow(item, tmdb_handler, media_type='show'):
+    """
+    Standardizes TV show data into a common Orac schema.
+    Works for raw TMDb API results AND local DB rows (if passed as dict).
+    """
+    tmdb_id = item.get("tmdb_id") or item.get("id") or item.get("show_tmdb_id")
+    imdb_id = item.get("imdb_id") or item.get("show_imdb_id")
+    if not imdb_id and "external_ids" in item:
+        imdb_id = item["external_ids"].get("imdb_id")
+
+    trakt_id = item.get("trakt_id") or item.get("show_trakt_id")
+
+    # Genres handling
+    genre_names = []
+    if "genres" in item and isinstance(item["genres"], list):
+        if item["genres"] and isinstance(item["genres"][0], str):
+            genre_names = item["genres"]
+        else:
+            genre_names = [g['name'] for g in item["genres"] if isinstance(g, dict) and 'name' in g]
+    elif "genre_ids" in item and isinstance(item["genre_ids"], list):
+        genre_names = [TV_GENRE_MAP.get(gid) for gid in item["genre_ids"] if TV_GENRE_MAP.get(gid)]
+
+    # Premiered & Year
+    premiered = item.get("premiered") or item.get("first_air_date") or item.get("release_date") or ""
+    if isinstance(premiered, int):
+        rd_str = str(premiered)
+        if len(rd_str) == 8:
+            premiered = f"{rd_str[:4]}-{rd_str[4:6]}-{rd_str[6:]}"
+        else:
+            premiered = str(premiered)
+    elif isinstance(premiered, str):
+        if len(premiered) == 8 and premiered.isdigit():
+            premiered = f"{premiered[:4]}-{premiered[4:6]}-{premiered[6:]}"
+
+    year = item.get("year")
+    if not year and premiered:
+        try:
+            year = int(str(premiered)[:4])
+        except (ValueError, IndexError):
+            year = None
+
+    # Networks
+    network = item.get("network")
+    if not network and "networks" in item and isinstance(item["networks"], list):
+        network = [n['name'] for n in item['networks'] if isinstance(n, dict) and 'name' in n]
+    elif isinstance(network, str):
+        try:
+            network = json.loads(network)
+        except Exception:
+            pass
+
+    # Countries
+    country = item.get("country")
+    if not country:
+        if item.get("origin_country"):
+            country = item.get("origin_country")
+        elif item.get("production_countries"):
+            country = [c.get("iso_3166_1") for c in item.get("production_countries", []) if isinstance(c, dict) and c.get("iso_3166_1")]
+
+    def get_url(path, size='w500'):
+        return format_image_url(path, size, tmdb_handler)
+
+    fanart = get_url(item.get("fanart_path") or item.get("backdrop_path"), "w1280")
+    poster = get_url(item.get("poster_path"), "w780")
+    thumbnail = get_url(item.get("thumbnail_path"), "w780") or poster
+    landscape = get_url(item.get("landscape_path"), "w1280") or fanart
+    clearlogo = get_url(item.get("clearlogo_path"), "w500")
+
+    formatted = {
+        "tmdb_id": tmdb_id,
+        "imdb_id": imdb_id,
+        "trakt_id": trakt_id,
+        "title": item.get("title") or item.get("name") or item.get("original_name") or item.get("original_title"),
+        "original_title": item.get("original_name") or item.get("original_title") or item.get("title") or item.get("name"),
+        "year": year,
+        "premiered": premiered,
+        "overview": item.get("overview"),
+        "tagline": item.get("tagline"),
+        "network": network,
+        "country": country,
+        "rating": item.get("rating") or item.get("vote_average") or 0.0,
+        "votes": item.get("votes") or item.get("vote_count") or 0,
+        "language": item.get("language") or item.get("original_language"),
+        "certification": item.get("certification"),
+        "status": item.get("status"),
+        "poster_path": poster,
+        "fanart_path": fanart,
+        "thumbnail_path": thumbnail,
+        "landscape_path": landscape,
+        "clearlogo_path": clearlogo,
+        "total_seasons": item.get("total_seasons") or 0,
+        "total_episodes": item.get("total_episodes") or 0,
+        "total_watched_episodes": item.get("total_watched_episodes") or 0,
+        "total_unaired_episodes": item.get("total_unaired_episodes") or 0,
         "genres": genre_names,
         "media_type": media_type,
         "watched": item.get("watched", 0),

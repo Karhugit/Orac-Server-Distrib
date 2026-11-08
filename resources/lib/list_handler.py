@@ -9,7 +9,7 @@ from collections import defaultdict
 from resources.lib.tmdb_lists import TMDB_GENERIC_LISTS
 from resources.lib.trakt_list_sync import add_movie
 from resources.lib.db_utils import add_tvshow
-from resources.lib.formatting_utils import format_movie
+from resources.lib.formatting_utils import format_movie, format_tvshow
 
 def _get_list_movies(list_name, user, movies_static_db_path, movies_dynamic_db_path, lists_db_path, preserve_order=False):
     # Step 1: Get trakt_ids for movies in the specified list from list_items + lists DB
@@ -21,7 +21,7 @@ def _get_list_movies(list_name, user, movies_static_db_path, movies_dynamic_db_p
             JOIN lists l ON li.list_id = l.list_id 
             WHERE (l.slug = ? OR LOWER(REPLACE(REPLACE(l.name, ' ', '-'), '_', '-')) = LOWER(?)) 
               AND li.media_type = 'movie' 
-              AND (l.user = ? OR l.user IN ('tmdb', 'external_index') OR l.list_id LIKE 'tmdb:index:%')
+              AND (l.user = ? OR l.user IN ('tmdb', 'external_index') OR l.list_id LIKE 'tmdb:index:%' OR l.list_id LIKE 'local:%' OR l.source = 'local')
             ORDER BY li.id ASC
         """, (list_name, list_name, user,))
         tmdb_ids = [row[0] for row in lists_cursor.fetchall() if row[0] and str(row[0]).lower() not in ('none', 'null', '')]
@@ -116,7 +116,7 @@ def _get_list_shows(list_name, user, tvshows_static_db_path, tvshows_dynamic_db_
             JOIN lists l ON li.list_id = l.list_id 
             WHERE (l.slug = ? OR LOWER(REPLACE(REPLACE(l.name, ' ', '-'), '_', '-')) = LOWER(?)) 
               AND li.media_type = 'show' 
-              AND (l.user = ? OR l.user IN ('tmdb', 'external_index') OR l.list_id LIKE 'tmdb:index:%')
+              AND (l.user = ? OR l.user IN ('tmdb', 'external_index') OR l.list_id LIKE 'tmdb:index:%' OR l.list_id LIKE 'local:%' OR l.source = 'local')
             ORDER BY li.id ASC
         """, (list_name, list_name, user,))
         show_ids = [row[0] for row in lists_cursor.fetchall() if row[0] and str(row[0]).lower() not in ('none', 'null', '')]
@@ -196,7 +196,7 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
             
             # Priority 1: Exact slug and user/external index match
             cursor.execute(
-                "SELECT list_id, source, user, slug, add_to_library FROM lists WHERE (slug = ? OR LOWER(REPLACE(REPLACE(name, ' ', '-'), '_', '-')) = LOWER(?)) AND (user = ? OR list_id LIKE 'tmdb:index:%')",
+                "SELECT list_id, source, user, slug, add_to_library FROM lists WHERE (slug = ? OR LOWER(REPLACE(REPLACE(name, ' ', '-'), '_', '-')) = LOWER(?)) AND (user = ? OR list_id LIKE 'tmdb:index:%' OR list_id LIKE 'local:%' OR source = 'local')",
                 (list_name, list_name, user)
             )
             row = cursor.fetchone()
@@ -204,7 +204,7 @@ async def handle_list_request(list_name, item_type, user, movies_dynamic_db_path
             # Priority 2: Try by list_id for legacy compatibility if user passed "user:slug" as name? 
             # Or just fallback to name match if passed slug is actually a name
             if not row:
-                 cursor.execute("SELECT list_id, source, user, slug, add_to_library FROM lists WHERE name = ? AND (user = ? OR list_id LIKE 'tmdb:index:%') COLLATE NOCASE", (list_name, user))
+                 cursor.execute("SELECT list_id, source, user, slug, add_to_library FROM lists WHERE name = ? AND (user = ? OR list_id LIKE 'tmdb:index:%' OR list_id LIKE 'local:%' OR source = 'local') COLLATE NOCASE", (list_name, user))
                  row = cursor.fetchone()
 
             if row:
@@ -440,7 +440,7 @@ async def _fetch_trakt_list_external(trakt_handler, tmdb_handler, user, slug, it
         # Enrich items with images and extra metadata
         enriched_items = await _enrich_items_with_metadata(items, tmdb_handler, movies_static_db_path, tvshows_static_db_path)
         # Final formatting pass
-        return [format_movie(item, tmdb_handler) if item.get('media_type') == 'movie' else item for item in enriched_items]
+        return [format_movie(item, tmdb_handler) if item.get('media_type') == 'movie' else format_tvshow(item, tmdb_handler) for item in enriched_items]
 
     except Exception as e:
         log(f"[Orac] Error fetching Trakt list {slug} externally: {e}", level=LOGERROR)
@@ -512,6 +512,8 @@ async def _fetch_single_tmdb_poster(tmdb_handler, tmdb_id, media_type, item, mov
             fanart_path = tmdb_handler._build_url(data.get("backdrop_path"), 'w1280')
             item["poster_path"] = poster_path
             item["fanart_path"] = fanart_path
+            item["thumbnail_path"] = item.get("thumbnail_path") or poster_path
+            item["landscape_path"] = item.get("landscape_path") or fanart_path
             
             if media_type == 'movie':
                 tagline = data.get("tagline")
@@ -615,28 +617,12 @@ async def _fetch_tmdb_discover_external(tmdb_handler, slug, item_type, ext_index
         formatted_results = []
         
         for item in results:
-            if tmdb_media_type == 'movie':
-                formatted_results.append({
-                    "tmdb_id": item.get("id"),
-                    "title": item.get("title"),
-                    "year": int(item.get("release_date")[:4]) if item.get("release_date") else None,
-                    "released": item.get("release_date"),
-                    "overview": item.get("overview"),
-                    "poster_path": tmdb_handler._build_url(item.get("poster_path"), 'w780'),
-                    "media_type": "movie"
-                })
-            else:
-                formatted_results.append({
-                    "tmdb_id": item.get("id"),
-                    "title": item.get("name"),
-                    "year": int(item.get("first_air_date")[:4]) if item.get("first_air_date") else None,
-                    "premiered": item.get("first_air_date"),
-                    "overview": item.get("overview"),
-                    "poster_path": tmdb_handler._build_url(item.get("poster_path"), 'w780'),
-                    "media_type": "show"
-                })
+            if tmdb_media_type == 'movie' and item_type in ['movie', 'all']:
+                formatted_results.append(format_movie(item, tmdb_handler))
+            elif tmdb_media_type != 'movie' and item_type in ['tvshow', 'all']:
+                formatted_results.append(format_tvshow(item, tmdb_handler))
 
-        return [format_movie(item, tmdb_handler) if item.get('media_type') == 'movie' else item for item in formatted_results]
+        return formatted_results
 
     except Exception as e:
         log(f"[Orac] Error fetching TMDb discover list {slug} externally: {e}", level=LOGERROR)
@@ -688,32 +674,20 @@ async def _fetch_tmdb_list_external(tmdb_handler, slug, item_type):
         results = data['items']
         formatted_results = []
 
+        default_media_type = 'movie'
+        if generic_list:
+            default_media_type = 'movie' if generic_list['type'] == 'movie' else 'tv'
+
         for item in results:
-            media_type = item.get('media_type')
+            media_type = item.get('media_type') or default_media_type
              # TMDb lists can contain both movies and TV shows
             
             if media_type == 'movie' and item_type in ['movie', 'all']:
-                 formatted_results.append({
-                    "tmdb_id": item.get("id"),
-                    "title": item.get("title"),
-                    "year": int(item.get("release_date")[:4]) if item.get("release_date") else None,
-                    "released": item.get("release_date"),
-                    "overview": item.get("overview"),
-                    "poster_path": tmdb_handler._build_url(item.get("poster_path"), 'w780'),
-                    "media_type": "movie"
-                })
-            elif media_type == 'tv' and item_type in ['tvshow', 'all']:
-                 formatted_results.append({
-                    "tmdb_id": item.get("id"),
-                    "title": item.get("name"),
-                    "year": int(item.get("first_air_date")[:4]) if item.get("first_air_date") else None,
-                    "premiered": item.get("first_air_date"),
-                    "overview": item.get("overview"),
-                    "poster_path": tmdb_handler._build_url(item.get("poster_path"), 'w780'),
-                    "media_type": "show"
-                })
+                formatted_results.append(format_movie(item, tmdb_handler))
+            elif media_type in ['tv', 'show', 'tvshow'] and item_type in ['tvshow', 'all']:
+                formatted_results.append(format_tvshow(item, tmdb_handler))
 
-        return [format_movie(item, tmdb_handler) if item.get('media_type') == 'movie' else item for item in formatted_results]
+        return formatted_results
 
     except Exception as e:
         log(f"[Orac] Error fetching TMDb list {slug} externally: {e}", level=LOGERROR)
@@ -772,7 +746,7 @@ async def _fetch_simkl_list_external(slug, item_type, tmdb_handler, movies_stati
                                         "media_type": "show"
                                     })
                             enriched = await _enrich_items_with_metadata(formatted_items, tmdb_handler, movies_static_db_path, tvshows_static_db_path)
-                            return [format_movie(item, tmdb_handler) if item.get('media_type') == 'movie' else item for item in enriched]
+                            return [format_movie(item, tmdb_handler) if item.get('media_type') == 'movie' else format_tvshow(item, tmdb_handler) for item in enriched]
 
             log(f"[Orac] Unknown Simkl generic list slug: {slug}", level=LOGWARNING)
             return []
@@ -831,7 +805,7 @@ async def _fetch_simkl_list_external(slug, item_type, tmdb_handler, movies_stati
                 })
 
         enriched = await _enrich_items_with_metadata(formatted_items, tmdb_handler, movies_static_db_path, tvshows_static_db_path)
-        return [format_movie(item, tmdb_handler) if item.get('media_type') == 'movie' else item for item in enriched]
+        return [format_movie(item, tmdb_handler) if item.get('media_type') == 'movie' else format_tvshow(item, tmdb_handler) for item in enriched]
 
     except Exception as e:
         log(f"[Orac] Error fetching Simkl list {slug} externally: {e}", level=LOGERROR)
@@ -905,7 +879,7 @@ async def _fetch_punchplay_list_external(slug, item_type, tmdb_handler, movies_s
                 })
 
         enriched = await _enrich_items_with_metadata(formatted_items, tmdb_handler, movies_static_db_path, tvshows_static_db_path)
-        return [format_movie(item, tmdb_handler) if item.get('media_type') == 'movie' else item for item in enriched]
+        return [format_movie(item, tmdb_handler) if item.get('media_type') == 'movie' else format_tvshow(item, tmdb_handler) for item in enriched]
 
     except Exception as e:
         log(f"[Orac] Error fetching PunchPlay list {slug} externally: {e}", level=LOGERROR)

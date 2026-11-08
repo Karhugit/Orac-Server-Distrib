@@ -1,3 +1,4 @@
+from resources.lib.media_inspector import inspect_media_file
 import os
 import re
 import string
@@ -13,18 +14,24 @@ SUPPORTED_VIDEO_EXTENSIONS = (
 )
 
 
-def _normalize_title(text: str) -> str:
+def _normalize_title(text: Any) -> str:
     """Normalize a title string by stripping accents/punctuation and collapsing spaces."""
     if not text:
         return ""
+    if isinstance(text, dict):
+        text = text.get("title") or text.get("name") or ""
+    elif not isinstance(text, str):
+        text = str(text)
     text = text.lower()
     text = re.sub(r'[\'\"’“”\.\-_:;,/\\&()\[\]{}]', ' ', text)
     return ' '.join(text.split())
 
 
-def _extract_tokens(text: str) -> List[str]:
+def _extract_tokens(text: Any) -> List[str]:
     """Extract clean words/tokens from title for matching."""
     norm = _normalize_title(text)
+    if not norm:
+        return []
     # Remove common stop words for matching robustness
     tokens = [w for w in norm.split() if len(w) > 0 and w not in ('the', 'a', 'an', 'and', 'of', 'in', 'on', 'to')]
     return tokens if tokens else norm.split()
@@ -170,10 +177,10 @@ def scan_local_media_folders(
     folder_id: Optional[str] = None,
     media_type: str = "movie",
     title: str = "",
-    year: Optional[int] = None,
-    season: Optional[int] = None,
-    episode: Optional[int] = None,
-    aliases: Optional[List[str]] = None
+    year: Optional[Any] = None,
+    season: Optional[Any] = None,
+    episode: Optional[Any] = None,
+    aliases: Optional[List[Any]] = None
 ) -> List[Dict[str, Any]]:
     """
     Scans configured Orac local media folders for video files matching the requested movie or episode.
@@ -181,6 +188,18 @@ def scan_local_media_folders(
     """
     if not title:
         return []
+
+    def _to_int(val):
+        if val is None or val == "" or str(val).lower() == "none":
+            return None
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return None
+
+    year_int = _to_int(year)
+    season_int = _to_int(season)
+    episode_int = _to_int(episode)
 
     target_slots = []
     if folder_id:
@@ -211,10 +230,14 @@ def scan_local_media_folders(
     alias_token_sets = []
     if aliases:
         for alias in aliases:
-            a_tokens = _extract_tokens(alias)
-            if a_tokens:
-                alias_token_sets.append(a_tokens)
-
+            if isinstance(alias, dict):
+                alias_str = alias.get("title") or alias.get("name") or ""
+            else:
+                alias_str = str(alias) if alias is not None else ""
+            if alias_str:
+                a_tokens = _extract_tokens(alias_str)
+                if a_tokens:
+                    alias_token_sets.append(a_tokens)
     results = []
     seen_paths = set()
 
@@ -226,7 +249,7 @@ def scan_local_media_folders(
                     slot=slot,
                     title_tokens=title_tokens,
                     alias_token_sets=alias_token_sets,
-                    year=year,
+                    year=year_int,
                     results=results,
                     seen_paths=seen_paths
                 )
@@ -236,8 +259,8 @@ def scan_local_media_folders(
                     slot=slot,
                     title_tokens=title_tokens,
                     alias_token_sets=alias_token_sets,
-                    season=season,
-                    episode=episode,
+                    season=season_int,
+                    episode=episode_int,
                     results=results,
                     seen_paths=seen_paths
                 )
@@ -253,6 +276,40 @@ def _match_tokens(name_tokens: List[str], required_tokens: List[str]) -> bool:
         return False
     name_set = set(name_tokens)
     return all(tok in name_set for tok in required_tokens)
+
+
+def _build_file_record(fname: str, full_path: str, slot: str) -> Dict[str, Any]:
+    try:
+        size_bytes = os.path.getsize(full_path)
+    except OSError:
+        size_bytes = 0
+
+    record = {
+        "name": fname,
+        "path": full_path,
+        "size": size_bytes,
+        "size_gb": round(size_bytes / (1024 ** 3), 2),
+        "slot": f"folder{slot}",
+        "folder_slot": slot
+    }
+    try:
+        media_info = inspect_media_file(full_path)
+        if media_info:
+            if media_info.get("quality"):
+                record["quality"] = media_info["quality"]
+            if media_info.get("width"):
+                record["width"] = media_info["width"]
+            if media_info.get("height"):
+                record["height"] = media_info["height"]
+            if media_info.get("video_codec"):
+                record["video_codec"] = media_info["video_codec"]
+            if media_info.get("audio_codec"):
+                record["audio_codec"] = media_info["audio_codec"]
+            if media_info.get("extraInfo"):
+                record["extraInfo"] = media_info["extraInfo"]
+    except Exception:
+        pass
+    return record
 
 
 def _scan_movie_dir(
@@ -296,27 +353,17 @@ def _scan_movie_dir(
 
             # Year check if specified
             if year:
-                # Find all 4-digit years in filename/parent
-                years_found = [int(y) for y in re.findall(r'\b(19\d\d|20\d\d)\b', f"{fname} {os.path.basename(root)}")]
-                if years_found:
-                    # Year must match +/- 1 year
-                    if not any(abs(y - year) <= 1 for y in years_found):
-                        continue
-
-            try:
-                size_bytes = os.path.getsize(full_path)
-            except OSError:
-                size_bytes = 0
-
+                try:
+                    y_int = int(year)
+                except (ValueError, TypeError):
+                    y_int = None
+                if y_int:
+                    years_found = [int(y) for y in re.findall(r'\b(19\d\d|20\d\d)\b', f"{fname} {os.path.basename(root)}")]
+                    if years_found:
+                        if not any(abs(y - y_int) <= 1 for y in years_found):
+                            continue
             seen_paths.add(full_path)
-            results.append({
-                "name": fname,
-                "path": full_path,
-                "size": size_bytes,
-                "size_gb": round(size_bytes / (1024 ** 3), 2),
-                "slot": f"folder{slot}",
-                "folder_slot": slot
-            })
+            results.append(_build_file_record(fname, full_path, slot))
 
 
 def _scan_tv_dir(
@@ -335,8 +382,11 @@ def _scan_tv_dir(
 
     # Season and episode pattern regex
     # Matches S01E02, 1x02, S1E2, Ep02, Episode 02, etc.
-    s_num = int(season)
-    e_num = int(episode)
+    try:
+        s_num = int(season)
+        e_num = int(episode)
+    except (ValueError, TypeError):
+        return
     ep_pattern = re.compile(
         rf'(?:s0*{s_num}[\.\-_ ]*e0*{e_num}\b|\b{s_num}x0*{e_num}\b|\bs0*{s_num}[\.\-_ ]*ep0*{e_num}\b)',
         re.IGNORECASE
@@ -370,17 +420,5 @@ def _scan_tv_dir(
             if not matched:
                 continue
 
-            try:
-                size_bytes = os.path.getsize(full_path)
-            except OSError:
-                size_bytes = 0
-
             seen_paths.add(full_path)
-            results.append({
-                "name": fname,
-                "path": full_path,
-                "size": size_bytes,
-                "size_gb": round(size_bytes / (1024 ** 3), 2),
-                "slot": f"folder{slot}",
-                "folder_slot": slot
-            })
+            results.append(_build_file_record(fname, full_path, slot))

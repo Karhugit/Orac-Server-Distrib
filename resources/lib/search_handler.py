@@ -1,4 +1,4 @@
-from resources.lib.formatting_utils import format_movie
+from resources.lib.formatting_utils import format_movie, format_tvshow, TV_GENRE_MAP, tvshow_genres
 
 tvshow_genres = [
     {'id': 10759, 'name': 'Action & Adventure'}, {'id': 16, 'name': 'Animation'}, {'id': 35, 'name': 'Comedy'},
@@ -43,30 +43,11 @@ def search_tmdb(query, tmdb_handler, item_type='movie'):
     formatted_results = []
     for item in results:
         media_type = item.get("media_type", item_type)
-        if media_type == 'tv':
-            # TV shows still use localized genre mapping for now (can also be unified later)
-            genre_ids = item.get("genre_ids", [])
-            genre_names = [TV_GENRE_MAP.get(gid) for gid in genre_ids if TV_GENRE_MAP.get(gid)]
-            formatted_item = {
-                "id": item.get("id"),
-                "title": item.get("title") or item.get("name"),
-                "overview": item.get("overview"),
-                "release_date": item.get("release_date") or item.get("first_air_date"),
-                "poster_path": tmdb_handler._build_url(item.get("poster_path"), "w780"),
-                "backdrop_path": tmdb_handler._build_url(item.get("backdrop_path"), "w1280"),
-                "media_type": media_type,
-                "genres": genre_names,
-                "origin_country": item.get("origin_country", []),
-                "original_language": item.get("original_language"),
-                "original_title": item.get("original_title") or item.get("original_name"),
-                "popularity": item.get("popularity"),
-                "first_air_date": item.get("first_air_date"),
-                "vote_average": item.get("vote_average"),
-                "vote_count": item.get("vote_count")
-            }
+        if media_type in ['tv', 'show', 'tvshow']:
+            formatted_item = format_tvshow(item, tmdb_handler, media_type='show')
         else: 
             # Use unified movie formatter for 'movie'
-            formatted_item = format_movie(item, tmdb_handler, media_type=media_type)
+            formatted_item = format_movie(item, tmdb_handler, media_type='movie')
 
         formatted_results.append(formatted_item)
 

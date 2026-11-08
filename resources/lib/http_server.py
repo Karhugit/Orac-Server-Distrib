@@ -1,5 +1,5 @@
 import asyncio
-from typing import Optional
+from typing import Optional, Any
 import time
 import requests
 from resources.lib.db_utils import db_connect
@@ -240,6 +240,32 @@ def app_factory(
             name="PosterCleanup"
         ).start()
 
+        # Local media library watcher and auto-sync worker
+        try:
+            from resources.lib.local_library_watcher import LocalLibraryWatcher
+            scan_int_str = get_config_value('local_library.scan_interval', application.state.config_db_path) or '900'
+            try:
+                scan_int = int(scan_int_str)
+            except ValueError:
+                scan_int = 900
+            local_watcher = LocalLibraryWatcher(
+                config_db_path=application.state.config_db_path,
+                movies_static_db_path=application.state.movies_static_db_path,
+                movies_dynamic_db_path=application.state.movies_dynamic_db_path,
+                tvshows_static_db_path=application.state.tvshows_static_db_path,
+                tvshows_dynamic_db_path=application.state.tvshows_dynamic_db_path,
+                lists_db_path=application.state.lists_db_path,
+                trakt_update_queue_path=application.state.trakt_update_queue_path,
+                tmdb_handler=application.state.tmdb_handler,
+                trakt_handler=application.state.trakt_handler,
+                scan_interval=scan_int
+            )
+            application.state.local_library_watcher = local_watcher
+            local_watcher.start()
+            log('[Orac] Local library watcher started.', level=LOGINFO)
+        except Exception as _e:
+            log(f'[Orac] Error starting LocalLibraryWatcher: {_e}', level=LOGERROR)
+
         # Startup Anime Dual-Indexing Bridge dataset sync (Manami + AniBridge + local overrides)
         if getattr(application.state, "anime_service", None):
             _threading.Thread(
@@ -330,6 +356,8 @@ def app_factory(
             application.state.trakt_maintenance_worker.stop()
         if application.state.stale_refresh_worker:
             application.state.stale_refresh_worker.stop()
+        if getattr(application.state, 'local_library_watcher', None):
+            application.state.local_library_watcher.stop()
         log("[Orac] Setup teardown complete", level=LOGINFO)
 
     app = FastAPI(lifespan=lifespan)
@@ -1129,6 +1157,16 @@ def app_factory(
             return JSONResponse(status_code=200, content={"success": True, "genres": genres})
         except Exception as e:
             log(f"Error fetching Trakt genres: {e}", level=LOGERROR)
+            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+    @app.post("/api/web/system/restart")
+    async def web_system_restart():
+        """Restarts the Orac Server process."""
+        try:
+            trigger_server_restart(1.0)
+            return JSONResponse(status_code=200, content={"success": True, "message": "Server restarting..."})
+        except Exception as e:
+            log(f"[Orac] Error in /api/web/system/restart: {e}", level=LOGERROR)
             return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
     # --- WEB DASHBOARD ROUTES ---
@@ -4359,29 +4397,77 @@ def app_factory(
         folder_id: Optional[str] = None,
         media_type: str = "movie",
         title: str = "",
-        year: Optional[int] = None,
-        season: Optional[int] = None,
-        episode: Optional[int] = None,
+        year: Optional[Any] = None,
+        season: Optional[Any] = None,
+        episode: Optional[Any] = None,
         aliases: Optional[str] = None
     ):
         from resources.lib.local_folders_handler import scan_local_media_folders
-        aliases_list = None
+        aliases_list = []
         if aliases:
             try:
-                aliases_list = json.loads(aliases) if aliases.startswith('[') else [a.strip() for a in aliases.split(',') if a.strip()]
-            except Exception:
-                aliases_list = [aliases]
+                parsed = json.loads(aliases) if (isinstance(aliases, str) and aliases.strip().startswith("[")) else None
+                if parsed and isinstance(parsed, list):
+                    for item in parsed:
+                        if isinstance(item, dict):
+                            t = item.get("title") or item.get("name") or ""
+                            if t:
+                                aliases_list.append(str(t).strip())
+                        elif item:
+                            aliases_list.append(str(item).strip())
+                elif isinstance(aliases, str):
+                    for a in aliases.split(","):
+                        a = a.strip()
+                        if a:
+                            aliases_list.append(a)
+                elif isinstance(aliases, list):
+                    for item in aliases:
+                        if isinstance(item, dict):
+                            t = item.get("title") or item.get("name") or ""
+                            if t:
+                                aliases_list.append(str(t).strip())
+                        elif item:
+                            aliases_list.append(str(item).strip())
+            except Exception as e:
+                log(f"[Orac] Error parsing aliases in api_local_folders_scan: {e}", LOGWARNING)
+                if isinstance(aliases, str):
+                    aliases_list = [aliases.strip()]
+
+        def _to_int(val):
+            if val is None or val == "" or str(val).lower() == "none":
+                return None
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return None
+
+        year_int = _to_int(year)
+        season_int = _to_int(season)
+        episode_int = _to_int(episode)
+
         results = scan_local_media_folders(
             config_db_path=app.state.config_db_path,
             folder_id=folder_id,
             media_type=media_type,
             title=title,
-            year=year,
-            season=season,
-            episode=episode,
+            year=year_int,
+            season=season_int,
+            episode=episode_int,
             aliases=aliases_list
         )
         return {"success": True, "results": results}
+    @app.post("/api/local_folders/sync")
+    @app.get("/api/local_folders/sync")
+    async def api_local_folders_sync(sync: bool = False):
+        watcher = getattr(app.state, 'local_library_watcher', None)
+        if not watcher:
+            return JSONResponse(status_code=503, content={"success": False, "error": "Local library watcher not initialized"})
+        if sync:
+            result = await asyncio.to_thread(watcher.run_scan)
+            return JSONResponse(status_code=200, content={"success": True, "stats": result})
+        else:
+            res = watcher.trigger_scan(synchronous=False)
+            return JSONResponse(status_code=200, content={"success": True, **res})
 
     @app.get("/api/local_folders/stream")
     async def api_local_folders_stream(request: Request, file: str = Query(...)):
