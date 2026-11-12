@@ -8,6 +8,7 @@ or reading full media streams.
 """
 
 import os
+import re
 import struct
 from typing import Optional, Dict, Any
 
@@ -55,107 +56,149 @@ def parse_mkv_metadata(file_path: str) -> Optional[Dict[str, Any]]:
     """Inspects Matroska / WebM EBML headers for resolution and codecs."""
     try:
         with open(file_path, "rb") as f:
-            data = f.read(2 * 1024 * 1024)  # 2MB is more than enough for EBML tracks
+            data = f.read(4 * 1024 * 1024)  # Read initial 4MB chunk
 
-        # Tracks element ID: 0x16 0x54 0xAE 0x6B
-        tracks_pos = data.find(b"\x16\x54\xae\x6b")
-        if tracks_pos == -1:
-            return None
+            # Find Segment payload offset to resolve SeekHead offsets if needed
+            seg_payload_offset = 0
+            seg_pos = data.find(b"\x18\x53\x80\x67")
+            if seg_pos != -1:
+                _, seg_vlen = _parse_ebml_vint(data, seg_pos + 4)
+                if seg_vlen:
+                    seg_payload_offset = seg_pos + 4 + seg_vlen
 
-        offset = tracks_pos + 4
-        size, v_len = _parse_ebml_vint(data, offset)
-        if size is None:
-            return None
-        offset += v_len
-        tracks_end = min(offset + size, len(data))
+            # Check if Tracks element (0x16 0x54 0xAE 0x6B) is directly found
+            # or if it's referenced in SeekHead (0x53AB SeekID with value 0x1654AE6B)
+            tracks_pos = -1
+            p = 0
+            while True:
+                p = data.find(b"\x16\x54\xae\x6b", p)
+                if p == -1:
+                    break
+                # Check if this occurrence is inside SeekHead (preceded by SeekID 0x53AB)
+                if p >= 2 and (data[p - 2 : p] == b"\x53\xab" or (p >= 3 and data[p - 3 : p - 1] == b"\x53\xab")):
+                    # It's a SeekID pointing to Tracks!
+                    # Find SeekPosition (0x53AC) in proximity
+                    sp_pos = data.find(b"\x53\xac", p, p + 50)
+                    if sp_pos != -1:
+                        sp_len, sp_vlen = _parse_ebml_vint(data, sp_pos + 2)
+                        if sp_len and sp_len <= 8:
+                            sp_start = sp_pos + 2 + sp_vlen
+                            seek_val = int.from_bytes(data[sp_start : sp_start + sp_len], "big")
+                            if seg_payload_offset:
+                                target_offset = seg_payload_offset + seek_val
+                                f.seek(target_offset)
+                                data = f.read(2 * 1024 * 1024)
+                                tracks_pos = data.find(b"\x16\x54\xae\x6b")
+                                break
+                    p += 4
+                    continue
+                else:
+                    # Found genuine Tracks element
+                    tracks_pos = p
+                    break
 
-        width, height = 0, 0
-        video_codec = None
-        audio_codec = None
+            if tracks_pos == -1:
+                # Tracks not found yet; try reading further up to 10MB
+                f.seek(0)
+                data = f.read(10 * 1024 * 1024)
+                tracks_pos = data.find(b"\x16\x54\xae\x6b")
+                if tracks_pos == -1:
+                    return None
 
-        # Scan for TrackEntry (0xAE)
-        while offset < tracks_end:
-            entry_pos = data.find(b"\xae", offset, tracks_end)
-            if entry_pos == -1:
-                break
-            entry_offset = entry_pos + 1
-            entry_size, v_len = _parse_ebml_vint(data, entry_offset)
-            if entry_size is None:
-                offset = entry_pos + 1
-                continue
-            entry_end = min(entry_offset + v_len + entry_size, tracks_end)
-            entry_data = data[entry_offset + v_len : entry_end]
+            offset = tracks_pos + 4
+            size, v_len = _parse_ebml_vint(data, offset)
+            if size is None:
+                return None
+            offset += v_len
+            tracks_end = min(offset + size, len(data))
 
-            # TrackType (0x83): 1 = Video, 2 = Audio
-            track_type = None
-            tt_pos = entry_data.find(b"\x83")
-            if tt_pos != -1:
-                tt_val, _ = _parse_ebml_vint(entry_data, tt_pos + 1)
-                track_type = tt_val
+            width, height = 0, 0
+            video_codec = None
+            audio_codec = None
 
-            # CodecID (0x86)
-            codec_id = ""
-            cid_pos = entry_data.find(b"\x86")
-            if cid_pos != -1:
-                cid_len, c_v_len = _parse_ebml_vint(entry_data, cid_pos + 1)
-                if cid_len and cid_len < 128:
-                    c_start = cid_pos + 1 + c_v_len
-                    codec_id = entry_data[c_start : c_start + cid_len].decode("latin1", errors="ignore").upper()
+            # Scan for TrackEntry (0xAE)
+            while offset < tracks_end:
+                entry_pos = data.find(b"\xae", offset, tracks_end)
+                if entry_pos == -1:
+                    break
+                entry_offset = entry_pos + 1
+                entry_size, v_len = _parse_ebml_vint(data, entry_offset)
+                if entry_size is None:
+                    offset = entry_pos + 1
+                    continue
+                entry_end = min(entry_offset + v_len + entry_size, tracks_end)
+                entry_data = data[entry_offset + v_len : entry_end]
 
-            # Video track details (TrackType 1 or contains Video element 0xE0)
-            if track_type == 1 or b"\xe0" in entry_data:
-                # Video element (0xE0) contains PixelWidth (0xB0) and PixelHeight (0xBA)
-                v_pos = entry_data.find(b"\xe0")
-                v_scope = entry_data[v_pos : v_pos + 128] if v_pos != -1 else entry_data
+                # TrackType (0x83): 1 = Video, 2 = Audio
+                track_type = None
+                tt_pos = entry_data.find(b"\x83")
+                if tt_pos != -1:
+                    tt_val, _ = _parse_ebml_vint(entry_data, tt_pos + 1)
+                    track_type = tt_val
 
-                pw_pos = v_scope.find(b"\xb0")
-                if pw_pos != -1:
-                    w_len, w_v_len = _parse_ebml_vint(v_scope, pw_pos + 1)
-                    if w_len in (1, 2, 3, 4):
-                        w_start = pw_pos + 1 + w_v_len
-                        w = int.from_bytes(v_scope[w_start : w_start + w_len], "big")
-                        if w > width:
-                            width = w
+                # CodecID (0x86)
+                codec_id = ""
+                cid_pos = entry_data.find(b"\x86")
+                if cid_pos != -1:
+                    cid_len, c_v_len = _parse_ebml_vint(entry_data, cid_pos + 1)
+                    if cid_len and cid_len < 128:
+                        c_start = cid_pos + 1 + c_v_len
+                        codec_id = entry_data[c_start : c_start + cid_len].decode("latin1", errors="ignore").upper()
 
-                ph_pos = v_scope.find(b"\xba")
-                if ph_pos != -1:
-                    h_len, h_v_len = _parse_ebml_vint(v_scope, ph_pos + 1)
-                    if h_len in (1, 2, 3, 4):
-                        h_start = ph_pos + 1 + h_v_len
-                        h = int.from_bytes(v_scope[h_start : h_start + h_len], "big")
-                        if h > height:
-                            height = h
+                # Video track details (TrackType 1 or contains Video element 0xE0)
+                if track_type == 1 or b"\xe0" in entry_data:
+                    # Video element (0xE0) contains PixelWidth (0xB0) and PixelHeight (0xBA)
+                    v_pos = entry_data.find(b"\xe0")
+                    v_scope = entry_data[v_pos : v_pos + 128] if v_pos != -1 else entry_data
 
-                if "HEVC" in codec_id or "H265" in codec_id:
-                    video_codec = "HEVC"
-                elif "AVC" in codec_id or "H264" in codec_id:
-                    video_codec = "AVC"
-                elif "AV1" in codec_id:
-                    video_codec = "AV1"
-                elif "VP9" in codec_id:
-                    video_codec = "VP9"
-                elif "MPEG4" in codec_id or "XVID" in codec_id:
-                    video_codec = "XViD"
+                    pw_pos = v_scope.find(b"\xb0")
+                    if pw_pos != -1:
+                        w_len, w_v_len = _parse_ebml_vint(v_scope, pw_pos + 1)
+                        if w_len in (1, 2, 3, 4):
+                            w_start = pw_pos + 1 + w_v_len
+                            w = int.from_bytes(v_scope[w_start : w_start + w_len], "big")
+                            if w > width:
+                                width = w
 
-            elif track_type == 2 or b"\xe1" in entry_data:
-                if "TRUEHD" in codec_id:
-                    audio_codec = "TrueHD"
-                elif "DTS" in codec_id:
-                    audio_codec = "DTS"
-                elif "EAC3" in codec_id or "EC3" in codec_id:
-                    audio_codec = "EAC3"
-                elif "AC3" in codec_id:
-                    audio_codec = "AC3"
-                elif "AAC" in codec_id:
-                    audio_codec = "AAC"
-                elif "FLAC" in codec_id:
-                    audio_codec = "FLAC"
-                elif "OPUS" in codec_id:
-                    audio_codec = "Opus"
+                    ph_pos = v_scope.find(b"\xba")
+                    if ph_pos != -1:
+                        h_len, h_v_len = _parse_ebml_vint(v_scope, ph_pos + 1)
+                        if h_len in (1, 2, 3, 4):
+                            h_start = ph_pos + 1 + h_v_len
+                            h = int.from_bytes(v_scope[h_start : h_start + h_len], "big")
+                            if h > height:
+                                height = h
 
-            offset = entry_end
+                    if "HEVC" in codec_id or "H265" in codec_id:
+                        video_codec = "HEVC"
+                    elif "AVC" in codec_id or "H264" in codec_id:
+                        video_codec = "AVC"
+                    elif "AV1" in codec_id:
+                        video_codec = "AV1"
+                    elif "VP9" in codec_id:
+                        video_codec = "VP9"
+                    elif "MPEG4" in codec_id or "XVID" in codec_id:
+                        video_codec = "XViD"
 
-        return _build_result(width, height, video_codec, audio_codec)
+                elif track_type == 2 or b"\xe1" in entry_data:
+                    if "TRUEHD" in codec_id:
+                        audio_codec = "TrueHD"
+                    elif "DTS" in codec_id:
+                        audio_codec = "DTS"
+                    elif "EAC3" in codec_id or "EC3" in codec_id:
+                        audio_codec = "EAC3"
+                    elif "AC3" in codec_id:
+                        audio_codec = "AC3"
+                    elif "AAC" in codec_id:
+                        audio_codec = "AAC"
+                    elif "FLAC" in codec_id:
+                        audio_codec = "FLAC"
+                    elif "OPUS" in codec_id:
+                        audio_codec = "Opus"
+
+                offset = entry_end
+
+            return _build_result(width, height, video_codec, audio_codec)
     except Exception:
         return None
 
@@ -285,18 +328,128 @@ def _build_result(width: int, height: int, video_codec: Optional[str], audio_cod
     }
 
 
-def inspect_media_file(file_path: str) -> Optional[Dict[str, Any]]:
+def parse_filename_media_info(file_path: str) -> Dict[str, Any]:
+    """
+    Extracts resolution, video codec, and audio codec from filename tokens as a pure-string fallback.
+    Guaranteed to return a dict with {width, height, quality, video_codec, audio_codec, extraInfo}.
+    """
+    fname = os.path.basename(file_path) if file_path else ""
+    width = 0
+    height = 0
+    quality = "SD"
+    video_codec = ""
+    audio_codec = ""
+
+    # Quality / Resolution
+    if re.search(r'\b(2160p|4k|uhd)\b', fname, re.IGNORECASE):
+        quality = "4K"
+        width, height = 3840, 2160
+    elif re.search(r'\b(1080p|1080i|fhd)\b', fname, re.IGNORECASE):
+        quality = "1080p"
+        width, height = 1920, 1080
+    elif re.search(r'\b(720p|hd)\b', fname, re.IGNORECASE):
+        quality = "720p"
+        width, height = 1280, 720
+    elif re.search(r'\b(480p|576p|sd)\b', fname, re.IGNORECASE):
+        quality = "SD"
+        width, height = 720, 480
+
+    # Video Codec
+    if re.search(r'\b(x265|h265|h\.265|hevc)\b', fname, re.IGNORECASE):
+        video_codec = "HEVC"
+    elif re.search(r'\b(x264|h264|h\.264|avc)\b', fname, re.IGNORECASE):
+        video_codec = "AVC"
+    elif re.search(r'\b(av1)\b', fname, re.IGNORECASE):
+        video_codec = "AV1"
+    elif re.search(r'\b(vp9)\b', fname, re.IGNORECASE):
+        video_codec = "VP9"
+    elif re.search(r'\b(xvid|divx)\b', fname, re.IGNORECASE):
+        video_codec = "XViD"
+    elif re.search(r'\b(mpeg2)\b', fname, re.IGNORECASE):
+        video_codec = "MPEG2"
+
+    # Audio Codec
+    if re.search(r'\b(truehd)\b', fname, re.IGNORECASE):
+        audio_codec = "TrueHD"
+    elif re.search(r'\b(atmos)\b', fname, re.IGNORECASE):
+        audio_codec = "Atmos"
+    elif re.search(r'\b(dts[\.\-_]?hd|dtshd|dts)\b', fname, re.IGNORECASE):
+        audio_codec = "DTS"
+    elif re.search(r'\b(eac3|ddp|dd\+|ec3)\b', fname, re.IGNORECASE):
+        audio_codec = "EAC3"
+    elif re.search(r'\b(ac3|dd5\.1|dd2\.0)\b', fname, re.IGNORECASE):
+        audio_codec = "AC3"
+    elif re.search(r'\b(aac)\b', fname, re.IGNORECASE):
+        audio_codec = "AAC"
+    elif re.search(r'\b(flac)\b', fname, re.IGNORECASE):
+        audio_codec = "FLAC"
+    elif re.search(r'\b(opus)\b', fname, re.IGNORECASE):
+        audio_codec = "Opus"
+
+    parts = [p for p in (quality, video_codec, audio_codec) if p and p != "SD"]
+    return {
+        "width": width,
+        "height": height,
+        "quality": quality,
+        "video_codec": video_codec,
+        "audio_codec": audio_codec,
+        "extraInfo": " | ".join(parts) if parts else ""
+    }
+
+
+def inspect_media_file(file_path: str) -> Dict[str, Any]:
     """
     Main entry point: detects container type from extension and extracts metadata.
-    Returns dict with {width, height, quality, video_codec, audio_codec, extraInfo} or None.
+    Guaranteed to return a dict with {width, height, quality, video_codec, audio_codec, extraInfo}.
+    Never returns None.
     """
-    if not file_path or not os.path.isfile(file_path):
-        return None
-    ext = os.path.splitext(file_path)[-1].lower()
-    if ext in (".mp4", ".m4v", ".mov"):
-        return parse_mp4_metadata(file_path)
-    elif ext in (".mkv", ".webm"):
-        return parse_mkv_metadata(file_path)
-    elif ext == ".avi":
-        return parse_avi_metadata(file_path)
-    return None
+    fn_info = parse_filename_media_info(file_path) if file_path else {
+        "width": 0, "height": 0, "quality": "SD", "video_codec": "", "audio_codec": "", "extraInfo": ""
+    }
+
+    if not file_path:
+        return fn_info
+
+    info = None
+    try:
+        if os.path.isfile(file_path):
+            ext = os.path.splitext(file_path)[-1].lower()
+            if ext in (".mp4", ".m4v", ".mov"):
+                info = parse_mp4_metadata(file_path)
+            elif ext in (".mkv", ".webm"):
+                info = parse_mkv_metadata(file_path)
+            elif ext == ".avi":
+                info = parse_avi_metadata(file_path)
+    except Exception:
+        info = None
+
+    if not info:
+        return fn_info
+
+    # Merge: if container inspection missed codec or resolution, fill from filename
+    if (not info.get("quality") or info.get("quality") == "SD") and fn_info.get("quality") and fn_info.get("quality") != "SD":
+        info["quality"] = fn_info["quality"]
+        if not info.get("width"):
+            info["width"] = fn_info.get("width", 0)
+        if not info.get("height"):
+            info["height"] = fn_info.get("height", 0)
+
+    if not info.get("video_codec") and fn_info.get("video_codec"):
+        info["video_codec"] = fn_info["video_codec"]
+
+    if not info.get("audio_codec") and fn_info.get("audio_codec"):
+        info["audio_codec"] = fn_info["audio_codec"]
+
+    # Rebuild extraInfo
+    parts = []
+    if info.get("quality") and info["quality"] != "SD":
+        parts.append(info["quality"])
+    elif info.get("quality") == "SD" and (info.get("video_codec") or info.get("audio_codec")):
+        parts.append("SD")
+    if info.get("video_codec"):
+        parts.append(info["video_codec"])
+    if info.get("audio_codec"):
+        parts.append(info["audio_codec"])
+    info["extraInfo"] = " | ".join(parts)
+
+    return info

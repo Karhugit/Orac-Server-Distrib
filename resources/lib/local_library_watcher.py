@@ -61,6 +61,10 @@ def parse_media_filename(file_path: str, media_type: str = "movie") -> Dict[str,
         if year_match:
             year = int(year_match.group(1))
             raw_title = raw_title[:year_match.start()]
+        elif parent_dir:
+            ym = re.search(r'[\.\s\(_\-]((?:19|20)\d{2})(?:[\.\s\)_\\-]|$)', parent_dir)
+            if ym:
+                year = int(ym.group(1))
 
         tags_pattern = r'\b(1080p|720p|480p|2160p|4k|uhd|bluray|bdrip|brrip|dvdrip|web-dl|webrip|hdtv|x264|x265|h264|h265|hevc|avc|aac|dts|ac3|atmos|hdr|remux|yify|rarbg|eztv|proper|repack)\b'
         clean = re.split(tags_pattern, raw_title, flags=re.IGNORECASE)[0]
@@ -75,12 +79,12 @@ def parse_media_filename(file_path: str, media_type: str = "movie") -> Dict[str,
 
         season = None
         episode = None
+        grandparent = os.path.basename(os.path.dirname(os.path.dirname(file_path))) if os.path.dirname(file_path) else None
         if ep_match:
             season = int(ep_match.group(1))
             episode = int(ep_match.group(2))
             show_raw = base_name[:ep_match.start()].strip()
             if len(show_raw) < 2 and parent_dir:
-                grandparent = os.path.basename(os.path.dirname(os.path.dirname(file_path)))
                 if re.match(r'season\s*\d+', parent_dir, re.IGNORECASE) and grandparent:
                     show_raw = grandparent
                 else:
@@ -93,6 +97,13 @@ def parse_media_filename(file_path: str, media_type: str = "movie") -> Dict[str,
         if year_match:
             year = int(year_match.group(1))
             show_raw = show_raw[:year_match.start()]
+        else:
+            for folder in (grandparent, parent_dir):
+                if folder:
+                    ym = re.search(r'[\.\s\(_\-]((?:19|20)\d{2})(?:[\.\s\)_\\-]|$)', folder)
+                    if ym:
+                        year = int(ym.group(1))
+                        break
 
         clean = re.sub(r'[\.\-_\(\)\[\]]', ' ', show_raw)
         clean = ' '.join(clean.split())
@@ -348,7 +359,7 @@ class LocalLibraryWatcher:
                 return False
 
             # Inspect media container specs
-            media_info = inspect_media_file(full_path)
+            media_info = inspect_media_file(full_path) or {}
             quality = media_info.get("quality") or "SD"
             vcodec = media_info.get("video_codec") or ""
             acodec = media_info.get("audio_codec") or ""
@@ -360,25 +371,27 @@ class LocalLibraryWatcher:
             movie_details = None
             if self.tmdb_handler:
                 search_res = self.tmdb_handler.search("movie", title)
-                results = search_res.get("results", []) if search_res else []
+                results = search_res.get("results", []) if isinstance(search_res, dict) else []
 
                 # Find best matching result
                 matched = None
                 if year:
                     for r in results:
-                        r_date = r.get("release_date") or ""
-                        if r_date.startswith(str(year)):
-                            matched = r
-                            break
+                        if isinstance(r, dict):
+                            r_date = r.get("release_date") or ""
+                            if r_date.startswith(str(year)):
+                                matched = r
+                                break
 
-                if not matched and results:
+                if not matched and results and isinstance(results[0], dict):
                     matched = results[0]
 
-                if matched:
+                if matched and isinstance(matched, dict):
                     tmdb_id = matched.get("id")
-                    found, details = self.tmdb_handler.get_movie_details_from_tmdb(tmdb_id)
-                    if found:
-                        movie_details = details
+                    if tmdb_id:
+                        found, details = self.tmdb_handler.get_movie_details_from_tmdb(tmdb_id)
+                        if found and isinstance(details, dict):
+                            movie_details = details
 
             if not tmdb_id:
                 log(f"[LocalWatcher] Could not match movie on TMDb: '{title}' ({full_path})", level=LOGWARNING)
@@ -505,7 +518,7 @@ class LocalLibraryWatcher:
             if not title:
                 return False
 
-            media_info = inspect_media_file(full_path)
+            media_info = inspect_media_file(full_path) or {}
             quality = media_info.get("quality") or "SD"
             vcodec = media_info.get("video_codec") or ""
             acodec = media_info.get("audio_codec") or ""
@@ -515,22 +528,23 @@ class LocalLibraryWatcher:
             show_tmdb_id = None
             if self.tmdb_handler:
                 search_res = self.tmdb_handler.search("tv_show", title)
-                results = search_res.get("results", []) if search_res else []
+                results = search_res.get("results", []) if isinstance(search_res, dict) else []
                 if not results:
                     search_res = self.tmdb_handler.search("tv", title)
-                    results = search_res.get("results", []) if search_res else []
+                    results = search_res.get("results", []) if isinstance(search_res, dict) else []
 
                 matched = None
                 if year:
                     for r in results:
-                        air_date = r.get("first_air_date") or ""
-                        if air_date.startswith(str(year)):
-                            matched = r
-                            break
-                if not matched and results:
+                        if isinstance(r, dict):
+                            air_date = r.get("first_air_date") or ""
+                            if air_date.startswith(str(year)):
+                                matched = r
+                                break
+                if not matched and results and isinstance(results[0], dict):
                     matched = results[0]
 
-                if matched:
+                if matched and isinstance(matched, dict):
                     show_tmdb_id = matched.get("id")
 
             if not show_tmdb_id:

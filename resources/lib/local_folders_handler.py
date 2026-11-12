@@ -241,6 +241,82 @@ def scan_local_media_folders(
     results = []
     seen_paths = set()
 
+    # Fast-path: Check if matching media file already exists in local_media_library table
+    if config_db_path and os.path.isfile(config_db_path):
+        try:
+            with db_connect(config_db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='local_media_library'")
+                if cursor.fetchone():
+                    if media_type == "movie":
+                        cursor.execute("""
+                            SELECT path, folder_slot, file_size, parsed_title, parsed_year,
+                                   video_codec, audio_codec, resolution, width, height
+                            FROM local_media_library
+                            WHERE media_type = 'movie'
+                        """)
+                        for r_path, r_slot, r_size, r_title, r_year, r_vcodec, r_acodec, r_res, r_w, r_h in cursor.fetchall():
+                            if not os.path.isfile(r_path):
+                                continue
+                            if year_int and r_year and abs(r_year - year_int) > 1:
+                                continue
+                            r_tokens = _extract_tokens(f"{r_title} {os.path.basename(r_path)}")
+                            if _match_tokens(r_tokens, title_tokens) or any(_match_tokens(r_tokens, a) for a in alias_token_sets):
+                                if r_path not in seen_paths:
+                                    seen_paths.add(r_path)
+                                    rec = {
+                                        "name": os.path.basename(r_path),
+                                        "path": r_path,
+                                        "size": r_size or 0,
+                                        "size_gb": round((r_size or 0) / (1024 ** 3), 2),
+                                        "slot": f"folder{r_slot}",
+                                        "folder_slot": str(r_slot),
+                                        "quality": r_res or "SD",
+                                        "video_codec": r_vcodec or "",
+                                        "audio_codec": r_acodec or "",
+                                        "width": r_w or 0,
+                                        "height": r_h or 0,
+                                    }
+                                    parts = [p for p in (rec["quality"], rec["video_codec"], rec["audio_codec"]) if p and p != "SD"]
+                                    rec["extraInfo"] = " | ".join(parts)
+                                    results.append(rec)
+                    else:
+                        if season_int is not None and episode_int is not None:
+                            cursor.execute("""
+                                SELECT path, folder_slot, file_size, parsed_title, parsed_year,
+                                       video_codec, audio_codec, resolution, width, height
+                                FROM local_media_library
+                                WHERE media_type = 'show' AND season = ? AND episode = ?
+                            """, (season_int, episode_int))
+                            for r_path, r_slot, r_size, r_title, r_year, r_vcodec, r_acodec, r_res, r_w, r_h in cursor.fetchall():
+                                if not os.path.isfile(r_path):
+                                    continue
+                                r_tokens = _extract_tokens(f"{r_title} {os.path.basename(r_path)}")
+                                if _match_tokens(r_tokens, title_tokens) or any(_match_tokens(r_tokens, a) for a in alias_token_sets):
+                                    if r_path not in seen_paths:
+                                        seen_paths.add(r_path)
+                                        rec = {
+                                            "name": os.path.basename(r_path),
+                                            "path": r_path,
+                                            "size": r_size or 0,
+                                            "size_gb": round((r_size or 0) / (1024 ** 3), 2),
+                                            "slot": f"folder{r_slot}",
+                                            "folder_slot": str(r_slot),
+                                            "quality": r_res or "SD",
+                                            "video_codec": r_vcodec or "",
+                                            "audio_codec": r_acodec or "",
+                                            "width": r_w or 0,
+                                            "height": r_h or 0,
+                                        }
+                                        parts = [p for p in (rec["quality"], rec["video_codec"], rec["audio_codec"]) if p and p != "SD"]
+                                        rec["extraInfo"] = " | ".join(parts)
+                                        results.append(rec)
+        except Exception as e:
+            log(f"[Orac] Error querying local_media_library table: {e}", LOGWARNING)
+
+    if results:
+        return results
+
     for slot, base_dir in scan_targets:
         try:
             if media_type == "movie":
