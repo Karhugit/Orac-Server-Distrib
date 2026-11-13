@@ -4,6 +4,16 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.5.7] - 2026-11-13
+
+### Fixed
+- **LocalWatcher `'NoneType' object has no attribute 'get'` Crash** — Guarded against `None` returns from `inspect_media_file` in `local_library_watcher.py` (`_process_show_file` and `_process_movie_file`) and added `isinstance(..., dict)` checks on TMDb search results.
+- **MKV Header Inspection & Filename Fallback** — Enhanced `parse_mkv_metadata` in `media_inspector.py` to resolve `SeekHead` pointers (`SeekID`/`SeekPosition`) and read up to 10MB when `Tracks` is located past initial headers. Added `parse_filename_media_info` so `inspect_media_file` always returns a valid metadata dictionary with filename-extracted resolution and codecs when container parsing fails or is incomplete.
+
+### Improved
+- **Local Media Directory Year Fallback** — Updated `parse_media_filename` to check parent and grandparent folder names for release years when missing from the filename.
+- **Local Media Library Fast-Path** — Added a database fast-path query against `local_media_library` in `scan_local_media_folders` (`local_folders_handler.py`) to return indexed local matches instantly before falling back to directory traversal.
+
 ## [1.5.6] - 2026-11-05
 
 ### Added
