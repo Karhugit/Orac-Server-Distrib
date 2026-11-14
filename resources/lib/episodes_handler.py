@@ -61,7 +61,8 @@ def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None
                 LastFullyWatched AS (
                     SELECT
                         show_id,
-                        MAX(rn) as last_watched_rn
+                        MAX(rn) as last_watched_rn,
+                        MAX(watched_at) as last_watched_at
                     FROM UserWatchedEpisodes
                     WHERE percent_watched >= 80 OR watched_status = 2
                     GROUP BY show_id
@@ -72,7 +73,7 @@ def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None
                     SELECT
                         lfw.show_id,
                         ae.tmdb_id,
-                        NULL as watched_at
+                        lfw.last_watched_at as watched_at
                     FROM LastFullyWatched lfw
                     JOIN AllEpisodes ae ON lfw.show_id = ae.show_id AND ae.rn = lfw.last_watched_rn + 1
                     WHERE lfw.show_id NOT IN (SELECT show_id FROM PartiallyWatched)

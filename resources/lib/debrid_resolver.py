@@ -495,33 +495,57 @@ def rank_and_filter_cached_results(results, cache_map, cfg, search_info=None, ex
     cached_results.sort(key=lambda x: get_sort_key(x, sort_order))
 
     if pre_resolve_top:
-        top_item = cached_results[0]
-        log(f"[DebridResolver] Pre-resolving top stream: {top_item.get('name')} on {top_item.get('debrid')}", level=LOGINFO)
-        try:
-            title = search_info.get('title', '') if search_info else ''
-            season = search_info.get('season') if search_info else None
-            episode = search_info.get('episode') if search_info else None
-            air_date = (search_info.get('air_date') or search_info.get('premiered')) if search_info else None
-            show_number = search_info.get('show_number') if search_info else None
-            stream_url = resolve_stream(
-                top_item.get('debrid'),
-                top_item.get('url'),
-                top_item.get('hash'),
-                title=title,
-                season=season,
-                episode=episode,
-                cfg=cfg,
-                air_date=air_date,
-                show_number=show_number
-            )
-            if stream_url:
-                top_item['stream_url'] = stream_url
-                top_item['is_resolved'] = True
-                log(f"[DebridResolver] Top stream successfully pre-resolved: {stream_url[:60]}...", level=LOGINFO)
-            else:
-                top_item['is_resolved'] = False
-        except Exception as e:
-            log(f"[DebridResolver] Failed to pre-resolve top stream: {e}", level=LOGWARNING)
-            top_item['is_resolved'] = False
+        title = search_info.get('title', '') if search_info else ''
+        season = search_info.get('season') if search_info else None
+        episode = search_info.get('episode') if search_info else None
+        air_date = (search_info.get('air_date') or search_info.get('premiered')) if search_info else None
+        show_number = search_info.get('show_number') if search_info else None
+
+        verified_results = []
+        resolved_found = False
+        max_attempts = 10
+        attempts = 0
+
+        for item in cached_results:
+            if resolved_found:
+                verified_results.append(item)
+                continue
+
+            if item.get('stream_url') or item.get('is_resolved'):
+                item['is_resolved'] = True
+                verified_results.append(item)
+                resolved_found = True
+                continue
+
+            if attempts >= max_attempts:
+                verified_results.append(item)
+                continue
+
+            attempts += 1
+            log(f"[DebridResolver] Pre-resolving stream #{attempts}: {item.get('name')} on {item.get('debrid')}", level=LOGINFO)
+            try:
+                stream_url = resolve_stream(
+                    item.get('debrid'),
+                    item.get('url'),
+                    item.get('hash'),
+                    title=title,
+                    season=season,
+                    episode=episode,
+                    cfg=cfg,
+                    air_date=air_date,
+                    show_number=show_number
+                )
+                if stream_url:
+                    item['stream_url'] = stream_url
+                    item['is_resolved'] = True
+                    verified_results.append(item)
+                    resolved_found = True
+                    log(f"[DebridResolver] Stream successfully pre-resolved: {stream_url[:60]}...", level=LOGINFO)
+                else:
+                    log(f"[DebridResolver] Dropping unresolvable stream (missing target file/episode): {item.get('name')}", level=LOGINFO)
+            except Exception as e:
+                log(f"[DebridResolver] Failed to pre-resolve stream {item.get('name')}: {e}", level=LOGWARNING)
+
+        cached_results = verified_results
 
     return cached_results

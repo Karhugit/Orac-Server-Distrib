@@ -4,6 +4,12 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.5.8] - 2026-11-14
+
+### Fixed
+- **Next Episodes `last_watched_at` Population** — Updated `get_next_episodes` in `episodes_handler.py` so `LastFullyWatched` carries over `MAX(watched_at)` into `NextEpisodeCandidates`, ensuring `last_watched_at` is populated for all next episodes (not only partially watched ones).
+- **Unplayable Season Pack Filtering on Episode Scrapes** — Updated `rank_and_filter_cached_results` in `debrid_resolver.py` to drop unresolvable streams (such as ongoing season packs missing the target episode) during pre-resolution and advance to the next candidate until a playable stream is verified or none remain.
+
 ## [1.5.7] - 2026-11-13
 
 ### Fixed
