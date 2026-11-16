@@ -727,7 +727,13 @@ def app_factory(
     async def next_episodes(request: Request):
         query = parse_qs_fastapi(request)
         user = query.get("user", [None])[0]
-        result = get_next_episodes(app.state.tvshows_dynamic_db_path, app.state.tvshows_static_db_path, user=user)
+        include_unaired = query.get("include_unaired", ["false"])[0].lower() in ("true", "1", "yes")
+        result = get_next_episodes(
+            app.state.tvshows_dynamic_db_path,
+            app.state.tvshows_static_db_path,
+            user=user,
+            include_unaired=include_unaired
+        )
         if result is not None:
             return send_safe(200, result)
         return PlainTextResponse("Error getting next episodes", status_code=500)

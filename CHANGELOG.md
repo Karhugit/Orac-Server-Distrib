@@ -4,6 +4,11 @@ All notable changes are documented here.
 The distrib repo is tagged with `vX.Y.Z` for each release so the
 in-server update checker can compare against the running version.
 
+## [1.5.9] - 2026-11-16
+
+### Added
+- **Include Unaired Next Episodes Option** — Added `include_unaired` query parameter support to `/next_episodes` (`http_server.py` and `episodes_handler.py`). When enabled, `get_next_episodes` skips the `DATE(air_date) <= DATE('now')` filter while still excluding episodes with no air date (`NULL` or empty).
+
 ## [1.5.8] - 2026-11-14
 
 ### Fixed

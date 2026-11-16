@@ -4,11 +4,12 @@ import json
 from resources.lib.log_utils import log, LOGERROR, LOGDEBUG, LOGINFO
 from time import time
 
-def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None):
+def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None, include_unaired=False):
     """
     Returns enriched next episode data (including show and episode info)
     excluding dropped shows. If user is None, calculates next episodes for
     all watched shows in the database regardless of username.
+    If include_unaired is True, skips the air_date <= today filter.
     """
     try:
         starttime = time()
@@ -33,7 +34,9 @@ def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None
                         tmdb_id,
                         ROW_NUMBER() OVER(PARTITION BY show_id ORDER BY season, episode_number) as rn
                     FROM episodes
-                    WHERE DATE(air_date) <= DATE('now')
+                    WHERE air_date IS NOT NULL
+                      AND TRIM(air_date) != ''
+                      AND (? = 1 OR DATE(air_date) <= DATE('now'))
                 ),
                 UserWatchedEpisodes AS (
                     SELECT
@@ -126,7 +129,7 @@ def get_next_episodes(tvshows_dynamic_db_path, tvshows_static_db_path, user=None
                 ORDER BY last_watched_at DESC;
             """
 
-            cursor.execute(query, (user, user, user, user))
+            cursor.execute(query, (1 if include_unaired else 0, user, user, user, user))
             rows = cursor.fetchall()
             columns = [desc[0] for desc in cursor.description]
             results = [dict(zip(columns, row)) for row in rows]
